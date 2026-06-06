@@ -527,6 +527,31 @@ def update_track_file(file_info, data, best_result, cleanest_result, is_first):
     print(f"  Updated track file: {os.path.basename(track_file)}")
 
 
+# ── Race Result Auto-Matching ─────────────────────────────────────────────────
+DOWNLOADS_DIR = os.path.expanduser(r"~\Downloads")
+
+
+def find_race_result(session_info):
+    """
+    Auto-find a race result file matching this session's subsession_id.
+    Searches Downloads folder for eventresult_<subsession_id>*.csv or .json.
+    """
+    subsession_id = session_info.get('subsession_id', 0)
+    if not subsession_id:
+        return None
+
+    if not os.path.isdir(DOWNLOADS_DIR):
+        return None
+
+    # Look for CSV first (simpler to parse), then JSON
+    for pattern in [f"eventresult_{subsession_id}*.csv", f"eventresult-{subsession_id}.json"]:
+        matches = glob.glob(os.path.join(DOWNLOADS_DIR, pattern))
+        if matches:
+            return matches[0]
+
+    return None
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     dry_run = '--dry-run' in sys.argv
@@ -546,69 +571,113 @@ def main():
 
     print(f"Found {len(ibt_files)} file(s) to process.\n")
 
+    # Group files by (car, track, date) for multi-session support
+    day_groups = {}  # key: (car, track, date) → list of (filepath, file_info)
+    skip_files = []
+
     for filepath in ibt_files:
         file_info = parse_filename(filepath)
         if not file_info:
             print(f"  SKIP: Could not parse filename: {os.path.basename(filepath)}")
+            skip_files.append(filepath)
             continue
+        key = (file_info['car'], file_info['track'], file_info['date'])
+        if key not in day_groups:
+            day_groups[key] = []
+        day_groups[key].append((filepath, file_info))
 
+    # Process each day group
+    for (car, track, date), files_in_day in sorted(day_groups.items()):
         print(f"{'='*60}")
-        print(f"Processing: {file_info['car']} / {file_info['track']} / {file_info['date']} {file_info['time']}")
-        print(f"  File: {os.path.basename(filepath)} ({os.path.getsize(filepath)/1024/1024:.1f}MB)")
+        print(f"DAY: {car} / {track} / {date} ({len(files_in_day)} file(s))")
+        print(f"{'='*60}")
 
-        # Analyze
-        print("  Analyzing...")
-        data = analyze(filepath)
-        if not data:
-            print("  ERROR: No valid laps found. Skipping.")
+        # Analyze all files for this day
+        sessions = []  # list of (file_info, data, race_result)
+        for filepath, file_info in sorted(files_in_day, key=lambda x: x[1]['time']):
+            print(f"\n  Processing: {file_info['time']} ({os.path.getsize(filepath)/1024/1024:.1f}MB)")
+
+            data = analyze(filepath)
+            if not data:
+                print(f"    No valid laps — skipping (archiving)")
+                if not dry_run:
+                    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+                    shutil.move(filepath, os.path.join(ARCHIVE_DIR, os.path.basename(filepath)))
+                continue
+
+            print(f"    Valid laps: {len(data['valid_laps'])}, Best: Lap {data['best_lap']}, Type: {data.get('session_info', {}).get('event_type', '?')}")
+
+            # Auto-find race result
+            race_result = None
+            si = data.get('session_info', {})
+            result_file = find_race_result(si)
+            if result_file:
+                from tenths.results import parse_result
+                race_result = parse_result(result_file)
+                if race_result and race_result.get('my_result'):
+                    me = race_result['my_result']
+                    print(f"    Race result: P{me['finish_pos']}/{race_result['entries']}, iR {me.get('old_irating',0)}->{me.get('new_irating',0)}")
+
+            sessions.append((file_info, data, race_result))
+
+            # Archive the .ibt
+            if not dry_run:
+                os.makedirs(ARCHIVE_DIR, exist_ok=True)
+                shutil.move(filepath, os.path.join(ARCHIVE_DIR, os.path.basename(filepath)))
+
+        if not sessions:
+            print("  No valid sessions for this day.")
             continue
-        print(f"  Valid laps: {len(data['valid_laps'])}, Best: Lap {data['best_lap']}")
 
-        # Load track map
-        track_map = load_track_map(file_info['track'])
+        # Load track map and baseline
+        track_map = load_track_map(track)
         if track_map:
-            print(f"  Track map: {len(track_map)} zones loaded")
-        else:
-            print(f"  Track map: not found (using percentages)")
+            print(f"\n  Track map: {len(track_map)} zones loaded")
 
-        # Load baseline
-        baseline = load_baseline(file_info['car'], file_info['track'])
+        baseline = load_baseline(car, track)
         if baseline:
             print(f"  Baseline: {baseline['date']} (PB: {fmt_time(baseline.get('pb_time', 0))})")
-        else:
-            print(f"  Baseline: none (first session at this track)")
 
-        # Generate notes
-        valid_results = [r for r in data['lap_results'] if r['time'] > 0]
-        best_result = min(valid_results, key=lambda x: x['time'])
-        cleanest_result = min(valid_results, key=lambda x: x['abs'] if x['time'] < best_result['time'] + 3 else 9999)
-
-        notes_content = generate_notes(data, file_info, track_map, baseline, dry_run)
-
-        # Write session notes
-        session_dir = os.path.join(TELEMETRY_ROOT, file_info['car'], file_info['track'], file_info['date'])
+        # Generate combined session notes for the day
+        session_dir = os.path.join(TELEMETRY_ROOT, car, track, date)
         notes_path = os.path.join(session_dir, "session_notes.md")
+
+        notes_content = generate_day_notes(sessions, car, track, date, track_map, baseline)
 
         if dry_run:
             print(f"\n  Would write: {notes_path}")
             print(f"  Content: {len(notes_content)} chars, {notes_content.count(chr(10))} lines")
+            print(f"  Sessions included: {len(sessions)}")
         else:
             os.makedirs(session_dir, exist_ok=True)
             with open(notes_path, 'w', encoding='utf-8') as f:
                 f.write(notes_content)
-            print(f"  Created: {notes_path}")
+            print(f"\n  Created: {notes_path} ({len(sessions)} session(s))")
 
-            # Update track file
-            update_track_file(file_info, data, best_result, cleanest_result, baseline is None)
+            # Copy race result file to session dir if found
+            for file_info, data, race_result in sessions:
+                if race_result and race_result.get('filepath'):
+                    src = race_result['filepath']
+                    dst = os.path.join(session_dir, os.path.basename(src))
+                    if not os.path.exists(dst):
+                        shutil.copy2(src, dst)
+                        print(f"  Copied race result: {os.path.basename(src)}")
 
-            # Archive
-            os.makedirs(ARCHIVE_DIR, exist_ok=True)
-            dest = os.path.join(ARCHIVE_DIR, os.path.basename(filepath))
-            shutil.move(filepath, dest)
-            print(f"  Archived: {os.path.basename(filepath)} → _archive/")
+            # Update track file (use best session of the day)
+            all_valid = []
+            for fi, d, rr in sessions:
+                for r in d['lap_results']:
+                    if r['time'] > 0:
+                        all_valid.append(r)
+            if all_valid:
+                best_of_day = min(all_valid, key=lambda x: x['time'])
+                cleanest_of_day = min(all_valid, key=lambda x: x['abs'] if x['time'] < best_of_day['time'] + 3 else 9999)
+                is_first = baseline is None
+                # Use the first session's file_info for the track file update
+                update_track_file(sessions[0][0], sessions[0][1], best_of_day, cleanest_of_day, is_first)
 
     # Git commit
-    if not dry_run and ibt_files:
+    if not dry_run and day_groups:
         print(f"\n{'='*60}")
         print("Git commit...")
         try:
@@ -625,6 +694,86 @@ def main():
 
     print(f"\n{'='*60}")
     print("DONE")
+
+
+def generate_day_notes(sessions, car, track, date, track_map, baseline):
+    """
+    Generate a single session_notes.md for all sessions on this day.
+    Each session gets its own section (Practice, Qualifying, Race).
+    """
+    # Use the first session's data for the header metadata
+    first_fi, first_data, _ = sessions[0]
+    si = first_data.get('session_info', {})
+
+    car_display = si.get('car_screen_name') or car.replace('_', ' ')
+    track_display_name = si.get('track_display_name') or track.replace('_', ' ').title()
+    track_config = si.get('track_config_name', '')
+    track_display = f"{track_display_name}, {track_config}" if track_config else track_display_name
+    car_class = si.get('car_class_short') or first_data.get('car_class', '')
+
+    is_first_session = baseline is None
+
+    all_parts = []
+
+    # Header (one per file)
+    header_lines = []
+    header_lines.append(f"# {car_display} — {track_display} — {date}")
+    header_lines.append("")
+    header_lines.append("## Session Info")
+    header_lines.append(f"- **Car:** {car_display}")
+    header_lines.append(f"- **Track:** {track_display}")
+    if car_class:
+        header_lines.append(f"- **Class:** {car_class}")
+
+    # Check if any session has race results
+    race_result_data = None
+    for fi, d, rr in sessions:
+        if rr and rr.get('my_result'):
+            race_result_data = rr
+            break
+
+    if race_result_data:
+        me = race_result_data['my_result']
+        header_lines.append(f"- **Series:** {race_result_data.get('series', '')}")
+        header_lines.append(f"- **SOF:** {race_result_data.get('sof', 0)}")
+        header_lines.append(f"- **Started:** P{me['start_pos']} / {race_result_data['entries']} cars")
+        header_lines.append(f"- **Finished:** P{me['finish_pos']} / {race_result_data['entries']} ({me['laps_completed']} laps, {me['incidents']} incidents)")
+        if me.get('old_irating') and me.get('new_irating'):
+            delta = me['new_irating'] - me['old_irating']
+            header_lines.append(f"- **iRating:** {me['old_irating']} -> {me['new_irating']} ({delta:+d})")
+
+    if is_first_session:
+        header_lines.append(f"- **First session at this track**")
+    header_lines.append("")
+    header_lines.append("---")
+    header_lines.append("")
+
+    all_parts.append("\n".join(header_lines))
+
+    # Race result context table (if available)
+    if race_result_data:
+        from tenths.results import generate_race_context_markdown
+        race_md = generate_race_context_markdown(race_result_data)
+        if race_md:
+            all_parts.append(race_md)
+            all_parts.append("\n---\n\n")
+
+    # Each session gets its own analysis section
+    for fi, data, rr in sessions:
+        session_notes = generate_notes(data, fi, track_map, baseline, dry_run=False)
+        # Strip the header from generate_notes (we already have one)
+        # Find the first "---" separator and take everything after the Session Info block
+        lines = session_notes.split('\n')
+        # Find the lap table section (starts with "## Practice" or "## Race")
+        start_idx = 0
+        for i, line in enumerate(lines):
+            if line.startswith('## ') and ('Practice' in line or 'Race' in line or 'Qualify' in line):
+                start_idx = i
+                break
+        session_section = '\n'.join(lines[start_idx:])
+        all_parts.append(session_section)
+
+    return '\n'.join(all_parts)
 
 
 if __name__ == "__main__":
