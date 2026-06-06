@@ -50,7 +50,7 @@ def main():
 
     print("\nConnecting to iRacing...")
     try:
-        idc = irDataClient(username=email, password=password)
+        idc = irDataClient(username=email, password=password, use_pydantic=False)
     except Exception as e:
         print(f"ERROR: Authentication failed: {e}")
         sys.exit(1)
@@ -61,19 +61,37 @@ def main():
     print("Fetching car data...")
     try:
         cars_raw = idc.get_cars()
+        if not cars_raw:
+            # Try alternative property access
+            cars_raw = idc.cars
         print(f"  Received {len(cars_raw)} cars")
     except Exception as e:
         print(f"  ERROR fetching cars: {e}")
-        cars_raw = []
+        # Try alternative
+        try:
+            print("  Trying alternative method...")
+            cars_raw = idc.cars
+            print(f"  Received {len(cars_raw)} cars via .cars property")
+        except Exception as e2:
+            print(f"  ERROR (alt): {e2}")
+            cars_raw = []
 
     # Pull track data
     print("Fetching track data...")
     try:
         tracks_raw = idc.get_tracks()
+        if not tracks_raw:
+            tracks_raw = idc.tracks
         print(f"  Received {len(tracks_raw)} tracks")
     except Exception as e:
         print(f"  ERROR fetching tracks: {e}")
-        tracks_raw = []
+        try:
+            print("  Trying alternative method...")
+            tracks_raw = idc.tracks
+            print(f"  Received {len(tracks_raw)} tracks via .tracks property")
+        except Exception as e2:
+            print(f"  ERROR (alt): {e2}")
+            tracks_raw = []
 
     # Preview first 3 of each
     if cars_raw:
