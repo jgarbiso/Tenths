@@ -193,7 +193,7 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
 
     date = file_info['date']
     time_str = file_info['time']
-    filesize_mb = os.path.getsize(data['filepath']) / 1024 / 1024
+    filesize_mb = data.get('filesize_mb', 0)
 
     is_first_session = baseline is None
     valid_results = [r for r in data['lap_results'] if r['time'] > 0]
@@ -595,7 +595,8 @@ def main():
         # Analyze all files for this day
         sessions = []  # list of (file_info, data, race_result)
         for filepath, file_info in sorted(files_in_day, key=lambda x: x[1]['time']):
-            print(f"\n  Processing: {file_info['time']} ({os.path.getsize(filepath)/1024/1024:.1f}MB)")
+            filesize_mb = os.path.getsize(filepath) / 1024 / 1024
+            print(f"\n  Processing: {file_info['time']} ({filesize_mb:.1f}MB)")
 
             data = analyze(filepath)
             if not data:
@@ -604,6 +605,9 @@ def main():
                     os.makedirs(ARCHIVE_DIR, exist_ok=True)
                     shutil.move(filepath, os.path.join(ARCHIVE_DIR, os.path.basename(filepath)))
                 continue
+
+            # Store filesize in data for later use (file may be archived before notes generation)
+            data['filesize_mb'] = filesize_mb
 
             print(f"    Valid laps: {len(data['valid_laps'])}, Best: Lap {data['best_lap']}, Type: {data.get('session_info', {}).get('event_type', '?')}")
 

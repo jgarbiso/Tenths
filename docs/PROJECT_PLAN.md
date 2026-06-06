@@ -47,23 +47,27 @@ tools/
 
 ## Phase 1: Practice Session Processor
 
-**Scope:** Process practice .ibt files → generate complete session_notes.md with all tables, turn names, GPS data, coaching flags, targets.
+**STATUS: COMPLETE**
 
 ### What Phase 1 produces:
 
-- Session header (car, track, date, "First session" detection)
+- Session header with car/track names from .ibt header (no API needed)
+- Session type auto-detection (Practice/Qualify/Race from .ibt header)
+- Multi-session per day support (practice + qualifying + race in one file)
+- Race result auto-matching (finds CSV/JSON by subsession_id in Downloads)
 - Lap summary table (selective — first, milestones, cleanest, best, final laps)
 - Braking zones table with turn names from track map
 - Trail braking table with turn names
 - Corner variance table with turn names and priority flags
 - GPS Track Position Map
 - Tire temps table
-- GT4 Brake Shape progress (comparison against previous sessions)
+- GT4 Brake Shape progress
+- 5 Stages of Braking metrics (Coast_Time, TurnIn_Brk%)
 - Key Findings (rule-based: PBs, records, priority corners, brake shape status)
 - Targets for Next Session (auto-generated from data)
 - Files table
-- Archive .ibt → `_archive/`
-- Update track reference file (Performance History row)
+- Archive .ibt to `_archive/`
+- Copy race result file to session folder
 - Git commit + push
 
 ### What Phase 1 does NOT do:
@@ -77,21 +81,23 @@ tools/
 
 ---
 
-## Phase 2: Race Session Processor
+## Phase 2: Polish & Advanced Features
 
-**Scope:** Add race support, multi-session days, race results integration, coaching summary.
+**STATUS: IN PROGRESS**
 
-### Additional features:
+### Remaining items:
 
-- `--race-result "path.csv"` or `--race-result "path.json"` flag
-- Race result context table (top 3 + drivers within 5s + you)
-- Gap analysis (to winner, to car ahead, to car behind)
-- iRating/License change
-- Multi-session day support (practice + qualifying + race in one file)
-- Session Progression history table (loads all previous session_notes for same track)
-- Coaching Summary section (What's Working / What Needs Work — rule-based)
-- Race Highlights callouts (NEW PB, NEW CLEANEST, etc.)
-- Auto-detect incidents (laps >5s off pace or car stopped) — flag without narrative
+1. ~~Multi-session per day support~~ ✅ DONE
+2. ~~Race result auto-matching by subsession_id~~ ✅ DONE
+3. ~~Car/track display names from .ibt header~~ ✅ DONE
+4. ~~Session type detection (Practice/Qualify/Race)~~ ✅ DONE
+5. De-duplicate header info (race context appears twice)
+6. Session Progression history table (loads all previous session_notes for same track)
+7. Coaching Summary section (What's Working / What Needs Work — rule-based)
+8. Race Highlights callouts (NEW PB, NEW CLEANEST at top level)
+9. Auto-detect incidents (laps >5s off pace or car stopped) — flag without narrative
+10. Negative Brk2Shft values → show "—"
+11. Targets use turn names not percentages
 
 ---
 
