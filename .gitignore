@@ -29,3 +29,6 @@ Thumbs.db
 
 # Test output
 test_output/
+
+# iRacing API cache (contains account-specific data)
+cache/
