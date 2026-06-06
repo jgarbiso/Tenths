@@ -24,16 +24,16 @@ import subprocess
 from datetime import datetime
 
 # Add tools dir to path
-TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, TOOLS_DIR)
+import os
+import sys
 
-from analyze_ibt import analyze, fmt_time, parse_ibt
-from track_map import load_track_map, get_turn_name
+from tenths.analyzer import analyze, fmt_time, parse_ibt
+from tenths.track_map import load_track_map, get_turn_name
 
 # ── Config ────────────────────────────────────────────────────────────────────
-TELEMETRY_ROOT = os.path.dirname(TOOLS_DIR)
+TELEMETRY_ROOT = os.environ.get('TENTHS_TELEMETRY_ROOT', r"c:\Users\justi\Documents\iRacing\telemetry")
 ARCHIVE_DIR = os.path.join(TELEMETRY_ROOT, "_archive")
-SIM_ROOT = r"c:\Users\justi\Documents\Sim"
+SIM_ROOT = os.environ.get('TENTHS_SIM_ROOT', r"c:\Users\justi\Documents\Sim")
 TRACKS_DIR = os.path.join(SIM_ROOT, "Sim", "tracks")
 MIN_SESSION_SIZE = 1_000_000  # 1MB — below this is a false start
 

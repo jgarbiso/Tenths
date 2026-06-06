@@ -14,13 +14,12 @@ import os
 import re
 
 # Where track map files live
-# Try multiple locations — the workspace has both the Sim repo and telemetry folder
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_TELEMETRY_ROOT = os.path.dirname(_SCRIPT_DIR)
+_PACKAGE_ROOT = os.path.dirname(_SCRIPT_DIR)
 TRACK_MAPS_DIRS = [
-    os.path.join(os.path.dirname(_TELEMETRY_ROOT), "Sim", "Sim", "tracks"),  # from telemetry junction
-    os.path.join(_TELEMETRY_ROOT, "..", "Sim", "Sim", "tracks"),  # relative fallback
-    r"c:\Users\justi\Documents\Sim\Sim\tracks",  # absolute fallback
+    os.path.join(_PACKAGE_ROOT, "tracks"),  # Tenths repo tracks/
+    os.environ.get('TENTHS_TRACKS_DIR', ''),  # env override
+    r"c:\Users\justi\Documents\Sim\Sim\tracks",  # SimRacing repo fallback
 ]
 
 
