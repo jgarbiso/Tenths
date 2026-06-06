@@ -182,8 +182,15 @@ def select_display_laps(lap_results, best_lap, max_rows=12):
 # ── Markdown Generator ────────────────────────────────────────────────────────
 def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     """Generate the complete session_notes.md content."""
-    car_display = file_info['car'].replace('_', ' ')
-    track_display = file_info['track'].replace('_', ' ').title()
+    # Use session_info from .ibt header for proper display names
+    si = data.get('session_info', {})
+    car_display = si.get('car_screen_name') or file_info['car'].replace('_', ' ')
+    track_display_name = si.get('track_display_name') or file_info['track'].replace('_', ' ').title()
+    track_config = si.get('track_config_name', '')
+    track_display = f"{track_display_name}, {track_config}" if track_config else track_display_name
+    event_type = si.get('event_type', 'Practice')
+    car_class = si.get('car_class_short') or data.get('car_class', '')
+
     date = file_info['date']
     time_str = file_info['time']
     filesize_mb = os.path.getsize(data['filepath']) / 1024 / 1024
@@ -201,7 +208,9 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     lines.append("## Session Info")
     lines.append(f"- **Car:** {car_display}")
     lines.append(f"- **Track:** {track_display}")
-    lines.append(f"- **Series:** GT4 Challenge by Falken Tyre")
+    if car_class:
+        lines.append(f"- **Class:** {car_class}")
+    lines.append(f"- **Session Type:** {event_type}")
     if is_first_session:
         lines.append(f"- **First session at this track**")
     lines.append("")
@@ -209,7 +218,8 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     lines.append("")
 
     # ── Lap Table ─────────────────────────────────────────────────────────────
-    lines.append(f"## Practice ({time_str.replace('-', ':')[:5]}) — {filesize_mb:.1f}MB, {len(data['valid_laps'])} valid laps")
+    time_display = time_str.replace('-', ':')[:5]
+    lines.append(f"## {event_type} ({time_display}) — {filesize_mb:.1f}MB, {len(data['valid_laps'])} valid laps")
     lines.append("")
     lines.append("| Lap | Time | ABS | Max Speed | Notes |")
     lines.append("|---|---|---|---|---|")

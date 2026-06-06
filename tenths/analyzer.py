@@ -48,6 +48,83 @@ def fmt_time(s):
         return "N/A"
     return f"{int(s//60)}:{s%60:06.3f}"
 
+
+def parse_session_info(filepath):
+    """
+    Parse the session info YAML header from an .ibt file.
+    Returns metadata dict with car name, track name, event type, etc.
+    No pyirsdk needed — reads the raw binary header directly.
+    """
+    import struct
+    import yaml
+
+    with open(filepath, 'rb') as f:
+        header = f.read(112)
+        _, _, _ = struct.unpack_from('iii', header, 0)  # ver, status, tick_rate
+        _, session_info_len, session_info_offset = struct.unpack_from('iii', header, 12)
+
+        f.seek(session_info_offset)
+        session_info_raw = f.read(session_info_len)
+        session_info_str = session_info_raw.decode('latin-1').rstrip('\x00')
+        info = yaml.safe_load(session_info_str)
+
+    if not info:
+        return {}
+
+    wi = info.get('WeekendInfo', {})
+    di = info.get('DriverInfo', {})
+
+    # Find the player's car in the Drivers list
+    driver_idx = di.get('DriverCarIdx', -1)
+    drivers = di.get('Drivers', [])
+    player_car = {}
+    for d in drivers:
+        if d.get('CarIdx') == driver_idx:
+            player_car = d
+            break
+
+    return {
+        # Track info
+        'track_display_name': wi.get('TrackDisplayName', ''),
+        'track_config_name': wi.get('TrackConfigName', ''),
+        'track_id': wi.get('TrackID', 0),
+        'track_name_internal': wi.get('TrackName', ''),
+        'track_length_km': wi.get('TrackLength', ''),
+        'track_num_turns': wi.get('TrackNumTurns', 0),
+        'track_city': wi.get('TrackCity', ''),
+        'track_state': wi.get('TrackState', ''),
+        'track_country': wi.get('TrackCountry', ''),
+        'track_pit_speed_kph': wi.get('TrackPitSpeedLimit', ''),
+        'track_lat': wi.get('TrackLatitude', ''),
+        'track_lon': wi.get('TrackLongitude', ''),
+        # Car info
+        'car_screen_name': player_car.get('CarScreenName', ''),
+        'car_screen_name_short': player_car.get('CarScreenNameShort', ''),
+        'car_path': player_car.get('CarPath', ''),
+        'car_id': player_car.get('CarID', 0),
+        'car_class_short': player_car.get('CarClassShortName', ''),
+        'car_class_id': player_car.get('CarClassID', 0),
+        # Driver info
+        'driver_name': player_car.get('UserName', ''),
+        'driver_id': di.get('DriverUserID', 0),
+        'driver_car_redline': di.get('DriverCarRedLine', 0),
+        'driver_car_idle_rpm': di.get('DriverCarIdleRPM', 0),
+        'driver_gearbox_type': di.get('DriverGearboxType', ''),
+        'driver_car_fuel_max_ltr': di.get('DriverCarFuelMaxLtr', 0),
+        # Session info
+        'event_type': wi.get('EventType', ''),
+        'series_id': wi.get('SeriesID', 0),
+        'season_id': wi.get('SeasonID', 0),
+        'session_id': wi.get('SessionID', 0),
+        'subsession_id': wi.get('SubSessionID', 0),
+        'official': wi.get('Official', 0),
+        'race_week': wi.get('RaceWeek', 0),
+        # Weather
+        'track_temp_c': wi.get('TrackSurfaceTemp', ''),
+        'air_temp_c': wi.get('TrackAirTemp', ''),
+        'humidity_pct': wi.get('TrackRelativeHumidity', ''),
+    }
+
 def parse_ibt(filepath):
     """Parse .ibt file and return normalized DataFrame."""
     ibt = irsdk.IBT()
@@ -615,6 +692,9 @@ def analyze(filepath):
     if not os.path.exists(filepath):
         return None
 
+    # Parse session metadata from .ibt header (car name, track name, event type)
+    session_info = parse_session_info(filepath)
+
     df, sample_rate, vehicle, venue = parse_ibt(filepath)
     car_class = detect_car_class(vehicle)
     valid_laps = get_valid_laps(df)
@@ -688,6 +768,7 @@ def analyze(filepath):
         'corner_variance': corner_variance,
         'tire_temps': tire_temps,
         'gps_trace': gps_trace,
+        'session_info': session_info,
     }
 
 
