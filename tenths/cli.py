@@ -46,6 +46,11 @@ def main():
             sys.argv = [sys.argv[0]] + sys.argv[2:]
         results_main() if hasattr(sys.modules.get('tenths.results', None), 'main') else None
 
+    elif command == "report":
+        from tenths.report import generate_report_cli
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        generate_report_cli()
+
     elif command in ("--help", "-h", "help"):
         print_help()
 
@@ -68,6 +73,7 @@ Commands:
   process                         Process all pending .ibt files → session notes
   process --dry-run               Preview without writing files
   process <file.ibt>              Process a specific file
+  report <file.ibt>               Generate HTML visual report for a session
   incident <file.ibt> [laps]      Incident forensics (e.g., 2,3,4)
   results <file.json|csv>         Parse iRacing race results
 

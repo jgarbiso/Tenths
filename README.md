@@ -12,6 +12,7 @@ A telemetry analysis and coaching tool for iRacing. Parses `.ibt` files, generat
 - **Corner variance & time loss** — identifies priority corners automatically
 - **Track map integration** — maps telemetry percentages to actual turn names
 - **Session notes generation** — complete markdown coaching reports, zero AI tokens
+- **HTML visual reports** — interactive track heatmap, telemetry charts, hover sync (see below)
 - **Multi-session per day** — practice + qualifying + race combined in one notes file
 - **Race result auto-matching** — finds iRacing results by subsession_id in Downloads
 - **Incident forensics** — spin detection, contact evidence, GPS location
@@ -28,6 +29,9 @@ python -m tenths.process
 # Dry run (preview without writing)
 python -m tenths.process --dry-run
 
+# Generate HTML visual report for a session
+python -m tenths.cli report "path\to\file.ibt"
+
 # Analyze a specific file (prints coaching report to stdout)
 python -m tenths.analyzer "path\to\file.ibt"
 
@@ -37,6 +41,19 @@ python -m tenths.results "path\to\eventresult_12345_0.csv"
 # Incident forensics on specific laps
 python -m tenths.incidents "path\to\file.ibt" 2,3
 ```
+
+## HTML Visual Report
+
+The `tenths report` command (or automatic during `tenths process`) generates a self-contained HTML file with:
+
+- **Track heatmap** — GPS trace colored by speed or brake pressure, with rotation controls
+- **Telemetry traces** — stacked panels (MoTeC-style): Brake+Throttle, Speed
+- **Hover sync** — cursor position syncs between track map and charts in real-time
+- **Race result badge** — prominent P# with iRating delta and podium colors
+- **Data tables** — braking zones, corner variance, lap summary
+- **Corner labels** — turn names displayed directly on the track map
+
+Opens in any browser, no server needed. Uses the "Pit Wall" dark theme (F1 engineering screen aesthetic).
 
 ## How It Works
 
@@ -68,6 +85,7 @@ tenths/
 ├── cli.py               # Entry point (tenths command)
 ├── analyzer.py          # Core analysis engine + analyze() API
 ├── process.py           # Session notes orchestrator (multi-session, results matching)
+├── report.py            # HTML visual report generator (track map, charts, tables)
 ├── track_map.py         # Track map file parser (% → turn names)
 ├── results.py           # iRacing race result parser (CSV + JSON)
 ├── incidents.py         # Incident forensics (spin/contact detection)

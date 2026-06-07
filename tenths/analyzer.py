@@ -396,7 +396,7 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
                 notes.append("Early Shift (Protection Risk)")
             if max_ds_rpm > 7500:
                 notes.append("Over-rev Risk")
-            if apex_rpm < 3500 and min_spd > 20:
+            if apex_rpm < 4000 and min_spd > 40:
                 notes.append("Lugging")
         else:
             # Touring car (M2 CS, etc.) — original logic
@@ -404,7 +404,7 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
                 notes.append("Early Shift")
             if max_ds_rpm > 7000:
                 notes.append("Aggressive Shift")
-            if apex_rpm < 3500 and min_spd > 20:
+            if apex_rpm < 3500 and min_spd > 40:
                 notes.append("Lugging")
 
         b2s_str = f"{brake_to_shift:.2f}s" if brake_to_shift is not None else "N/A"
@@ -758,6 +758,7 @@ def analyze(filepath):
         'best_lap': best_lap,
         'worst_lap': worst_lap,
         'lap_results': lap_results,
+        'lap_abs_totals': [r['abs'] for r in lap_results if r['time'] > 0],
         'abs_trend': {
             'early_avg': early_avg, 'late_avg': late_avg,
             'delta': late_avg - early_avg,
@@ -923,14 +924,14 @@ def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60):
                 notes.append("Early Shift (Protection Risk)")
             if zone_data['max_ds_rpm'] > 7500:
                 notes.append("Over-rev Risk")
-            if zone_data['apex_rpm'] < 3500 and min_spd > 20:
+            if zone_data['apex_rpm'] < 4000 and min_spd > 40:
                 notes.append("Lugging")
         else:
             if zone_data['brake_to_shift'] is not None and zone_data['brake_to_shift'] < 0.2:
                 notes.append("Early Shift")
             if zone_data['max_ds_rpm'] > 7000:
                 notes.append("Aggressive Shift")
-            if zone_data['apex_rpm'] < 3500 and min_spd > 20:
+            if zone_data['apex_rpm'] < 3500 and min_spd > 40:
                 notes.append("Lugging")
         zone_data['notes'] = notes
         zones.append(zone_data)
@@ -1043,26 +1044,42 @@ def _extract_tire_temps(df, lap_num):
     return temps
 
 
-def _extract_gps_trace(df, lap_num):
-    """Extract GPS trace at 10% intervals."""
+def _extract_gps_trace(df, lap_num, dense=True):
+    """Extract GPS trace for track mapping.
+
+    If dense=True (default), returns ~200 points (every 0.5% of lap distance)
+    with full telemetry channels for heatmap visualization.
+    If dense=False, returns the legacy 10-point trace.
+    """
     has_gps = 'Lat' in df.columns and 'Lon' in df.columns
     has_dist = 'LapDist' in df.columns
     if not has_gps:
         return []
 
     lap = df[df['Lap'] == lap_num].copy().reset_index(drop=True)
+    step = 0.5 if dense else 10
     trace = []
-    for pct_target in range(0, 100, 10):
-        section = lap[(lap['LapDistPct'] >= pct_target) & (lap['LapDistPct'] < pct_target + 1)]
+
+    pct_target = 0.0
+    while pct_target < 100.0:
+        section = lap[(lap['LapDistPct'] >= pct_target) & (lap['LapDistPct'] < pct_target + step)]
         if not section.empty:
             row = section.iloc[0]
-            trace.append({
-                'pct': pct_target,
-                'dist': row['LapDist'] if has_dist else 0,
+            point = {
+                'pct': round(pct_target, 1),
                 'lat': row['Lat'],
                 'lon': row['Lon'],
                 'speed_mph': row['Speed'] * 2.237,
-            })
+            }
+            if has_dist:
+                point['dist'] = row['LapDist']
+            if dense:
+                point['brake'] = row['Brake'] if 'Brake' in lap.columns else 0
+                point['throttle'] = row['Throttle'] if 'Throttle' in lap.columns else 0
+                point['gear'] = int(row['Gear']) if 'Gear' in lap.columns else 0
+            trace.append(point)
+        pct_target += step
+
     return trace
 
 

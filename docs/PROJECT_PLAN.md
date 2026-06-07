@@ -85,19 +85,26 @@ tools/
 
 **STATUS: IN PROGRESS**
 
+### Completed:
+
+- [x] Multi-session per day support
+- [x] Race result auto-matching by subsession_id
+- [x] Car/track display names from .ibt header
+- [x] Session type detection (Practice/Qualify/Race)
+- [x] **HTML Visual Report** (`session_report.html`) — see `docs/HTML_REPORT_DESIGN.md`
+
 ### Remaining items:
 
-1. ~~Multi-session per day support~~ ✅ DONE
-2. ~~Race result auto-matching by subsession_id~~ ✅ DONE
-3. ~~Car/track display names from .ibt header~~ ✅ DONE
-4. ~~Session type detection (Practice/Qualify/Race)~~ ✅ DONE
-5. De-duplicate header info (race context appears twice)
-6. Session Progression history table (loads all previous session_notes for same track)
-7. Coaching Summary section (What's Working / What Needs Work — rule-based)
-8. Race Highlights callouts (NEW PB, NEW CLEANEST at top level)
-9. Auto-detect incidents (laps >5s off pace or car stopped) — flag without narrative
-10. Negative Brk2Shft values → show "—"
-11. Targets use turn names not percentages
+1. De-duplicate header info (race context appears twice)
+2. Session Progression history table (loads all previous session_notes for same track)
+3. Coaching Summary section (What's Working / What Needs Work — rule-based)
+4. Race Highlights callouts (NEW PB, NEW CLEANEST at top level)
+5. Auto-detect incidents (laps >5s off pace or car stopped) — flag without narrative
+6. Negative Brk2Shft values → show "—"
+7. Targets use turn names not percentages
+8. Fix: same-date runs overwrite previous session notes (should merge/append)
+9. iRacing OAuth2 integration for auto-pulling race results
+10. Web frontend (FastAPI + HTML/JS) — `tenths serve`
 
 ---
 

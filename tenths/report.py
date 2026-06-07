@@ -1,0 +1,1359 @@
+"""
+HTML Session Report Generator
+==============================
+Generates a self-contained HTML report with:
+- Track heatmap (Leaflet + Leaflet.hotline)
+- Brake trace chart (Chart.js)
+- Hover sync between map and chart
+- Race result badge
+- Data tables (laps, braking zones, corner variance)
+
+All CSS/JS is inline. Opens in any browser with no server.
+
+Usage:
+    from tenths.report import generate_report
+    html = generate_report(data, file_info, track_map, race_result)
+"""
+
+import json
+from tenths.track_map import get_turn_name
+
+
+def generate_report(data, file_info, track_map, race_result=None):
+    """Generate a self-contained HTML session report.
+
+    Args:
+        data: dict from analyzer.analyze()
+        file_info: dict with car, track, date, time keys
+        track_map: track map data from load_track_map()
+        race_result: optional dict from results.parse_result()
+
+    Returns:
+        Complete HTML string ready to write to file.
+    """
+    si = data.get('session_info', {})
+    car_display = si.get('car_screen_name') or file_info['car'].replace('_', ' ')
+    track_display_name = si.get('track_display_name') or file_info['track'].replace('_', ' ').title()
+    track_config = si.get('track_config_name', '')
+    track_display = f"{track_display_name}, {track_config}" if track_config else track_display_name
+    date = file_info['date']
+
+    # Best lap info
+    valid_results = [r for r in data['lap_results'] if r['time'] > 0]
+    best_result = min(valid_results, key=lambda x: x['time'])
+    cleanest_result = min(valid_results, key=lambda x: x['abs'] if x['time'] < best_result['time'] + 3 else 9999)
+
+    # Format best time
+    best_time = best_result['time']
+    best_time_str = f"{int(best_time//60)}:{best_time%60:06.3f}"
+
+    # Prepare JSON data for JS
+    gps_trace = data.get('gps_trace', [])
+    braking_zones = data.get('braking_zones', [])
+
+    # Build braking zones with turn names for JS
+    braking_zones_js = []
+    for z in braking_zones:
+        zone_copy = dict(z)
+        zone_copy['turn_name'] = get_turn_name(track_map, z['pct'])
+        braking_zones_js.append(zone_copy)
+
+    # Corner variance with turn names
+    corner_variance_js = []
+    for cv in data.get('corner_variance', []):
+        cv_copy = dict(cv)
+        cv_copy['turn_name'] = get_turn_name(track_map, cv['pct'])
+        corner_variance_js.append(cv_copy)
+
+    # Trail braking with turn names
+    trail_braking_js = []
+    for tb in data.get('trail_braking', []):
+        tb_copy = dict(tb)
+        tb_copy['turn_name'] = get_turn_name(track_map, tb['pct'])
+        trail_braking_js.append(tb_copy)
+
+    # Race result data
+    race_data = None
+    if race_result and race_result.get('my_result'):
+        me = race_result['my_result']
+        race_data = {
+            'finish_pos': me.get('finish_pos', 0),
+            'start_pos': me.get('start_pos', 0),
+            'entries': race_result.get('entries', 0),
+            'old_irating': me.get('old_irating', 0),
+            'new_irating': me.get('new_irating', 0),
+            'ir_delta': me.get('new_irating', 0) - me.get('old_irating', 0),
+            'incidents': me.get('incidents', 0),
+            'sof': race_result.get('sof', 0),
+            'series': si.get('series_id', ''),
+        }
+
+    # Embed data as JSON
+    report_data = {
+        'car': car_display,
+        'track': track_display,
+        'date': date,
+        'car_class': data.get('car_class', 'Touring'),
+        'best_lap': data.get('best_lap', 0),
+        'best_time': best_time_str,
+        'best_time_seconds': best_time,
+        'cleanest_abs': cleanest_result['abs'],
+        'cleanest_lap': cleanest_result['lap'],
+        'track_length_m': data.get('track_length_m', 0),
+        'valid_laps': len(data.get('valid_laps', [])),
+        'gps_trace': gps_trace,
+        'braking_zones': braking_zones_js,
+        'corner_variance': corner_variance_js,
+        'trail_braking': trail_braking_js,
+        'lap_results': valid_results,
+        'lap_abs_totals': data.get('lap_abs_totals', []),
+        'abs_trend': data.get('abs_trend', {}),
+        'tire_temps': data.get('tire_temps', {}),
+        'race_result': race_data,
+    }
+
+    data_json = json.dumps(report_data, default=str)
+
+    html = _build_html(data_json, car_display, track_display, date, best_time_str, race_data)
+    return html
+
+
+def _build_html(data_json, car, track, date, best_time, race_data):
+    """Build the complete HTML document."""
+
+    # Race result badge HTML
+    race_badge_html = ''
+    if race_data:
+        pos = race_data['finish_pos']
+        entries = race_data['entries']
+        ir_delta = race_data['ir_delta']
+        ir_color = 'var(--accent-green)' if ir_delta >= 0 else 'var(--accent-red)'
+        ir_sign = '+' if ir_delta >= 0 else ''
+
+        # Podium accent colors
+        if pos == 1:
+            pos_color = 'var(--accent-gold)'
+            pos_glow = '#ffd74040'
+        elif pos == 2:
+            pos_color = 'var(--accent-silver)'
+            pos_glow = '#b0bec540'
+        elif pos == 3:
+            pos_color = 'var(--accent-bronze)'
+            pos_glow = '#ff8f0040'
+        else:
+            pos_color = 'var(--text-primary)'
+            pos_glow = 'transparent'
+
+        race_badge_html = f'''
+        <div class="race-badge">
+            <div class="race-pos" style="color: {pos_color}; text-shadow: 0 0 12px {pos_glow};">P{pos}</div>
+            <div class="race-details">
+                <div class="race-field">/ {entries} cars</div>
+                <div class="race-ir" style="color: {ir_color};">iR {ir_sign}{ir_delta}</div>
+            </div>
+        </div>'''
+
+    return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{car} — {track} — {date}</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+{_get_css()}
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <h1 class="title">{car}</h1>
+            <div class="subtitle">{track} — {date}</div>
+        </div>
+        <div class="header-center">
+            <div class="hero-time">{best_time}</div>
+            <div class="hero-label">Best Lap</div>
+        </div>
+        <div class="header-right">
+            {race_badge_html}
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="grid">
+        <!-- Track Map -->
+        <section class="card map-card">
+            <div class="card-header">
+                <h2>Track Map</h2>
+                <div class="map-controls">
+                    <button class="rotate-btn" data-dir="-1" title="Rotate left">↶</button>
+                    <span class="rotate-value" id="rotate-label">90°</span>
+                    <button class="rotate-btn" data-dir="1" title="Rotate right">↷</button>
+                    <div class="toggle-group">
+                        <button class="toggle-btn active" data-mode="speed">Speed</button>
+                        <button class="toggle-btn" data-mode="brake">Brake</button>
+                    </div>
+                </div>
+            </div>
+            <div id="track-map"></div>
+        </section>
+
+        <!-- Session Stats -->
+        <section class="card stats-card">
+            <div class="card-header"><h2>Session</h2></div>
+            <div id="stats-grid"></div>
+        </section>
+
+        <!-- Telemetry Traces (Stacked Panels — MoTeC style) -->
+        <section class="card chart-card">
+            <div class="card-header">
+                <h2>Telemetry — Best Lap</h2>
+                <div class="chart-legend">
+                    <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span>Throttle</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span>Brake</span>
+                    <span class="legend-item"><span class="legend-dot" style="background:#ffab00"></span>Speed</span>
+                </div>
+            </div>
+            <div class="trace-stack">
+                <div class="trace-panel trace-panel-tall">
+                    <span class="trace-label">Brake / Throttle</span>
+                    <canvas id="chart-brake-throttle"></canvas>
+                </div>
+                <div class="trace-panel">
+                    <span class="trace-label">Speed</span>
+                    <canvas id="chart-speed"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tables -->
+        <section class="card table-card">
+            <div class="card-header">
+                <h2>Braking Zones</h2>
+            </div>
+            <div id="braking-table"></div>
+        </section>
+
+        <section class="card table-card">
+            <div class="card-header">
+                <h2>Corner Variance</h2>
+            </div>
+            <div id="variance-table"></div>
+        </section>
+
+        <section class="card table-card">
+            <div class="card-header">
+                <h2>Lap Summary</h2>
+            </div>
+            <div id="lap-table"></div>
+        </section>
+    </main>
+
+    <!-- Hover crosshair indicator -->
+    <div id="crosshair-info" class="crosshair-info"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+const DATA = {data_json};
+    </script>
+    <script>
+{_get_js()}
+    </script>
+</body>
+</html>'''
+
+
+def _get_css():
+    """Return the complete CSS for the report."""
+    return '''
+:root {
+    --bg-base: #0a0a0f;
+    --bg-surface: #12141f;
+    --bg-surface-raised: #1a1d2b;
+    --border: #2a2d3a;
+    --text-primary: #e8eaf0;
+    --text-secondary: #8890a4;
+    --accent-green: #00e676;
+    --accent-red: #ff1744;
+    --accent-amber: #ffab00;
+    --accent-blue: #448aff;
+    --accent-gold: #ffd740;
+    --accent-silver: #b0bec5;
+    --accent-bronze: #ff8f00;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    padding: 12px;
+    min-height: 100vh;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+.header-left { flex: 1; }
+.header-center { text-align: center; flex: 0 0 auto; padding: 0 24px; }
+.header-right { flex: 1; display: flex; justify-content: flex-end; }
+
+.title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+.hero-time {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--accent-green);
+    text-shadow: 0 0 8px #00e67640;
+}
+.hero-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Race Badge */
+.race-badge {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--bg-surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+.race-pos {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 36px;
+    font-weight: 800;
+}
+.race-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.race-field {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.race-ir {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Grid Layout */
+.grid {
+    display: grid;
+    grid-template-columns: 1.4fr 0.6fr;
+    grid-template-rows: auto auto auto;
+    gap: 12px;
+}
+.map-card { grid-column: 1; grid-row: 1; }
+.stats-card { grid-column: 2; grid-row: 1; }
+.chart-card { grid-column: 1 / -1; grid-row: 2; }
+.table-card { break-inside: avoid; }
+
+/* Cards */
+.card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    overflow: hidden;
+}
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.card-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Map */
+#track-map {
+    height: 380px;
+    background: #000;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+.leaflet-container { background: #000 !important; }
+.brake-tooltip {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+    font-size: 11px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    padding: 3px 8px !important;
+    border-radius: 4px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+}
+.brake-tooltip::before { border-top-color: var(--border) !important; }
+.corner-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #e8eaf0 !important;
+    font-size: 10px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-weight: 600 !important;
+    text-shadow: 0 0 4px #000, 0 0 8px #000, 0 1px 2px #000 !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+}
+.corner-label::before { display: none !important; }
+.sf-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #ffffff !important;
+    font-size: 9px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 4px #000, 0 0 8px #000 !important;
+    padding: 0 !important;
+    letter-spacing: 1px;
+}
+.sf-label::before { display: none !important; }
+.direction-arrow { background: transparent !important; border: none !important; }
+
+/* Toggle Buttons */
+.map-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.rotate-btn {
+    width: 26px;
+    height: 26px;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+.rotate-btn:hover { background: var(--bg-surface-raised); }
+.rotate-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-secondary);
+    min-width: 30px;
+    text-align: center;
+}
+.toggle-group {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-base);
+    border-radius: 4px;
+    padding: 2px;
+}
+.toggle-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+}
+.toggle-btn.active {
+    background: var(--bg-surface-raised);
+    color: var(--text-primary);
+}
+.toggle-btn:hover:not(.active) {
+    color: var(--text-primary);
+}
+
+/* Chart — Stacked Panels */
+.trace-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.trace-panel {
+    position: relative;
+    height: 150px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-base);
+}
+.trace-panel-tall { height: 180px; }
+.trace-panel canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+.trace-label {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    font-size: 9px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    z-index: 10;
+    pointer-events: none;
+}
+.chart-legend {
+    display: flex;
+    gap: 12px;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+}
+th {
+    text-align: left;
+    padding: 6px 8px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+}
+td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #1a1d2b;
+    color: var(--text-primary);
+}
+tr:hover td {
+    background: var(--bg-surface-raised);
+}
+.num { text-align: right; }
+.good { color: var(--accent-green); }
+.bad { color: var(--accent-red); }
+.warn { color: var(--accent-amber); }
+.info { color: var(--accent-blue); }
+
+/* Stats Grid */
+#stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.stat-item {
+    padding: 10px;
+    background: var(--bg-base);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+.stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.stat-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* Crosshair Info */
+.crosshair-info {
+    position: fixed;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-primary);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 1000;
+}
+.crosshair-info.visible { opacity: 1; }
+
+/* Responsive */
+@media (max-width: 900px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+    .map-card, .stats-card, .chart-card {
+        grid-column: 1;
+        grid-row: auto;
+    }
+    .header {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+    }
+    .header-right { justify-content: center; }
+}
+'''
+
+
+def _get_js():
+    """Return the complete JavaScript for the report."""
+    return '''
+// ─── State ───────────────────────────────────────────────────────────────
+let hoverPct = null;
+let mapMode = 'speed';  // 'speed' or 'brake'
+let mapRotation = 90;   // degrees clockwise, adjustable
+let map, hotline, cursor;
+let chart;
+
+// ─── Init ────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    renderStats();
+    renderTables();
+    initMap();
+    initChart();
+    initToggle();
+    startHoverLoop();
+});
+
+// ─── Stats Panel ─────────────────────────────────────────────────────────
+function renderStats() {
+    const d = DATA;
+    const grid = document.getElementById('stats-grid');
+    const stats = [
+        { value: d.valid_laps, label: 'Valid Laps' },
+        { value: d.cleanest_abs, label: 'Cleanest ABS' },
+        { value: d.track_length_m > 0 ? (d.track_length_m/1000).toFixed(2) + ' km' : '—', label: 'Track Length' },
+        { value: d.car_class, label: 'Car Class' },
+    ];
+
+    // ABS trend
+    if (d.abs_trend && d.abs_trend.delta !== undefined) {
+        const delta = Math.round(d.abs_trend.delta);
+        const cls = delta < 0 ? 'good' : (delta > 0 ? 'bad' : '');
+        stats.push({ value: `<span class="${cls}">${delta > 0 ? '+' : ''}${delta}</span>`, label: 'ABS Trend', html: true });
+    }
+
+    stats.push({ value: d.braking_zones.length, label: 'Brake Zones' });
+
+    grid.innerHTML = stats.map(s =>
+        `<div class="stat-item">
+            <div class="stat-value">${s.html ? s.value : escHtml(String(s.value))}</div>
+            <div class="stat-label">${s.label}</div>
+        </div>`
+    ).join('');
+}
+
+// ─── Tables ──────────────────────────────────────────────────────────────
+function renderTables() {
+    renderBrakingTable();
+    renderVarianceTable();
+    renderLapTable();
+}
+
+function renderBrakingTable() {
+    const zones = DATA.braking_zones;
+    if (!zones.length) return;
+
+    const isGT4 = DATA.car_class === 'GT4';
+    let headers, rows;
+
+    if (isGT4) {
+        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">ABS</th><th class="num">T2Peak</th><th class="num">Coast</th><th>Notes</th></tr>';
+        rows = zones.map(z => {
+            const absClass = z.abs > 0 ? 'bad' : '';
+            const t2p = z.t2peak != null ? z.t2peak.toFixed(2) + 's' : '—';
+            const t2pClass = z.t2peak != null ? (z.t2peak <= 0.4 ? 'good' : (z.t2peak <= 0.55 ? 'warn' : 'bad')) : '';
+            const coast = z.coast_time != null ? z.coast_time.toFixed(2) + 's' : '—';
+            return `<tr>
+                <td>${z.pct.toFixed(1)}%</td>
+                <td>${escHtml(z.turn_name)}</td>
+                <td class="num">${Math.round(z.entry_mph)} mph</td>
+                <td class="num">${Math.round(z.min_mph)} mph</td>
+                <td class="num ${absClass}">${z.abs}</td>
+                <td class="num ${t2pClass}">${t2p}</td>
+                <td class="num">${coast}</td>
+                <td>${z.notes ? z.notes.join(', ') : ''}</td>
+            </tr>`;
+        }).join('');
+    } else {
+        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">ABS</th><th class="num">Brk2Shft</th><th class="num">Apex RPM</th><th>Notes</th></tr>';
+        rows = zones.map(z => {
+            const absClass = z.abs > 0 ? 'bad' : '';
+            const b2s = z.brake_to_shift != null ? z.brake_to_shift.toFixed(2) + 's' : '—';
+            return `<tr>
+                <td>${z.pct.toFixed(1)}%</td>
+                <td>${escHtml(z.turn_name)}</td>
+                <td class="num">${Math.round(z.entry_mph)} mph</td>
+                <td class="num">${Math.round(z.min_mph)} mph</td>
+                <td class="num ${absClass}">${z.abs}</td>
+                <td class="num">${b2s}</td>
+                <td class="num">${z.apex_rpm > 0 ? Math.round(z.apex_rpm) : '—'}</td>
+                <td>${z.notes ? z.notes.join(', ') : ''}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    document.getElementById('braking-table').innerHTML = `<table><thead>${headers}</thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderVarianceTable() {
+    const cv = DATA.corner_variance;
+    if (!cv.length) {
+        document.getElementById('variance-table').innerHTML = '<p style="color:var(--text-secondary);">Not enough laps for variance analysis.</p>';
+        return;
+    }
+
+    const headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Avg</th><th class="num">Best</th><th class="num">Loss</th><th>Priority</th></tr>';
+    const rows = cv.map(c => {
+        const lossClass = c.loss > 0.5 ? 'bad' : (c.loss > 0.3 ? 'warn' : '');
+        const priority = c.loss > 0.5 ? '<strong class="bad">HIGH</strong>' : (c.loss > 0.3 ? '<span class="warn">Medium</span>' : '');
+        return `<tr>
+            <td>${c.pct.toFixed(1)}%</td>
+            <td>${escHtml(c.turn_name)}</td>
+            <td class="num">${c.avg.toFixed(2)}s</td>
+            <td class="num">${c.best.toFixed(2)}s</td>
+            <td class="num ${lossClass}">${c.loss.toFixed(2)}s</td>
+            <td>${priority}</td>
+        </tr>`;
+    }).join('');
+
+    const total = cv.reduce((sum, c) => sum + c.loss, 0);
+    document.getElementById('variance-table').innerHTML =
+        `<table><thead>${headers}</thead><tbody>${rows}</tbody></table>
+         <div style="margin-top:8px;font-size:11px;color:var(--text-secondary)">Total recoverable: <span class="info">${total.toFixed(2)}s</span></div>`;
+}
+
+function renderLapTable() {
+    const laps = DATA.lap_results;
+    if (!laps.length) return;
+
+    const bestLap = DATA.best_lap;
+    const headers = '<tr><th>Lap</th><th class="num">Time</th><th class="num">ABS</th><th class="num">Max Speed</th></tr>';
+    const rows = laps.map(l => {
+        const isBest = l.lap === bestLap;
+        const time = l.time > 0 ? `${Math.floor(l.time/60)}:${(l.time%60).toFixed(1).padStart(4,'0')}` : '—';
+        return `<tr${isBest ? ' style="background:var(--bg-surface-raised)"' : ''}>
+            <td>${l.lap}${isBest ? ' ★' : ''}</td>
+            <td class="num${isBest ? ' good' : ''}">${time}</td>
+            <td class="num">${l.abs}</td>
+            <td class="num">${Math.round(l.max_speed_mph)} mph</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('lap-table').innerHTML = `<table><thead>${headers}</thead><tbody>${rows}</tbody></table>`;
+}
+
+// ─── Track Map (Leaflet) ─────────────────────────────────────────────────
+function initMap() {
+    const trace = DATA.gps_trace;
+    if (!trace.length) {
+        document.getElementById('track-map').innerHTML = '<p style="padding:20px;color:var(--text-secondary);">No GPS data available.</p>';
+        return;
+    }
+
+    // Rotate coordinates to match iRacing overhead view
+    const rotatedTrace = rotateTrace(trace, mapRotation);
+    const rotatedBraking = DATA.braking_zones.map(z => {
+        if (z.lat && z.lon) {
+            const [rlat, rlon] = rotatePoint(z.lat, z.lon, trace, mapRotation);
+            return { ...z, rlat, rlon };
+        }
+        return z;
+    });
+
+    // Calculate bounds from rotated coords
+    const lats = rotatedTrace.map(p => p.rlat);
+    const lons = rotatedTrace.map(p => p.rlon);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+
+    const bounds = L.latLngBounds([minLat, minLon], [maxLat, maxLon]);
+    const center = bounds.getCenter();
+
+    map = L.map('track-map', {
+        center: center,
+        zoom: 14,
+        zoomControl: false,
+        attributionControl: false,
+        dragging: true,
+        scrollWheelZoom: true,
+        zoomSnap: 0.25,
+        zoomDelta: 0.5,
+    });
+
+    map.getContainer().style.background = '#000';
+
+    drawTrackLine(rotatedTrace);
+
+    // Cursor marker
+    cursor = L.circleMarker([rotatedTrace[0].rlat, rotatedTrace[0].rlon], {
+        radius: 7,
+        color: '#ffffff',
+        fillColor: '#ffffff',
+        fillOpacity: 1,
+        weight: 2,
+        opacity: 0,
+    }).addTo(map);
+
+    // Corner labels + brake markers
+    rotatedBraking.forEach(z => {
+        if (z.rlat && z.rlon) {
+            L.circleMarker([z.rlat, z.rlon], {
+                radius: 6,
+                color: '#ff1744',
+                fillColor: '#ff1744',
+                fillOpacity: 0.9,
+                weight: 2,
+            }).addTo(map);
+
+            const label = L.tooltip({
+                permanent: true,
+                direction: 'top',
+                className: 'corner-label',
+                offset: [0, -12],
+            });
+            label.setContent(z.turn_name);
+            label.setLatLng([z.rlat, z.rlon]);
+            label.addTo(map);
+        }
+    });
+
+    // Direction arrow
+    if (rotatedTrace.length > 5) {
+        const startPt = rotatedTrace[0];
+        const nextPt = rotatedTrace[4];
+        const angle = Math.atan2(nextPt.rlon - startPt.rlon, nextPt.rlat - startPt.rlat) * (180 / Math.PI);
+
+        const arrowPt = rotatedTrace[4];
+        const arrowIcon = L.divIcon({
+            className: 'direction-arrow',
+            html: `<svg width="24" height="24" viewBox="0 0 24 24" style="transform: rotate(${90 - angle}deg);">
+                <polygon points="12,2 20,18 12,14 4,18" fill="#ffffff" opacity="0.9"/>
+            </svg>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+        });
+        L.marker([arrowPt.rlat, arrowPt.rlon], { icon: arrowIcon, interactive: false }).addTo(map);
+
+        // S/F marker
+        L.circleMarker([startPt.rlat, startPt.rlon], {
+            radius: 5, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 0.8, weight: 2,
+        }).addTo(map);
+        const sfLabel = L.tooltip({ permanent: true, direction: 'bottom', className: 'sf-label', offset: [0, 8] });
+        sfLabel.setContent('S/F');
+        sfLabel.setLatLng([startPt.rlat, startPt.rlon]);
+        sfLabel.addTo(map);
+    }
+
+    // Fit bounds
+    setTimeout(() => {
+        map.invalidateSize();
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 18, animate: false });
+    }, 50);
+
+    // Mouse events — use rotated coords for lookup
+    map.on('mousemove', (e) => onMapHoverRotated(e, rotatedTrace));
+    map.on('mouseout', () => { hoverPct = null; });
+
+    // Store rotated trace for hover sync
+    window.__rotatedTrace = rotatedTrace;
+}
+
+// Rotate all trace points around center by given degrees clockwise
+function rotateTrace(trace, deg) {
+    const lats = trace.map(p => p.lat);
+    const lons = trace.map(p => p.lon);
+    const cLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+    const cLon = (Math.min(...lons) + Math.max(...lons)) / 2;
+    const rad = -deg * Math.PI / 180;  // negative for clockwise
+
+    return trace.map(p => {
+        const dLat = p.lat - cLat;
+        const dLon = p.lon - cLon;
+        const rlat = cLat + dLat * Math.cos(rad) - dLon * Math.sin(rad);
+        const rlon = cLon + dLat * Math.sin(rad) + dLon * Math.cos(rad);
+        return { ...p, rlat, rlon };
+    });
+}
+
+function rotatePoint(lat, lon, trace, deg) {
+    const lats = trace.map(p => p.lat);
+    const lons = trace.map(p => p.lon);
+    const cLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+    const cLon = (Math.min(...lons) + Math.max(...lons)) / 2;
+    const rad = -deg * Math.PI / 180;
+    const dLat = lat - cLat;
+    const dLon = lon - cLon;
+    return [
+        cLat + dLat * Math.cos(rad) - dLon * Math.sin(rad),
+        cLon + dLat * Math.sin(rad) + dLon * Math.cos(rad),
+    ];
+}
+
+function onMapHoverRotated(e, rotatedTrace) {
+    if (!rotatedTrace.length) return;
+    const latlng = e.latlng;
+    let minDist = Infinity, closestIdx = 0;
+    for (let i = 0; i < rotatedTrace.length; i++) {
+        const dx = rotatedTrace[i].rlat - latlng.lat;
+        const dy = rotatedTrace[i].rlon - latlng.lng;
+        const d = dx*dx + dy*dy;
+        if (d < minDist) { minDist = d; closestIdx = i; }
+    }
+    hoverPct = rotatedTrace[closestIdx].pct;
+}
+
+function drawTrackLine(rotatedTrace) {
+    const trace = rotatedTrace || window.__rotatedTrace || DATA.gps_trace;
+
+    // Remove existing hotline if any
+    if (hotline) { map.removeLayer(hotline); }
+
+    // Build coords with color value
+    const coords = trace.map(p => {
+        const lat = p.rlat || p.lat;
+        const lon = p.rlon || p.lon;
+        let val;
+        if (mapMode === 'speed') {
+            const speeds = DATA.gps_trace.map(t => t.speed_mph);
+            const minSpd = Math.min(...speeds), maxSpd = Math.max(...speeds);
+            val = maxSpd > minSpd ? (p.speed_mph - minSpd) / (maxSpd - minSpd) : 0.5;
+        } else {
+            val = (p.brake || 0) / 100;
+        }
+        return [lat, lon, val];
+    });
+
+    // Draw with manual color interpolation using polyline segments
+    const segments = [];
+    for (let i = 0; i < coords.length - 1; i++) {
+        const val = coords[i][2];
+        const color = mapMode === 'speed' ? speedColor(val) : brakeColor(val);
+        const seg = L.polyline(
+            [[coords[i][0], coords[i][1]], [coords[i+1][0], coords[i+1][1]]],
+            { color: color, weight: 6, opacity: 0.95 }
+        );
+        segments.push(seg);
+    }
+    // Close the loop
+    if (coords.length > 2) {
+        const lastVal = coords[coords.length-1][2];
+        const lastColor = mapMode === 'speed' ? speedColor(lastVal) : brakeColor(lastVal);
+        segments.push(L.polyline(
+            [[coords[coords.length-1][0], coords[coords.length-1][1]], [coords[0][0], coords[0][1]]],
+            { color: lastColor, weight: 6, opacity: 0.95 }
+        ));
+    }
+
+    hotline = L.layerGroup(segments).addTo(map);
+}
+
+function speedColor(val) {
+    // 0 (slow/braking) = red, 0.5 (coast) = amber, 1 (fast) = green
+    if (val < 0.5) {
+        const t = val / 0.5;
+        return lerpColor('#ff1744', '#ffab00', t);
+    } else {
+        const t = (val - 0.5) / 0.5;
+        return lerpColor('#ffab00', '#00e676', t);
+    }
+}
+
+function brakeColor(val) {
+    // 0 (no brake) = dark grey, 1 (full brake) = bright red
+    if (val < 0.05) return '#333333';
+    return lerpColor('#555555', '#ff1744', Math.min(val * 1.2, 1));
+}
+
+function lerpColor(a, b, t) {
+    const ah = parseInt(a.slice(1), 16);
+    const bh = parseInt(b.slice(1), 16);
+    const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
+    const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
+    const rr = Math.round(ar + (br - ar) * t);
+    const rg = Math.round(ag + (bg - ag) * t);
+    const rb = Math.round(ab + (bb - ab) * t);
+    return `#${((rr << 16) | (rg << 8) | rb).toString(16).padStart(6, '0')}`;
+}
+
+// ─── Telemetry Charts (Stacked Panels — MoTeC style) ────────────────────
+let charts = [];
+
+function initChart() {
+    const trace = DATA.gps_trace;
+    if (!trace.length) return;
+
+    const labels = trace.map(p => p.pct.toFixed(1));
+    const maxSpeed = Math.max(...trace.map(p => p.speed_mph));
+
+    // Vertical line plugin (crosshair synced across all panels)
+    const crosshairPlugin = {
+        id: 'crosshair',
+        afterDraw: (chart) => {
+            if (hoverPct === null) return;
+            const traceData = DATA.gps_trace;
+            let idx = 0, minDiff = Infinity;
+            for (let i = 0; i < traceData.length; i++) {
+                const diff = Math.abs(traceData[i].pct - hoverPct);
+                if (diff < minDiff) { minDiff = diff; idx = i; }
+            }
+            const meta = chart.getDatasetMeta(0);
+            if (!meta.data[idx]) return;
+            const x = meta.data[idx].x;
+            const ctx = chart.ctx;
+            const yAxis = chart.scales.y;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(x, yAxis.top);
+            ctx.lineTo(x, yAxis.bottom);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#ffffff60';
+            ctx.stroke();
+            ctx.restore();
+        }
+    };
+
+    // Shared options factory
+    function makeOpts(showXAxis, max, tickSuffix) {
+        // For percentage axes (0-100), show every 25%
+        // For speed, show every 10 mph
+        const stepSize = max === 100 ? 25 : 10;
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: {
+                x: {
+                    display: showXAxis,
+                    ticks: { color: '#8890a4', font: { size: 8 }, maxTicksLimit: 20 },
+                    grid: { color: '#1a1d2b', drawBorder: false },
+                    ...(showXAxis ? { title: { display: true, text: 'Lap Distance %', color: '#8890a4', font: { size: 9 } } } : {}),
+                },
+                y: {
+                    display: true,
+                    position: 'right',
+                    min: 0,
+                    max: max,
+                    ticks: {
+                        color: '#8890a4',
+                        font: { size: 8 },
+                        stepSize: stepSize,
+                        callback: (v) => v + tickSuffix,
+                    },
+                    grid: { color: '#1a1d2b', drawBorder: false },
+                }
+            },
+            onHover: (event, elements) => {
+                if (elements.length > 0) {
+                    hoverPct = DATA.gps_trace[elements[0].index].pct;
+                }
+            }
+        };
+    }
+
+    // Brake + Throttle panel (combined — they share 0-100% scale)
+    charts.push(new Chart(document.getElementById('chart-brake-throttle').getContext('2d'), {
+        type: 'line',
+        plugins: [crosshairPlugin],
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    data: trace.map(p => p.throttle || 0),
+                    borderColor: '#00e676',
+                    backgroundColor: '#00e67618',
+                    fill: true,
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0,
+                    order: 2,
+                },
+                {
+                    data: trace.map(p => p.brake || 0),
+                    borderColor: '#ff1744',
+                    backgroundColor: '#ff174430',
+                    fill: true,
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0,
+                    order: 1,
+                },
+            ]
+        },
+        options: makeOpts(false, 100, '%'),
+    }));
+
+    // Speed panel (orange)
+    charts.push(new Chart(document.getElementById('chart-speed').getContext('2d'), {
+        type: 'line',
+        plugins: [crosshairPlugin],
+        data: {
+            labels: labels,
+            datasets: [{
+                data: trace.map(p => p.speed_mph),
+                borderColor: '#ffab00',
+                backgroundColor: '#ffab0015',
+                fill: true,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.15,
+            }]
+        },
+        options: makeOpts(true, Math.ceil(maxSpeed / 10) * 10, ''),
+    }));
+}
+
+// ─── Toggle ──────────────────────────────────────────────────────────────
+function initToggle() {
+    document.querySelectorAll('.toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            mapMode = btn.dataset.mode;
+            drawTrackLine(window.__rotatedTrace);
+        });
+    });
+
+    // Rotation controls
+    document.querySelectorAll('.rotate-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const dir = parseInt(btn.dataset.dir);
+            mapRotation = (mapRotation + dir * 15 + 360) % 360;
+            document.getElementById('rotate-label').textContent = mapRotation + '°';
+            rebuildMap();
+        });
+    });
+}
+
+function rebuildMap() {
+    // Clear all layers except tile layer
+    map.eachLayer(l => map.removeLayer(l));
+    hotline = null;
+
+    const trace = DATA.gps_trace;
+    const rotatedTrace = rotateTrace(trace, mapRotation);
+    const rotatedBraking = DATA.braking_zones.map(z => {
+        if (z.lat && z.lon) {
+            const [rlat, rlon] = rotatePoint(z.lat, z.lon, trace, mapRotation);
+            return { ...z, rlat, rlon };
+        }
+        return z;
+    });
+
+    window.__rotatedTrace = rotatedTrace;
+
+    // Recalculate bounds
+    const lats = rotatedTrace.map(p => p.rlat);
+    const lons = rotatedTrace.map(p => p.rlon);
+    const bounds = L.latLngBounds([Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]);
+
+    drawTrackLine(rotatedTrace);
+
+    // Cursor
+    cursor = L.circleMarker([rotatedTrace[0].rlat, rotatedTrace[0].rlon], {
+        radius: 7, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 1, weight: 2, opacity: 0,
+    }).addTo(map);
+
+    // Corner labels
+    rotatedBraking.forEach(z => {
+        if (z.rlat && z.rlon) {
+            L.circleMarker([z.rlat, z.rlon], {
+                radius: 6, color: '#ff1744', fillColor: '#ff1744', fillOpacity: 0.9, weight: 2,
+            }).addTo(map);
+            const label = L.tooltip({ permanent: true, direction: 'top', className: 'corner-label', offset: [0, -12] });
+            label.setContent(z.turn_name);
+            label.setLatLng([z.rlat, z.rlon]);
+            label.addTo(map);
+        }
+    });
+
+    // Direction arrow
+    if (rotatedTrace.length > 5) {
+        const startPt = rotatedTrace[0];
+        const nextPt = rotatedTrace[4];
+        const angle = Math.atan2(nextPt.rlon - startPt.rlon, nextPt.rlat - startPt.rlat) * (180 / Math.PI);
+        const arrowPt = rotatedTrace[4];
+        const arrowIcon = L.divIcon({
+            className: 'direction-arrow',
+            html: `<svg width="24" height="24" viewBox="0 0 24 24" style="transform: rotate(${90 - angle}deg);"><polygon points="12,2 20,18 12,14 4,18" fill="#ffffff" opacity="0.9"/></svg>`,
+            iconSize: [24, 24], iconAnchor: [12, 12],
+        });
+        L.marker([arrowPt.rlat, arrowPt.rlon], { icon: arrowIcon, interactive: false }).addTo(map);
+        L.circleMarker([startPt.rlat, startPt.rlon], { radius: 5, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 0.8, weight: 2 }).addTo(map);
+        const sfLabel = L.tooltip({ permanent: true, direction: 'bottom', className: 'sf-label', offset: [0, 8] });
+        sfLabel.setContent('S/F');
+        sfLabel.setLatLng([startPt.rlat, startPt.rlon]);
+        sfLabel.addTo(map);
+    }
+
+    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 18, animate: true });
+}
+
+// ─── Hover Sync Loop (rAF) ──────────────────────────────────────────────
+function startHoverLoop() {
+    let lastPct = null;
+    const info = document.getElementById('crosshair-info');
+
+    function tick() {
+        if (hoverPct !== lastPct) {
+            lastPct = hoverPct;
+
+            if (hoverPct !== null && DATA.gps_trace.length > 0) {
+                // Find the trace point closest to hoverPct
+                let closest = DATA.gps_trace[0];
+                let minDiff = Infinity;
+                for (const p of DATA.gps_trace) {
+                    const diff = Math.abs(p.pct - hoverPct);
+                    if (diff < minDiff) { minDiff = diff; closest = p; }
+                }
+
+                // Update map cursor
+                if (cursor && map && window.__rotatedTrace) {
+                    const rt = window.__rotatedTrace;
+                    let closestRt = rt[0];
+                    let minD = Infinity;
+                    for (const p of rt) {
+                        const diff = Math.abs(p.pct - hoverPct);
+                        if (diff < minD) { minD = diff; closestRt = p; }
+                    }
+                    cursor.setLatLng([closestRt.rlat, closestRt.rlon]);
+                    cursor.setStyle({ opacity: 1, fillOpacity: 1 });
+                }
+
+                // Update crosshair on all charts
+                charts.forEach(c => c.draw());
+
+                // Update info bar
+                info.classList.add('visible');
+                info.innerHTML = `${hoverPct.toFixed(1)}% — ${Math.round(closest.speed_mph)} mph — Brake: ${Math.round(closest.brake || 0)}% — Throttle: ${Math.round(closest.throttle || 0)}%`;
+
+            } else {
+                if (cursor) cursor.setStyle({ opacity: 0, fillOpacity: 0 });
+                info.classList.remove('visible');
+                charts.forEach(c => c.draw());
+            }
+        }
+        requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────
+function escHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
+'''
+
+
+# ─── CLI Entry Point ──────────────────────────────────────────────────────────
+
+def generate_report_cli():
+    """CLI entry point: tenths report <file.ibt>"""
+    import sys
+    import os
+
+    if len(sys.argv) < 2:
+        print("Usage: tenths report <file.ibt>")
+        print("  Generates session_report.html in the session output directory.")
+        return
+
+    filepath = sys.argv[1]
+    if not os.path.exists(filepath):
+        print(f"File not found: {filepath}")
+        return
+
+    from tenths.analyzer import analyze
+    from tenths.track_map import load_track_map
+    from tenths.process import parse_filename, find_race_result, TELEMETRY_ROOT
+
+    print(f"Analyzing: {os.path.basename(filepath)}")
+    data = analyze(filepath)
+    if not data:
+        print("No valid laps found.")
+        return
+
+    # Parse file info
+    file_info = parse_filename(filepath)
+    if not file_info:
+        # Fallback: minimal file_info
+        basename = os.path.splitext(os.path.basename(filepath))[0]
+        file_info = {'car': 'Unknown', 'track': 'Unknown', 'date': 'Unknown', 'time': '00-00-00', 'filename': basename}
+
+    # Load track map
+    track_map = load_track_map(file_info['track'])
+
+    # Try to find race result
+    race_result = None
+    si = data.get('session_info', {})
+    result_file = find_race_result(si)
+    if result_file:
+        from tenths.results import parse_result
+        race_result = parse_result(result_file)
+
+    # Generate report
+    html = generate_report(data, file_info, track_map, race_result)
+
+    # Write to session directory
+    session_dir = os.path.join(TELEMETRY_ROOT, file_info['car'], file_info['track'], file_info['date'])
+    os.makedirs(session_dir, exist_ok=True)
+    report_path = os.path.join(session_dir, "session_report.html")
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.write(html)
+
+    print(f"Report generated: {report_path}")
+    print(f"  Track map points: {len(data.get('gps_trace', []))}")
+    print(f"  Braking zones: {len(data.get('braking_zones', []))}")
+    print(f"  Open in browser to view.")

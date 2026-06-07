@@ -29,6 +29,7 @@ import sys
 
 from tenths.analyzer import analyze, fmt_time, parse_ibt
 from tenths.track_map import load_track_map, get_turn_name
+from tenths.report import generate_report
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TELEMETRY_ROOT = os.environ.get('TENTHS_TELEMETRY_ROOT', r"c:\Users\justi\Documents\iRacing\telemetry")
@@ -657,6 +658,20 @@ def main():
             with open(notes_path, 'w', encoding='utf-8') as f:
                 f.write(notes_content)
             print(f"\n  Created: {notes_path} ({len(sessions)} session(s))")
+
+            # Generate HTML report for the best session of the day
+            # Use the session with the fastest best lap
+            best_session = max(sessions, key=lambda s: -min(
+                (r['time'] for r in s[1]['lap_results'] if r['time'] > 0), default=9999))
+            best_fi, best_data, best_rr = best_session
+            try:
+                report_html = generate_report(best_data, best_fi, track_map, best_rr)
+                report_path = os.path.join(session_dir, "session_report.html")
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    f.write(report_html)
+                print(f"  Created: session_report.html")
+            except Exception as e:
+                print(f"  Warning: HTML report generation failed: {e}")
 
             # Copy race result file to session dir if found
             for file_info, data, race_result in sessions:
