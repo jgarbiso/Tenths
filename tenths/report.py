@@ -195,9 +195,9 @@ def _build_html(data_json, car, track, date, best_time, race_data):
             <div class="card-header">
                 <h2>Track Map</h2>
                 <div class="map-controls">
-                    <button class="rotate-btn" data-dir="-1" title="Rotate left">↶</button>
+                    <button class="rotate-btn" data-dir="1" title="Rotate left">↶</button>
                     <span class="rotate-value" id="rotate-label">90°</span>
-                    <button class="rotate-btn" data-dir="1" title="Rotate right">↷</button>
+                    <button class="rotate-btn" data-dir="-1" title="Rotate right">↷</button>
                     <div class="toggle-group">
                         <button class="toggle-btn active" data-mode="speed">Speed</button>
                         <button class="toggle-btn" data-mode="brake">Brake</button>
@@ -206,6 +206,14 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                 </div>
             </div>
             <div id="track-map"></div>
+            <div id="brake-points-legend" class="bp-legend" style="display:none;">
+                <span class="bp-legend-title">Brake Points</span>
+                <div class="bp-legend-bar">
+                    <span class="bp-legend-label">Early laps</span>
+                    <div class="bp-legend-gradient"></div>
+                    <span class="bp-legend-label">Late laps</span>
+                </div>
+            </div>
         </section>
 
         <!-- Session Stats -->
@@ -465,6 +473,44 @@ body {
     padding: 0 !important;
 }
 .spread-label::before { display: none !important; }
+
+/* Brake Points Legend */
+.bp-legend {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    margin-top: 6px;
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+.bp-legend-title {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+.bp-legend-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+.bp-legend-gradient {
+    height: 8px;
+    flex: 1;
+    min-width: 80px;
+    border-radius: 4px;
+    background: linear-gradient(to right, #448aff, #7c6dd8, #b8508a, #e6a030, #ffab00);
+}
+.bp-legend-label {
+    font-size: 9px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
 
 /* Toggle Buttons */
 .map-controls {
@@ -1188,6 +1234,7 @@ function initToggle() {
             btn.classList.add('active');
             mapMode = btn.dataset.mode;
             drawTrackLine(window.__rotatedTrace);
+            if (showBrakePoints) renderBrakePoints();
         });
     });
 
@@ -1207,6 +1254,7 @@ function initToggle() {
         bpBtn.addEventListener('click', () => {
             showBrakePoints = !showBrakePoints;
             bpBtn.classList.toggle('active', showBrakePoints);
+            document.getElementById('brake-points-legend').style.display = showBrakePoints ? 'flex' : 'none';
             renderBrakePoints();
         });
     }
@@ -1276,6 +1324,9 @@ function rebuildMap() {
     }
 
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 18, animate: true });
+
+    // Re-render brake points if active
+    if (showBrakePoints) renderBrakePoints();
 }
 
 // ─── Brake Points Overlay ────────────────────────────────────────────────
@@ -1287,6 +1338,12 @@ function renderBrakePoints() {
     }
 
     if (!showBrakePoints || !DATA.per_lap_brake_points || !DATA.per_lap_brake_points.length) return;
+
+    // Create a custom pane with higher z-index for brake points
+    if (!map.getPane('brakePointsPane')) {
+        map.createPane('brakePointsPane');
+        map.getPane('brakePointsPane').style.zIndex = 650;  // above default marker pane (600)
+    }
 
     const trace = DATA.gps_trace;
     const markers = [];
@@ -1315,6 +1372,7 @@ function renderBrakePoints() {
                 fillColor: color,
                 fillOpacity: 0.9,
                 weight: 1.5,
+                pane: 'brakePointsPane',
             }).bindTooltip(
                 `Lap ${entry.lap} — ${entry.entry_pct.toFixed(1)}% — ${Math.round(entry.speed_mph)} mph`,
                 { direction: 'top', className: 'corner-label', offset: [0, -6] }
@@ -1342,6 +1400,8 @@ function renderBrakePoints() {
     });
 
     brakePointsLayer = L.layerGroup(markers).addTo(map);
+    // Ensure brake points render on top of the track line
+    brakePointsLayer.eachLayer(l => { if (l.bringToFront) l.bringToFront(); });
 }
 
 // ─── Hover Sync Loop (rAF) ──────────────────────────────────────────────
