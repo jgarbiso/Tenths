@@ -740,6 +740,9 @@ def analyze(filepath):
     # GPS trace
     gps_trace = _extract_gps_trace(df, best_lap)
 
+    # Per-lap brake points (for consistency overlay)
+    per_lap_brake_points = _extract_per_lap_brake_points(df, valid_laps, braking_zones)
+
     # Track length
     track_length = 0
     if 'LapDist' in df.columns:
@@ -769,6 +772,7 @@ def analyze(filepath):
         'corner_variance': corner_variance,
         'tire_temps': tire_temps,
         'gps_trace': gps_trace,
+        'per_lap_brake_points': per_lap_brake_points,
         'session_info': session_info,
     }
 
@@ -1042,6 +1046,79 @@ def _extract_tire_temps(df, lap_num):
             'avg': (i*9/5+32 + m*9/5+32 + o*9/5+32) / 3
         }
     return temps
+
+
+def _extract_per_lap_brake_points(df, valid_laps, braking_zones):
+    """Extract the GPS coordinates where braking begins on each lap for each zone.
+
+    For each braking zone (from best-lap analysis), finds where Brake first
+    crosses 15% on every valid lap. Returns per-zone clusters for consistency
+    visualization on the track map.
+    """
+    has_gps = 'Lat' in df.columns and 'Lon' in df.columns
+    has_dist = 'LapDist' in df.columns
+    if not has_gps or not braking_zones:
+        return []
+
+    # Get track length for spread-in-meters calculation
+    track_length_m = 0
+    if has_dist:
+        sample_lap = df[df['Lap'] == valid_laps[0]]
+        if not sample_lap.empty:
+            track_length_m = sample_lap['LapDist'].max()
+
+    results = []
+    for zone in braking_zones:
+        zone_center = zone['pct']
+        # Define a search window around the known braking zone (±8% of track)
+        search_min = zone_center - 8
+        search_max = zone_center + 3  # braking starts before zone center
+
+        entries = []
+        for lap_num in valid_laps:
+            lap_data = df[df['Lap'] == lap_num].copy()
+            if lap_data.empty:
+                continue
+
+            # Find samples in the zone's approach region
+            approach = lap_data[
+                (lap_data['LapDistPct'] >= search_min) &
+                (lap_data['LapDistPct'] <= search_max)
+            ]
+            if approach.empty:
+                continue
+
+            # Find first sample where Brake > 15% (braking point)
+            braking_start = approach[approach['Brake'] > 15]
+            if braking_start.empty:
+                continue
+
+            first_brake = braking_start.iloc[0]
+            entries.append({
+                'lap': int(lap_num),
+                'entry_pct': float(first_brake['LapDistPct']),
+                'lat': float(first_brake['Lat']),
+                'lon': float(first_brake['Lon']),
+                'speed_mph': float(first_brake['Speed'] * 2.237),
+            })
+
+        if not entries:
+            continue
+
+        # Calculate spread (consistency metric)
+        entry_pcts = [e['entry_pct'] for e in entries]
+        spread_pct = float(np.std(entry_pcts)) if len(entry_pcts) > 1 else 0.0
+        spread_meters = spread_pct * track_length_m / 100.0 if track_length_m > 0 else 0.0
+
+        results.append({
+            'zone_pct': zone_center,
+            'turn_name': '',  # filled in by report.py with track_map lookup
+            'entries': entries,
+            'spread_pct': round(spread_pct, 2),
+            'spread_meters': round(spread_meters, 1),
+        })
+
+    return results
 
 
 def _extract_gps_trace(df, lap_num, dense=True):

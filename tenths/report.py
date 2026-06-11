@@ -89,6 +89,13 @@ def generate_report(data, file_info, track_map, race_result=None):
         }
 
     # Embed data as JSON
+    # Per-lap brake points with turn names
+    per_lap_brake_points_js = []
+    for bp in data.get('per_lap_brake_points', []):
+        bp_copy = dict(bp)
+        bp_copy['turn_name'] = get_turn_name(track_map, bp['zone_pct'])
+        per_lap_brake_points_js.append(bp_copy)
+
     report_data = {
         'car': car_display,
         'track': track_display,
@@ -105,6 +112,7 @@ def generate_report(data, file_info, track_map, race_result=None):
         'braking_zones': braking_zones_js,
         'corner_variance': corner_variance_js,
         'trail_braking': trail_braking_js,
+        'per_lap_brake_points': per_lap_brake_points_js,
         'lap_results': valid_results,
         'lap_abs_totals': data.get('lap_abs_totals', []),
         'abs_trend': data.get('abs_trend', {}),
@@ -194,6 +202,7 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                         <button class="toggle-btn active" data-mode="speed">Speed</button>
                         <button class="toggle-btn" data-mode="brake">Brake</button>
                     </div>
+                    <button class="toggle-btn" id="brake-points-toggle" title="Show per-lap braking entry points">Brake Points</button>
                 </div>
             </div>
             <div id="track-map"></div>
@@ -445,6 +454,17 @@ body {
 }
 .sf-label::before { display: none !important; }
 .direction-arrow { background: transparent !important; border: none !important; }
+.spread-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 9px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 4px #000, 0 0 8px #000 !important;
+    padding: 0 !important;
+}
+.spread-label::before { display: none !important; }
 
 /* Toggle Buttons */
 .map-controls {
@@ -651,6 +671,8 @@ def _get_js():
 let hoverPct = null;
 let mapMode = 'speed';  // 'speed' or 'brake'
 let mapRotation = 90;   // degrees clockwise, adjustable
+let showBrakePoints = false;
+let brakePointsLayer = null;
 let map, hotline, cursor;
 let chart;
 
@@ -868,19 +890,23 @@ function initMap() {
     });
 
     // Direction arrow
-    if (rotatedTrace.length > 5) {
+    if (rotatedTrace.length > 10) {
         const startPt = rotatedTrace[0];
-        const nextPt = rotatedTrace[4];
-        const angle = Math.atan2(nextPt.rlon - startPt.rlon, nextPt.rlat - startPt.rlat) * (180 / Math.PI);
+        const nextPt = rotatedTrace[10];  // 5% ahead for clear direction
+        // Leaflet renders lat as Y (up) and lon as X (right)
+        // atan2(dx, dy) gives angle from north, clockwise positive
+        const dx = nextPt.rlon - startPt.rlon;
+        const dy = nextPt.rlat - startPt.rlat;
+        const angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
 
-        const arrowPt = rotatedTrace[4];
+        const arrowPt = rotatedTrace[5];
         const arrowIcon = L.divIcon({
             className: 'direction-arrow',
-            html: `<svg width="24" height="24" viewBox="0 0 24 24" style="transform: rotate(${90 - angle}deg);">
-                <polygon points="12,2 20,18 12,14 4,18" fill="#ffffff" opacity="0.9"/>
+            html: `<svg width="28" height="28" viewBox="0 0 24 24" style="transform: rotate(${angleDeg}deg);">
+                <polygon points="12,2 20,18 12,14 4,18" fill="#ffffff" opacity="0.95"/>
             </svg>`,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
         });
         L.marker([arrowPt.rlat, arrowPt.rlon], { icon: arrowIcon, interactive: false }).addTo(map);
 
@@ -1174,6 +1200,16 @@ function initToggle() {
             rebuildMap();
         });
     });
+
+    // Brake Points toggle
+    const bpBtn = document.getElementById('brake-points-toggle');
+    if (bpBtn) {
+        bpBtn.addEventListener('click', () => {
+            showBrakePoints = !showBrakePoints;
+            bpBtn.classList.toggle('active', showBrakePoints);
+            renderBrakePoints();
+        });
+    }
 }
 
 function rebuildMap() {
@@ -1219,15 +1255,17 @@ function rebuildMap() {
     });
 
     // Direction arrow
-    if (rotatedTrace.length > 5) {
+    if (rotatedTrace.length > 10) {
         const startPt = rotatedTrace[0];
-        const nextPt = rotatedTrace[4];
-        const angle = Math.atan2(nextPt.rlon - startPt.rlon, nextPt.rlat - startPt.rlat) * (180 / Math.PI);
-        const arrowPt = rotatedTrace[4];
+        const nextPt = rotatedTrace[10];
+        const dx = nextPt.rlon - startPt.rlon;
+        const dy = nextPt.rlat - startPt.rlat;
+        const angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+        const arrowPt = rotatedTrace[5];
         const arrowIcon = L.divIcon({
             className: 'direction-arrow',
-            html: `<svg width="24" height="24" viewBox="0 0 24 24" style="transform: rotate(${90 - angle}deg);"><polygon points="12,2 20,18 12,14 4,18" fill="#ffffff" opacity="0.9"/></svg>`,
-            iconSize: [24, 24], iconAnchor: [12, 12],
+            html: `<svg width="28" height="28" viewBox="0 0 24 24" style="transform: rotate(${angleDeg}deg);"><polygon points="12,2 20,18 12,14 4,18" fill="#ffffff" opacity="0.95"/></svg>`,
+            iconSize: [28, 28], iconAnchor: [14, 14],
         });
         L.marker([arrowPt.rlat, arrowPt.rlon], { icon: arrowIcon, interactive: false }).addTo(map);
         L.circleMarker([startPt.rlat, startPt.rlon], { radius: 5, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 0.8, weight: 2 }).addTo(map);
@@ -1238,6 +1276,72 @@ function rebuildMap() {
     }
 
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 18, animate: true });
+}
+
+// ─── Brake Points Overlay ────────────────────────────────────────────────
+function renderBrakePoints() {
+    // Remove existing layer
+    if (brakePointsLayer) {
+        map.removeLayer(brakePointsLayer);
+        brakePointsLayer = null;
+    }
+
+    if (!showBrakePoints || !DATA.per_lap_brake_points || !DATA.per_lap_brake_points.length) return;
+
+    const trace = DATA.gps_trace;
+    const markers = [];
+    const totalLaps = DATA.valid_laps || 1;
+
+    DATA.per_lap_brake_points.forEach(zone => {
+        if (!zone.entries || !zone.entries.length) return;
+
+        // Find min/max lap numbers for color interpolation
+        const lapNums = zone.entries.map(e => e.lap);
+        const minLap = Math.min(...lapNums);
+        const maxLap = Math.max(...lapNums);
+        const lapRange = maxLap - minLap || 1;
+
+        zone.entries.forEach(entry => {
+            // Rotate the point to match current map rotation
+            const [rlat, rlon] = rotatePoint(entry.lat, entry.lon, trace, mapRotation);
+
+            // Color gradient: early laps = blue, late laps = amber
+            const t = (entry.lap - minLap) / lapRange;
+            const color = lerpColor('#448aff', '#ffab00', t);
+
+            const marker = L.circleMarker([rlat, rlon], {
+                radius: 5,
+                color: '#000000',
+                fillColor: color,
+                fillOpacity: 0.9,
+                weight: 1.5,
+            }).bindTooltip(
+                `Lap ${entry.lap} — ${entry.entry_pct.toFixed(1)}% — ${Math.round(entry.speed_mph)} mph`,
+                { direction: 'top', className: 'corner-label', offset: [0, -6] }
+            );
+            markers.push(marker);
+        });
+
+        // Add spread label at zone center (use average position)
+        if (zone.spread_meters > 0) {
+            const avgLat = zone.entries.reduce((s, e) => s + e.lat, 0) / zone.entries.length;
+            const avgLon = zone.entries.reduce((s, e) => s + e.lon, 0) / zone.entries.length;
+            const [rlat, rlon] = rotatePoint(avgLat, avgLon, trace, mapRotation);
+
+            const spreadColor = zone.spread_meters > 10 ? '#ff1744' : (zone.spread_meters > 5 ? '#ffab00' : '#00e676');
+            const spreadLabel = L.tooltip({
+                permanent: true,
+                direction: 'bottom',
+                className: 'spread-label',
+                offset: [0, 12],
+            });
+            spreadLabel.setContent(`±${zone.spread_meters.toFixed(0)}m`);
+            spreadLabel.setLatLng([rlat, rlon]);
+            markers.push(spreadLabel);
+        }
+    });
+
+    brakePointsLayer = L.layerGroup(markers).addTo(map);
 }
 
 // ─── Hover Sync Loop (rAF) ──────────────────────────────────────────────
