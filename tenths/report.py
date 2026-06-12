@@ -229,6 +229,8 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                 <h2>Telemetry</h2>
                 <div class="telemetry-controls">
                     <select id="lap-selector" class="lap-select"></select>
+                    <button id="compare-btn" class="toggle-btn">Compare</button>
+                    <select id="compare-selector" class="lap-select" style="display:none;"></select>
                     <div class="chart-legend">
                         <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span>Throttle</span>
                         <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span>Brake</span>
@@ -245,6 +247,10 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                 <div class="trace-panel">
                     <span class="trace-label">Speed</span>
                     <canvas id="chart-speed"></canvas>
+                </div>
+                <div class="trace-panel trace-panel-delta" id="delta-panel" style="display:none;">
+                    <span class="trace-label">Speed Delta</span>
+                    <canvas id="chart-delta"></canvas>
                 </div>
                 <div class="trace-panel">
                     <span class="trace-label">Steering</span>
@@ -589,6 +595,7 @@ body {
     background: var(--bg-base);
 }
 .trace-panel-tall { height: 180px; }
+.trace-panel-delta { height: 80px; }
 .trace-panel canvas {
     width: 100% !important;
     height: 100% !important;
@@ -759,6 +766,7 @@ try {
 let showBrakePoints = false;
 let brakePointsLayer = null;
 let selectedLap = null;  // null = best lap (default)
+let compareLap = null;   // null = no comparison active
 let map, hotline, cursor;
 let chart;
 
@@ -780,20 +788,25 @@ document.addEventListener('DOMContentLoaded', () => {
 // ─── Lap Selector ────────────────────────────────────────────────────────
 function initLapSelector() {
     const select = document.getElementById('lap-selector');
+    const compareSelect = document.getElementById('compare-selector');
+    const compareBtn = document.getElementById('compare-btn');
     if (!select) return;
 
     const laps = DATA.lap_results;
     const bestLap = DATA.best_lap;
 
-    laps.forEach(l => {
-        if (l.time <= 0) return;
-        const opt = document.createElement('option');
-        opt.value = l.lap;
-        const timeStr = `${Math.floor(l.time/60)}:${(l.time%60).toFixed(1).padStart(4,'0')}`;
-        const marker = l.lap === bestLap ? ' ★ Best' : '';
-        opt.textContent = `Lap ${l.lap} — ${timeStr}${marker}`;
-        if (l.lap === bestLap) opt.selected = true;
-        select.appendChild(opt);
+    // Populate both dropdowns
+    [select, compareSelect].forEach(sel => {
+        laps.forEach(l => {
+            if (l.time <= 0) return;
+            const opt = document.createElement('option');
+            opt.value = l.lap;
+            const timeStr = `${Math.floor(l.time/60)}:${(l.time%60).toFixed(1).padStart(4,'0')}`;
+            const marker = l.lap === bestLap ? ' ★ Best' : '';
+            opt.textContent = `Lap ${l.lap} — ${timeStr}${marker}`;
+            if (sel === select && l.lap === bestLap) opt.selected = true;
+            sel.appendChild(opt);
+        });
     });
 
     selectedLap = bestLap;
@@ -802,21 +815,55 @@ function initLapSelector() {
         selectedLap = parseInt(select.value);
         onLapChange();
     });
+
+    // Compare button toggle
+    compareBtn.addEventListener('click', () => {
+        if (compareLap !== null) {
+            // Deactivate comparison
+            compareLap = null;
+            compareBtn.classList.remove('active');
+            compareSelect.style.display = 'none';
+            document.getElementById('delta-panel').style.display = 'none';
+        } else {
+            // Activate comparison — pick a different lap
+            compareBtn.classList.add('active');
+            compareSelect.style.display = '';
+            // Default compare to worst time lap
+            const worstLap = laps.filter(l => l.time > 0).sort((a,b) => b.time - a.time)[0];
+            if (worstLap) {
+                compareSelect.value = worstLap.lap;
+                compareLap = worstLap.lap;
+            }
+            document.getElementById('delta-panel').style.display = '';
+        }
+        onLapChange();
+    });
+
+    compareSelect.addEventListener('change', () => {
+        compareLap = parseInt(compareSelect.value);
+        onLapChange();
+    });
 }
 
 function getSelectedTrace() {
-    // Return the trace for the currently selected lap
     const key = String(selectedLap);
     if (DATA.gps_traces && DATA.gps_traces[key]) {
         return DATA.gps_traces[key];
     }
-    return DATA.gps_trace;  // fallback to best lap
+    return DATA.gps_trace;
+}
+
+function getCompareTrace() {
+    if (compareLap === null) return null;
+    const key = String(compareLap);
+    if (DATA.gps_traces && DATA.gps_traces[key]) {
+        return DATA.gps_traces[key];
+    }
+    return null;
 }
 
 function onLapChange() {
-    // Rebuild map track line with new lap data
     rebuildMap();
-    // Rebuild charts with new lap data
     charts.forEach(c => c.destroy());
     charts = [];
     initChart();
@@ -1281,81 +1328,120 @@ function initChart() {
         };
     }
 
-    // Brake + Throttle panel (combined — they share 0-100% scale)
-    charts.push(new Chart(document.getElementById('chart-brake-throttle').getContext('2d'), {
-        type: 'line',
-        plugins: [crosshairPlugin],
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    data: trace.map(p => p.throttle || 0),
-                    borderColor: '#00e676',
-                    backgroundColor: '#00e67618',
-                    fill: true,
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    tension: 0,
-                    order: 2,
-                },
-                {
-                    data: trace.map(p => p.brake || 0),
-                    borderColor: '#ff1744',
-                    backgroundColor: '#ff174430',
-                    fill: true,
-                    borderWidth: 1.5,
-                    pointRadius: 0,
-                    tension: 0,
-                    order: 1,
-                },
-            ]
+    // Comparison trace (if active)
+    const cmpTrace = getCompareTrace();
+    const cmpStyle = { borderDash: [6, 4], borderWidth: 1.2, pointRadius: 0, fill: false };
+
+    // Brake + Throttle panel
+    const btDatasets = [
+        {
+            data: trace.map(p => p.throttle || 0),
+            borderColor: '#00e676',
+            backgroundColor: '#00e67618',
+            fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0, order: 2,
         },
+        {
+            data: trace.map(p => p.brake || 0),
+            borderColor: '#ff1744',
+            backgroundColor: '#ff174430',
+            fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0, order: 1,
+        },
+    ];
+    if (cmpTrace) {
+        btDatasets.push({
+            data: cmpTrace.map(p => p.throttle || 0),
+            borderColor: '#00e67680', ...cmpStyle, tension: 0, order: 4,
+        });
+        btDatasets.push({
+            data: cmpTrace.map(p => p.brake || 0),
+            borderColor: '#ff174480', ...cmpStyle, tension: 0, order: 3,
+        });
+    }
+    charts.push(new Chart(document.getElementById('chart-brake-throttle').getContext('2d'), {
+        type: 'line', plugins: [crosshairPlugin],
+        data: { labels: labels, datasets: btDatasets },
         options: makeOpts(false, 100, '%'),
     }));
 
-    // Speed panel (orange)
+    // Speed panel
+    const speedDatasets = [{
+        data: trace.map(p => p.speed_mph),
+        borderColor: '#ffab00', backgroundColor: '#ffab0015',
+        fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.15,
+    }];
+    if (cmpTrace) {
+        speedDatasets.push({
+            data: cmpTrace.map(p => p.speed_mph),
+            borderColor: '#ffab0080', ...cmpStyle, tension: 0.15,
+        });
+    }
     charts.push(new Chart(document.getElementById('chart-speed').getContext('2d'), {
-        type: 'line',
-        plugins: [crosshairPlugin],
-        data: {
-            labels: labels,
-            datasets: [{
-                data: trace.map(p => p.speed_mph),
-                borderColor: '#ffab00',
-                backgroundColor: '#ffab0015',
-                fill: true,
-                borderWidth: 1.5,
-                pointRadius: 0,
-                tension: 0.15,
-            }]
-        },
+        type: 'line', plugins: [crosshairPlugin],
+        data: { labels: labels, datasets: speedDatasets },
         options: makeOpts(false, Math.ceil(maxSpeed / 10) * 10, ''),
     }));
 
-    // Steering panel (blue) — degrees, centered on zero (left = negative, right = positive)
+    // Speed Delta panel (only when comparing)
+    if (cmpTrace) {
+        const deltaData = trace.map((p, i) => {
+            const cmpSpeed = cmpTrace[i] ? cmpTrace[i].speed_mph : p.speed_mph;
+            return p.speed_mph - cmpSpeed;
+        });
+        const maxDelta = Math.max(Math.abs(Math.min(...deltaData)), Math.abs(Math.max(...deltaData)));
+        const deltaMax = Math.ceil(maxDelta / 5) * 5 || 10;
+
+        const deltaOpts = makeOpts(false, deltaMax, '');
+        deltaOpts.scales.y.min = -deltaMax;
+        deltaOpts.scales.y.ticks.stepSize = deltaMax > 20 ? 10 : 5;
+
+        // Custom fill: green above zero, red below
+        charts.push(new Chart(document.getElementById('chart-delta').getContext('2d'), {
+            type: 'line', plugins: [crosshairPlugin],
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: deltaData,
+                    borderColor: '#ffffff',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    tension: 0.15,
+                    fill: {
+                        target: { value: 0 },
+                        above: '#00e67630',
+                        below: '#ff174430',
+                    },
+                    segment: {
+                        borderColor: ctx => ctx.p0.parsed.y >= 0 ? '#00e676' : '#ff1744',
+                    },
+                }]
+            },
+            options: deltaOpts,
+        }));
+    }
+
+    // Steering panel
     const steeringData = trace.map(p => p.steering || 0);
     const maxSteer = Math.max(Math.abs(Math.min(...steeringData)), Math.abs(Math.max(...steeringData)));
-    const steerMax = Math.ceil(maxSteer / 45) * 45;  // round to nearest 45°
+    const steerMax = Math.ceil(maxSteer / 45) * 45 || 45;
 
     const steerOpts = makeOpts(true, steerMax, '°');
-    steerOpts.scales.y.min = -steerMax;  // symmetric around zero
+    steerOpts.scales.y.min = -steerMax;
     steerOpts.scales.y.ticks.stepSize = steerMax > 90 ? 45 : 30;
 
+    const steerDatasets = [{
+        data: steeringData,
+        borderColor: '#448aff', backgroundColor: '#448aff15',
+        fill: true, borderWidth: 1.5, pointRadius: 0, tension: 0.15,
+    }];
+    if (cmpTrace) {
+        steerDatasets.push({
+            data: cmpTrace.map(p => p.steering || 0),
+            borderColor: '#448aff80', ...cmpStyle, tension: 0.15,
+        });
+    }
     charts.push(new Chart(document.getElementById('chart-steering').getContext('2d'), {
-        type: 'line',
-        plugins: [crosshairPlugin],
-        data: {
-            labels: labels,
-            datasets: [{
-                data: steeringData,
-                borderColor: '#448aff',
-                backgroundColor: '#448aff15',
-                fill: true,
-                borderWidth: 1.5,
-                pointRadius: 0,
-                tension: 0.15,
-            }]
-        },
+        type: 'line', plugins: [crosshairPlugin],
+        data: { labels: labels, datasets: steerDatasets },
         options: steerOpts,
     }));
 }
