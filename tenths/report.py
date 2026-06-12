@@ -1263,7 +1263,7 @@ function renderBrakeRelease() {
         // Reference line (perfect linear)
         const refPoints = `0,0 ${w},${h}`;
 
-        // Comparison curve (dashed, dimmed)
+        // Comparison curve (dashed, same color but dimmed)
         let cmpSvg = '';
         if (cmpMetrics && cmpMetrics[idx] && cmpMetrics[idx].brake_release_curve && cmpMetrics[idx].brake_release_curve.length > 0) {
             const cmpCurve = cmpMetrics[idx].brake_release_curve;
@@ -1273,7 +1273,14 @@ function renderBrakeRelease() {
                 return `${x.toFixed(1)},${y.toFixed(1)}`;
             }).join(' ');
             const cmpScore = cmpMetrics[idx].brake_linearity;
-            cmpSvg = `<polyline points="${cmpPoints}" fill="none" stroke="#ffffff40" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round"/>`;
+
+            // Use same color as primary but at 50% opacity
+            const cmpColor = scoreColor.replace('var(--accent-', '').replace(')', '');
+            let cmpHex = '#ffab0080';  // default amber
+            if (score >= 0.8) cmpHex = '#00e67680';
+            else if (score < 0.5) cmpHex = '#ff174480';
+
+            cmpSvg = `<polyline points="${cmpPoints}" fill="none" stroke="${cmpHex}" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round"/>`;
 
             // Show delta score
             if (cmpScore !== null && score !== null) {
