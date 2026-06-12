@@ -89,11 +89,11 @@ tools/
 |------|-------------|--------|
 | 1.1 | `session_summary.json` output | ✅ Done |
 | 1.2 | Schema versioning + migration | ✅ Done |
-| **1.6** | **Auto-generate skeleton track maps** | ✅ Done |
+| 1.6 | Auto-generate skeleton track maps | ✅ Done |
 | 1.3 | Time_to_100% + Throttle_Hesitation | ✅ Done (Thr On, Thr Lag) |
-| 1.4 | Steer_Jerk + Brake_Linearity | Not started |
+| 1.4 | Brake_Linearity + visual release panel | ✅ Done (per-lap, compare overlay) |
 | 1.5 | Session progression summary | Not started |
-| 1.7 | Testing framework | ✅ Done (68 tests) |
+| 1.7 | Testing framework | ✅ Done (78 tests) |
 
 ### Remaining items:
 
