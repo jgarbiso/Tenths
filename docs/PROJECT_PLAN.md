@@ -85,13 +85,15 @@ tools/
 
 **STATUS: IN PROGRESS**
 
-### Completed:
-
-- [x] Multi-session per day support
-- [x] Race result auto-matching by subsession_id
-- [x] Car/track display names from .ibt header
-- [x] Session type detection (Practice/Qualify/Race)
-- [x] **HTML Visual Report** (`session_report.html`) — see `docs/HTML_REPORT_DESIGN.md`
+| Task | Description | Status |
+|------|-------------|--------|
+| 1.1 | `session_summary.json` output | ✅ Done |
+| 1.2 | Schema versioning + migration | ✅ Done |
+| **1.6** | **Auto-generate skeleton track maps** | ✅ Done |
+| 1.3 | Time_to_100% + Throttle_Hesitation | Not started |
+| 1.4 | Steer_Jerk + Brake_Linearity | Not started |
+| 1.5 | Session progression summary | Not started |
+| 1.7 | Testing framework | ✅ Done (68 tests) |
 
 ### Remaining items:
 

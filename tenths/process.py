@@ -31,6 +31,7 @@ from tenths.analyzer import analyze, fmt_time, parse_ibt
 from tenths.track_map import load_track_map, get_turn_name
 from tenths.report import generate_report
 from tenths.summary import generate_session_summary, write_session_summary
+from tenths.track_map_generator import generate_skeleton_track_map, write_skeleton_track_map
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TELEMETRY_ROOT = os.environ.get('TENTHS_TELEMETRY_ROOT', r"c:\Users\justi\Documents\iRacing\telemetry")
@@ -645,6 +646,20 @@ def main():
         track_map = load_track_map(track)
         if track_map:
             print(f"\n  Track map: {len(track_map)} zones loaded")
+        else:
+            # Auto-generate skeleton track map from the best session's data
+            best_session_data = max(sessions, key=lambda s: -min(
+                (r['time'] for r in s[1]['lap_results'] if r['time'] > 0), default=9999))
+            _, gen_data, _ = best_session_data
+            if gen_data.get('braking_zones'):
+                si = gen_data.get('session_info', {})
+                skeleton = generate_skeleton_track_map(gen_data, si)
+                track_slug = track.lower().replace(' ', '_')
+                written = write_skeleton_track_map(skeleton, track_slug)
+                if written:
+                    print(f"\n  Auto-generated track map: {os.path.basename(written)}")
+                    # Reload the newly created track map
+                    track_map = load_track_map(track)
 
         baseline = load_baseline(car, track)
         if baseline:
