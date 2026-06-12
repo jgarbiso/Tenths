@@ -285,7 +285,7 @@ def _build_html(data_json, car, track, date, best_time, race_data):
         </section>
 
         <!-- Tables -->
-        <section class="card table-card">
+        <section class="card table-card table-full-width">
             <div class="card-header">
                 <h2>Braking Zones</h2>
             </div>
@@ -423,14 +423,14 @@ body {
 /* Grid Layout */
 .grid {
     display: grid;
-    grid-template-columns: 1.4fr 0.6fr;
-    grid-template-rows: auto auto auto;
+    grid-template-columns: 1fr 1fr;
     gap: 12px;
 }
 .map-card { grid-column: 1; grid-row: 1; position: relative; }
 .stats-card { grid-column: 2; grid-row: 1; }
 .chart-card { grid-column: 1 / -1; grid-row: 2; }
 .table-card { break-inside: avoid; }
+.table-full-width { grid-column: 1 / -1; }
 
 /* Cards */
 .card {
