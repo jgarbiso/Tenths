@@ -210,6 +210,11 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                 </div>
             </div>
             <div id="track-map"></div>
+            <div class="map-watermark" id="map-watermark"></div>
+            <div class="map-zoom">
+                <button class="map-zoom-btn" id="zoom-in" title="Zoom in">+</button>
+                <button class="map-zoom-btn" id="zoom-out" title="Zoom out">−</button>
+            </div>
             <div id="brake-points-legend" class="bp-legend" style="display:none;">
                 <span class="bp-legend-title">Brake Points</span>
                 <div class="bp-legend-bar">
@@ -410,7 +415,7 @@ body {
     grid-template-rows: auto auto auto;
     gap: 12px;
 }
-.map-card { grid-column: 1; grid-row: 1; }
+.map-card { grid-column: 1; grid-row: 1; position: relative; }
 .stats-card { grid-column: 2; grid-row: 1; }
 .chart-card { grid-column: 1 / -1; grid-row: 2; }
 .table-card { break-inside: avoid; }
@@ -443,8 +448,49 @@ body {
     background: #000;
     border-radius: 6px;
     border: 1px solid var(--border);
+    position: relative;
 }
 .leaflet-container { background: #000 !important; }
+.map-watermark {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #ffffff12;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 400;
+}
+/* Zoom buttons */
+.map-zoom {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 500;
+}
+.map-zoom-btn {
+    width: 28px;
+    height: 28px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    font-family: system-ui;
+}
+.map-zoom-btn:hover { background: var(--bg-surface-raised); }
 .brake-tooltip {
     background: var(--bg-surface) !important;
     border: 1px solid var(--border) !important;
@@ -1126,6 +1172,14 @@ function initMap() {
     });
 
     map.getContainer().style.background = '#000';
+
+    // Track name watermark
+    const watermark = document.getElementById('map-watermark');
+    if (watermark) watermark.textContent = DATA.track;
+
+    // Zoom buttons
+    document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
+    document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
 
     drawTrackLine(rotatedTrace);
 
