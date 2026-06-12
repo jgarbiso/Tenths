@@ -168,6 +168,9 @@ def _build_html(data_json, car, track, date, best_time, race_data):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{car} — {track} — {date}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
 {_get_css()}
@@ -332,7 +335,7 @@ def _get_css():
 body {
     background: var(--bg-base);
     color: var(--text-primary);
-    font-family: Inter, system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-size: 13px;
     line-height: 1.4;
     padding: 12px;
@@ -365,11 +368,12 @@ body {
     margin-top: 2px;
 }
 .hero-time {
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 32px;
+    font-family: 'Orbitron', 'JetBrains Mono', monospace;
+    font-size: 34px;
     font-weight: 700;
     color: var(--accent-green);
-    text-shadow: 0 0 8px #00e67640;
+    text-shadow: 0 0 12px #00e67640;
+    letter-spacing: -0.5px;
 }
 .hero-label {
     font-size: 11px;
@@ -389,9 +393,9 @@ body {
     border-radius: 8px;
 }
 .race-pos {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 36px;
-    font-weight: 800;
+    font-family: 'Orbitron', 'JetBrains Mono', monospace;
+    font-size: 38px;
+    font-weight: 900;
 }
 .race-details {
     display: flex;
@@ -404,7 +408,7 @@ body {
 }
 .race-ir {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
 }
 
@@ -435,11 +439,11 @@ body {
     margin-bottom: 10px;
 }
 .card-header h2 {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 1.5px;
 }
 
 /* Map */
@@ -455,11 +459,11 @@ body {
     position: absolute;
     bottom: 16px;
     left: 16px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    font-weight: 600;
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    font-weight: 700;
     color: #ffffff30;
-    letter-spacing: 1px;
+    letter-spacing: 2px;
     text-transform: uppercase;
     pointer-events: none;
     z-index: 400;
@@ -795,7 +799,7 @@ tr:hover td {
     border: 1px solid var(--border);
 }
 .stat-value {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Orbitron', 'JetBrains Mono', monospace;
     font-size: 18px;
     font-weight: 700;
     color: var(--text-primary);
