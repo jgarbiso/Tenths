@@ -157,7 +157,9 @@ The end-state UX is zero-friction: a background service (like Trading Paints) th
 ### Built ✅ (HTML Report)
 
 - Interactive track heatmap (speed/brake coloring, rotation, corner labels)
-- Stacked telemetry traces (Brake+Throttle, Speed)
+- Stacked telemetry traces (Brake+Throttle, Speed, Steering)
+- **Lap selector dropdown** — switch between any valid lap, updates map + charts
+- Per-lap brake point consistency overlay (all laps, with spread metric)
 - Hover sync between map and charts
 - Race result badge (position, iRating, podium colors)
 - Braking zones table (car-class-specific)
@@ -171,7 +173,7 @@ The end-state UX is zero-friction: a background service (like Trading Paints) th
 - Consistency scatter plot (corners × time loss)
 - ABS trend line chart (using `lap_abs_totals` array)
 - Lap time progression sparkline
-- Multi-lap overlay comparison
+- Multi-lap overlay comparison (two laps overlaid on same chart)
 - Session history timeline (progression across dates)
 
 ---

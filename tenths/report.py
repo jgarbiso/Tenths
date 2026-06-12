@@ -109,6 +109,7 @@ def generate_report(data, file_info, track_map, race_result=None):
         'track_length_m': data.get('track_length_m', 0),
         'valid_laps': len(data.get('valid_laps', [])),
         'gps_trace': gps_trace,
+        'gps_traces': {str(k): v for k, v in data.get('gps_traces', {}).items()},
         'braking_zones': braking_zones_js,
         'corner_variance': corner_variance_js,
         'trail_braking': trail_braking_js,
@@ -225,11 +226,15 @@ def _build_html(data_json, car, track, date, best_time, race_data):
         <!-- Telemetry Traces (Stacked Panels — MoTeC style) -->
         <section class="card chart-card">
             <div class="card-header">
-                <h2>Telemetry — Best Lap</h2>
-                <div class="chart-legend">
-                    <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span>Throttle</span>
-                    <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span>Brake</span>
-                    <span class="legend-item"><span class="legend-dot" style="background:#ffab00"></span>Speed</span>
+                <h2>Telemetry</h2>
+                <div class="telemetry-controls">
+                    <select id="lap-selector" class="lap-select"></select>
+                    <div class="chart-legend">
+                        <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span>Throttle</span>
+                        <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span>Brake</span>
+                        <span class="legend-item"><span class="legend-dot" style="background:#ffab00"></span>Speed</span>
+                        <span class="legend-item"><span class="legend-dot" style="background:#448aff"></span>Steering</span>
+                    </div>
                 </div>
             </div>
             <div class="trace-stack">
@@ -240,6 +245,10 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                 <div class="trace-panel">
                     <span class="trace-label">Speed</span>
                     <canvas id="chart-speed"></canvas>
+                </div>
+                <div class="trace-panel">
+                    <span class="trace-label">Steering</span>
+                    <canvas id="chart-steering"></canvas>
                 </div>
             </div>
         </section>
@@ -586,19 +595,41 @@ body {
 }
 .trace-label {
     position: absolute;
-    top: 4px;
-    left: 8px;
-    font-size: 9px;
+    top: 6px;
+    left: 10px;
+    font-size: 11px;
     font-family: 'JetBrains Mono', monospace;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.8px;
+    font-weight: 600;
     z-index: 10;
     pointer-events: none;
 }
 .chart-legend {
     display: flex;
     gap: 12px;
+}
+.telemetry-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.lap-select {
+    padding: 4px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    outline: none;
+}
+.lap-select:hover { border-color: var(--accent-blue); }
+.lap-select option {
+    background: var(--bg-surface);
+    color: var(--text-primary);
 }
 .legend-item {
     display: flex;
@@ -719,11 +750,13 @@ let mapMode = 'speed';  // 'speed' or 'brake'
 let mapRotation = 90;   // degrees clockwise, adjustable
 let showBrakePoints = false;
 let brakePointsLayer = null;
+let selectedLap = null;  // null = best lap (default)
 let map, hotline, cursor;
 let chart;
 
 // ─── Init ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+    initLapSelector();
     renderStats();
     renderTables();
     initMap();
@@ -731,6 +764,51 @@ document.addEventListener('DOMContentLoaded', () => {
     initToggle();
     startHoverLoop();
 });
+
+// ─── Lap Selector ────────────────────────────────────────────────────────
+function initLapSelector() {
+    const select = document.getElementById('lap-selector');
+    if (!select) return;
+
+    const laps = DATA.lap_results;
+    const bestLap = DATA.best_lap;
+
+    laps.forEach(l => {
+        if (l.time <= 0) return;
+        const opt = document.createElement('option');
+        opt.value = l.lap;
+        const timeStr = `${Math.floor(l.time/60)}:${(l.time%60).toFixed(1).padStart(4,'0')}`;
+        const marker = l.lap === bestLap ? ' ★ Best' : '';
+        opt.textContent = `Lap ${l.lap} — ${timeStr}${marker}`;
+        if (l.lap === bestLap) opt.selected = true;
+        select.appendChild(opt);
+    });
+
+    selectedLap = bestLap;
+
+    select.addEventListener('change', () => {
+        selectedLap = parseInt(select.value);
+        onLapChange();
+    });
+}
+
+function getSelectedTrace() {
+    // Return the trace for the currently selected lap
+    const key = String(selectedLap);
+    if (DATA.gps_traces && DATA.gps_traces[key]) {
+        return DATA.gps_traces[key];
+    }
+    return DATA.gps_trace;  // fallback to best lap
+}
+
+function onLapChange() {
+    // Rebuild map track line with new lap data
+    rebuildMap();
+    // Rebuild charts with new lap data
+    charts.forEach(c => c.destroy());
+    charts = [];
+    initChart();
+}
 
 // ─── Stats Panel ─────────────────────────────────────────────────────────
 function renderStats() {
@@ -862,7 +940,7 @@ function renderLapTable() {
 
 // ─── Track Map (Leaflet) ─────────────────────────────────────────────────
 function initMap() {
-    const trace = DATA.gps_trace;
+    const trace = getSelectedTrace();
     if (!trace.length) {
         document.getElementById('track-map').innerHTML = '<p style="padding:20px;color:var(--text-secondary);">No GPS data available.</p>';
         return;
@@ -1036,7 +1114,7 @@ function drawTrackLine(rotatedTrace) {
         const lon = p.rlon || p.lon;
         let val;
         if (mapMode === 'speed') {
-            const speeds = DATA.gps_trace.map(t => t.speed_mph);
+            const speeds = trace.map(t => t.speed_mph);
             const minSpd = Math.min(...speeds), maxSpd = Math.max(...speeds);
             val = maxSpd > minSpd ? (p.speed_mph - minSpd) / (maxSpd - minSpd) : 0.5;
         } else {
@@ -1101,7 +1179,7 @@ function lerpColor(a, b, t) {
 let charts = [];
 
 function initChart() {
-    const trace = DATA.gps_trace;
+    const trace = getSelectedTrace();
     if (!trace.length) return;
 
     const labels = trace.map(p => p.pct.toFixed(1));
@@ -1112,7 +1190,7 @@ function initChart() {
         id: 'crosshair',
         afterDraw: (chart) => {
             if (hoverPct === null) return;
-            const traceData = DATA.gps_trace;
+            const traceData = getSelectedTrace();
             let idx = 0, minDiff = Infinity;
             for (let i = 0; i < traceData.length; i++) {
                 const diff = Math.abs(traceData[i].pct - hoverPct);
@@ -1168,7 +1246,7 @@ function initChart() {
             },
             onHover: (event, elements) => {
                 if (elements.length > 0) {
-                    hoverPct = DATA.gps_trace[elements[0].index].pct;
+                    hoverPct = getSelectedTrace()[elements[0].index].pct;
                 }
             }
         };
@@ -1222,7 +1300,34 @@ function initChart() {
                 tension: 0.15,
             }]
         },
-        options: makeOpts(true, Math.ceil(maxSpeed / 10) * 10, ''),
+        options: makeOpts(false, Math.ceil(maxSpeed / 10) * 10, ''),
+    }));
+
+    // Steering panel (blue) — degrees, centered on zero (left = negative, right = positive)
+    const steeringData = trace.map(p => p.steering || 0);
+    const maxSteer = Math.max(Math.abs(Math.min(...steeringData)), Math.abs(Math.max(...steeringData)));
+    const steerMax = Math.ceil(maxSteer / 45) * 45;  // round to nearest 45°
+
+    const steerOpts = makeOpts(true, steerMax, '°');
+    steerOpts.scales.y.min = -steerMax;  // symmetric around zero
+    steerOpts.scales.y.ticks.stepSize = steerMax > 90 ? 45 : 30;
+
+    charts.push(new Chart(document.getElementById('chart-steering').getContext('2d'), {
+        type: 'line',
+        plugins: [crosshairPlugin],
+        data: {
+            labels: labels,
+            datasets: [{
+                data: steeringData,
+                borderColor: '#448aff',
+                backgroundColor: '#448aff15',
+                fill: true,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0.15,
+            }]
+        },
+        options: steerOpts,
     }));
 }
 
@@ -1265,7 +1370,7 @@ function rebuildMap() {
     map.eachLayer(l => map.removeLayer(l));
     hotline = null;
 
-    const trace = DATA.gps_trace;
+    const trace = getSelectedTrace();
     const rotatedTrace = rotateTrace(trace, mapRotation);
     const rotatedBraking = DATA.braking_zones.map(z => {
         if (z.lat && z.lon) {
@@ -1413,11 +1518,12 @@ function startHoverLoop() {
         if (hoverPct !== lastPct) {
             lastPct = hoverPct;
 
-            if (hoverPct !== null && DATA.gps_trace.length > 0) {
+            if (hoverPct !== null && getSelectedTrace().length > 0) {
                 // Find the trace point closest to hoverPct
-                let closest = DATA.gps_trace[0];
+                const selTrace = getSelectedTrace();
+                let closest = selTrace[0];
                 let minDiff = Infinity;
-                for (const p of DATA.gps_trace) {
+                for (const p of selTrace) {
                     const diff = Math.abs(p.pct - hoverPct);
                     if (diff < minDiff) { minDiff = diff; closest = p; }
                 }

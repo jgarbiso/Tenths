@@ -737,8 +737,15 @@ def analyze(filepath):
     # Tire temps
     tire_temps = _extract_tire_temps(df, best_lap)
 
-    # GPS trace
-    gps_trace = _extract_gps_trace(df, best_lap)
+    # GPS trace (dense, for all valid laps)
+    gps_traces = {}  # lap_num -> trace array
+    for lap_num in valid_laps:
+        lap_trace = _extract_gps_trace(df, lap_num)
+        if lap_trace:
+            gps_traces[lap_num] = lap_trace
+
+    # Best lap trace (for backward compat)
+    gps_trace = gps_traces.get(best_lap, [])
 
     # Per-lap brake points (for consistency overlay)
     per_lap_brake_points = _extract_per_lap_brake_points(df, valid_laps, braking_zones)
@@ -772,6 +779,7 @@ def analyze(filepath):
         'corner_variance': corner_variance,
         'tire_temps': tire_temps,
         'gps_trace': gps_trace,
+        'gps_traces': gps_traces,
         'per_lap_brake_points': per_lap_brake_points,
         'session_info': session_info,
     }
@@ -1154,6 +1162,7 @@ def _extract_gps_trace(df, lap_num, dense=True):
                 point['brake'] = row['Brake'] if 'Brake' in lap.columns else 0
                 point['throttle'] = row['Throttle'] if 'Throttle' in lap.columns else 0
                 point['gear'] = int(row['Gear']) if 'Gear' in lap.columns else 0
+                point['steering'] = float(row['SteeringWheelAngle'] * 180 / 3.14159) if 'SteeringWheelAngle' in lap.columns else 0
             trace.append(point)
         pct_target += step
 

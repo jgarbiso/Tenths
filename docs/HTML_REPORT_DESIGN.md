@@ -81,20 +81,30 @@ All session data is embedded as a JSON blob in a `<script>` tag:
 
 ### 2. Telemetry Charts (Chart.js — Stacked Panels)
 
-Two stacked panels (MoTeC-style layout):
+Three stacked panels (MoTeC-style layout):
 
 | Panel | Height | Channels | Colors |
 |-------|--------|----------|--------|
 | Brake / Throttle | 180px | Brake %, Throttle % (0–100 scale) | Red (brake), Green (throttle) |
 | Speed | 150px | Speed in mph | Orange |
+| Steering | 150px | Steering angle in degrees (centered on 0°) | Blue |
 
-- **Y-axis gridlines**: Brake/Throttle at 0%, 25%, 50%, 75%, 100%. Speed every 10 mph.
+- **Y-axis gridlines**: Brake/Throttle at 0%, 25%, 50%, 75%, 100%. Speed every 10 mph. Steering every 45°.
 - **No smoothing on brake/throttle** (tension: 0) — shows exact pedal input
-- **Slight smoothing on speed** (tension: 0.15) — naturally smoother signal
+- **Slight smoothing on speed/steering** (tension: 0.15) — naturally smoother signals
 - **Crosshair plugin** — vertical white line synced across all panels on hover
 - **X-axis**: Lap Distance % (only shown on bottom panel)
 
-### 3. Hover Sync System
+### 3. Lap Selector
+
+- Dropdown in the Telemetry section header listing all valid laps with time and best-lap marker
+- Selecting a lap switches:
+  - Track map heatmap to that lap's speed/brake data
+  - All three telemetry chart panels to that lap's traces
+- Brake Points overlay is unaffected (always shows all laps)
+- Data: dense 200-point GPS trace extracted for every valid lap (stored in `gps_traces` dict keyed by lap number)
+
+### 4. Hover Sync System
 
 - Single shared float `hoverPct` (0–100, LapDistPct)
 - Both map and charts write to it on hover, both read via `requestAnimationFrame` loop
@@ -103,7 +113,17 @@ Two stacked panels (MoTeC-style layout):
 - Info bar: fixed bar at bottom shows position, speed, brake%, throttle%
 - **60fps, zero lag** — no events, no pub/sub, just a number and a render tick
 
-### 4. Race Result Badge
+### 5. Per-Lap Brake Points Overlay
+
+- "Brake Points" toggle button on the track map
+- When active: renders one colored dot per valid lap at each braking zone's entry point (where Brake first crosses 15%)
+- Color gradient: blue (early laps) → amber (late laps)
+- Spread metric (±Xm) displayed at each zone cluster
+- Legend bar below the map showing the color scale
+- Always shows ALL laps regardless of lap selector — consistency tool
+- Custom Leaflet pane (z-index 650) ensures dots render above the track line
+
+### 6. Race Result Badge
 
 - **Prominent header position** — large P# with field size and iRating delta
 - **Color-coded**: Green for iR gains, red for losses
@@ -239,3 +259,7 @@ The track map supports interactive rotation to match iRacing's overhead view:
 | 2026-06-07 | Stacked panels over single chart | MoTeC-style, industry standard readability |
 | 2026-06-07 | Throttle=green, Speed=orange | Brake=red/Throttle=green is natural pairing |
 | 2026-06-07 | Interactive rotation | Each track has different ideal orientation |
+| 2026-06-11 | Steering trace added (blue) | Third panel, degrees centered on 0° |
+| 2026-06-11 | Per-lap brake points overlay | Consistency visualization, all laps clustered |
+| 2026-06-11 | Lap selector dropdown | Switch any lap for map+charts, brake points unaffected |
+| 2026-06-11 | All-laps dense trace extraction | 200 pts × N laps stored in gps_traces dict |
