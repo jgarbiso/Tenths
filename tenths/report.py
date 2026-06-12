@@ -651,7 +651,9 @@ table {
     border-collapse: collapse;
     font-size: 11px;
     font-family: 'JetBrains Mono', monospace;
+    table-layout: auto;
 }
+.table-card { overflow-x: auto; }
 th {
     text-align: left;
     padding: 6px 8px;
@@ -748,6 +750,12 @@ def _get_js():
 let hoverPct = null;
 let mapMode = 'speed';  // 'speed' or 'brake'
 let mapRotation = 90;   // degrees clockwise, adjustable
+
+// Restore saved rotation for this track
+try {
+    const savedRot = localStorage.getItem('tenths_rotation_' + (typeof DATA !== 'undefined' ? DATA.track : ''));
+    if (savedRot !== null) mapRotation = parseInt(savedRot);
+} catch(e) {}
 let showBrakePoints = false;
 let brakePointsLayer = null;
 let selectedLap = null;  // null = best lap (default)
@@ -756,6 +764,10 @@ let chart;
 
 // ─── Init ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+    // Update rotation label to match restored value
+    const rotLabel = document.getElementById('rotate-label');
+    if (rotLabel) rotLabel.textContent = mapRotation + '°';
+
     initLapSelector();
     renderStats();
     renderTables();
@@ -821,11 +833,28 @@ function renderStats() {
         { value: d.car_class, label: 'Car Class' },
     ];
 
-    // ABS trend
+    // ABS trend with sparkline
     if (d.abs_trend && d.abs_trend.delta !== undefined) {
         const delta = Math.round(d.abs_trend.delta);
         const cls = delta < 0 ? 'good' : (delta > 0 ? 'bad' : '');
-        stats.push({ value: `<span class="${cls}">${delta > 0 ? '+' : ''}${delta}</span>`, label: 'ABS Trend', html: true });
+        const deltaStr = `<span class="${cls}">${delta > 0 ? '+' : ''}${delta}</span>`;
+
+        // Build SVG sparkline from lap_abs_totals
+        let sparkline = '';
+        if (d.lap_abs_totals && d.lap_abs_totals.length > 1) {
+            const vals = d.lap_abs_totals;
+            const maxVal = Math.max(...vals) || 1;
+            const w = 80, h = 20;
+            const points = vals.map((v, i) => {
+                const x = (i / (vals.length - 1)) * w;
+                const y = h - (v / maxVal) * h;
+                return `${x},${y}`;
+            }).join(' ');
+            const lineColor = delta < 0 ? '#00e676' : (delta > 0 ? '#ff1744' : '#8890a4');
+            sparkline = `<svg width="${w}" height="${h}" style="margin-top:4px;display:block;"><polyline points="${points}" fill="none" stroke="${lineColor}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+        }
+
+        stats.push({ value: deltaStr + sparkline, label: 'ABS Trend', html: true });
     }
 
     stats.push({ value: d.braking_zones.length, label: 'Brake Zones' });
@@ -1349,6 +1378,7 @@ function initToggle() {
             const dir = parseInt(btn.dataset.dir);
             mapRotation = (mapRotation + dir * 15 + 360) % 360;
             document.getElementById('rotate-label').textContent = mapRotation + '°';
+            try { localStorage.setItem('tenths_rotation_' + DATA.track, mapRotation); } catch(e) {}
             rebuildMap();
         });
     });
