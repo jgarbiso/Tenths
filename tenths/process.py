@@ -222,6 +222,9 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     time_display = time_str.replace('-', ':')[:5]
     lines.append(f"## {event_type} ({time_display}) — {filesize_mb:.1f}MB, {len(data['valid_laps'])} valid laps")
     lines.append("")
+    if is_first_session:
+        lines.append("### Learning Curve")
+        lines.append("")
     lines.append("| Lap | Time | ABS | Max Speed | Notes |")
     lines.append("|---|---|---|---|---|")
 
@@ -274,7 +277,7 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
         lines.append("|---|---|---|---|---|---|---|---|---|")
         for z in data['braking_zones']:
             turn = get_turn_name(track_map, z['pct'])
-            b2s = f"{z['brake_to_shift']:.2f}s" if z['brake_to_shift'] is not None else "N/A"
+            b2s = f"{z['brake_to_shift']:.2f}s" if z['brake_to_shift'] is not None and z['brake_to_shift'] >= 0 else "—"
             ds_rpm = f"{z['max_ds_rpm']:.0f}" if z['max_ds_rpm'] > 0 else "N/A"
             notes = ", ".join(z['notes']) if z['notes'] else ""
             lines.append(f"| {z['pct']:.1f}% | **{turn}** | {z['entry_mph']:.0f} mph | {z['min_mph']:.0f} mph | {z['abs']} | {b2s} | {ds_rpm} | {z['apex_rpm']:.0f} | {notes} |")
@@ -373,7 +376,7 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     # ── Targets ───────────────────────────────────────────────────────────────
     lines.append("## Targets for Next Session")
     lines.append("")
-    targets = generate_targets(data, best_result)
+    targets = generate_targets(data, best_result, track_map)
     for target in targets:
         lines.append(f"- [ ] {target}")
     lines.append("")
@@ -449,7 +452,7 @@ def generate_findings(data, baseline, is_first, valid_results, best_result, clea
     return findings if findings else ["Session completed — no notable flags"]
 
 
-def generate_targets(data, best_result):
+def generate_targets(data, best_result, track_map=None):
     """Generate targets for next session."""
     targets = []
 
@@ -463,19 +466,22 @@ def generate_targets(data, best_result):
     if data['braking_zones']:
         worst_abs_zone = max(data['braking_zones'], key=lambda z: z['abs'])
         if worst_abs_zone['abs'] > 30:
-            targets.append(f"Reduce ABS at {worst_abs_zone['pct']:.0f}% to under {max(30, worst_abs_zone['abs']//2)}")
+            turn = get_turn_name(track_map, worst_abs_zone['pct'])
+            targets.append(f"Reduce ABS at {turn} to under {max(30, worst_abs_zone['abs']//2)}")
 
     # Corner variance
     high_var = [cv for cv in data['corner_variance'] if cv['loss'] > 0.5]
     for cv in high_var[:2]:
-        targets.append(f"{cv['pct']:.0f}% time loss under 0.3s (currently {cv['loss']:.2f}s)")
+        turn = get_turn_name(track_map, cv['pct'])
+        targets.append(f"{turn} time loss under 0.3s (currently {cv['loss']:.2f}s)")
 
     # T2Peak
     if data['car_class'] == "GT4":
         slow_brake = [z for z in data['braking_zones'] if z['t2peak'] is not None and z['t2peak'] > 0.6]
         if slow_brake:
             worst = max(slow_brake, key=lambda z: z['t2peak'])
-            targets.append(f"T2Peak under {max(0.4, worst['t2peak']-0.2):.1f}s at {worst['pct']:.0f}%")
+            turn = get_turn_name(track_map, worst['pct'])
+            targets.append(f"T2Peak under {max(0.4, worst['t2peak']-0.2):.1f}s at {turn}")
 
     return targets
 
