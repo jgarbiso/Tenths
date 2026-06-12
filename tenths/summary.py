@@ -105,7 +105,8 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
 
     # Braking zones with turn names
     braking_zones = []
-    for z in data.get('braking_zones', []):
+    exit_metrics_data = data.get('exit_metrics', [])
+    for i, z in enumerate(data.get('braking_zones', [])):
         zone = {
             'turn_name': get_turn_name(track_map, z['pct']),
             'position_pct': round(z['pct'], 1),
@@ -126,6 +127,13 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
             'max_downshift_rpm': round(z.get('max_ds_rpm', 0), 0),
             'notes': z.get('notes', []),
         }
+        # Merge exit metrics if available
+        if i < len(exit_metrics_data):
+            zone['thr_on_s'] = exit_metrics_data[i].get('thr_on')
+            zone['thr_lag_s'] = exit_metrics_data[i].get('thr_lag')
+        else:
+            zone['thr_on_s'] = None
+            zone['thr_lag_s'] = None
         braking_zones.append(zone)
 
     # Corner variance with turn names

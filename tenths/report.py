@@ -51,11 +51,19 @@ def generate_report(data, file_info, track_map, race_result=None):
     gps_trace = data.get('gps_trace', [])
     braking_zones = data.get('braking_zones', [])
 
-    # Build braking zones with turn names for JS
+    # Build braking zones with turn names + exit metrics for JS
     braking_zones_js = []
-    for z in braking_zones:
+    exit_metrics = data.get('exit_metrics', [])
+    for i, z in enumerate(braking_zones):
         zone_copy = dict(z)
         zone_copy['turn_name'] = get_turn_name(track_map, z['pct'])
+        # Merge exit metrics if available
+        if i < len(exit_metrics):
+            zone_copy['thr_on'] = exit_metrics[i].get('thr_on')
+            zone_copy['thr_lag'] = exit_metrics[i].get('thr_lag')
+        else:
+            zone_copy['thr_on'] = None
+            zone_copy['thr_lag'] = None
         braking_zones_js.append(zone_copy)
 
     # Corner variance with turn names
@@ -1070,10 +1078,13 @@ function renderBrakingTable() {
             </tr>`;
         }).join('');
     } else {
-        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">ABS</th><th class="num">Brk2Shft</th><th class="num">Apex RPM</th><th>Notes</th></tr>';
+        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">ABS</th><th class="num">Brk2Shft</th><th class="num">Apex RPM</th><th class="num">Thr On</th><th class="num">Thr Lag</th><th>Notes</th></tr>';
         rows = zones.map(z => {
             const absClass = z.abs > 0 ? 'bad' : '';
-            const b2s = z.brake_to_shift != null ? z.brake_to_shift.toFixed(2) + 's' : '—';
+            const b2s = z.brake_to_shift != null && z.brake_to_shift >= 0 ? z.brake_to_shift.toFixed(2) + 's' : '—';
+            const thrOn = z.thr_on != null ? z.thr_on.toFixed(2) + 's' : '—';
+            const thrLag = z.thr_lag != null ? z.thr_lag.toFixed(2) + 's' : '—';
+            const thrLagClass = z.thr_lag != null && z.thr_lag > 0.5 ? 'warn' : '';
             return `<tr>
                 <td>${z.pct.toFixed(1)}%</td>
                 <td>${escHtml(z.turn_name)}</td>
@@ -1082,6 +1093,8 @@ function renderBrakingTable() {
                 <td class="num ${absClass}">${z.abs}</td>
                 <td class="num">${b2s}</td>
                 <td class="num">${z.apex_rpm > 0 ? Math.round(z.apex_rpm) : '—'}</td>
+                <td class="num">${thrOn}</td>
+                <td class="num ${thrLagClass}">${thrLag}</td>
                 <td>${z.notes ? z.notes.join(', ') : ''}</td>
             </tr>`;
         }).join('');

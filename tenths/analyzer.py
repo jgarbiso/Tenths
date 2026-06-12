@@ -750,6 +750,9 @@ def analyze(filepath):
     # Per-lap brake points (for consistency overlay)
     per_lap_brake_points = _extract_per_lap_brake_points(df, valid_laps, braking_zones)
 
+    # Exit metrics (Thr On, Thr Lag) for best lap
+    exit_metrics = _extract_exit_metrics(df, best_lap, braking_zones, sample_rate)
+
     # Track length
     track_length = 0
     if 'LapDist' in df.columns:
@@ -781,6 +784,7 @@ def analyze(filepath):
         'gps_trace': gps_trace,
         'gps_traces': gps_traces,
         'per_lap_brake_points': per_lap_brake_points,
+        'exit_metrics': exit_metrics,
         'session_info': session_info,
     }
 
@@ -1054,6 +1058,75 @@ def _extract_tire_temps(df, lap_num):
             'avg': (i*9/5+32 + m*9/5+32 + o*9/5+32) / 3
         }
     return temps
+
+
+def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
+    """Extract corner exit metrics for each braking zone.
+
+    For each zone, calculates:
+    - thr_on: time from apex (min speed) to first 100% throttle (seconds)
+    - thr_lag: time spent between 20-80% throttle before exceeding 80% (seconds)
+
+    Returns list of dicts parallel to braking_zones.
+    """
+    if not braking_zones:
+        return []
+
+    lap = df[df['Lap'] == lap_num].copy().reset_index(drop=True)
+    if lap.empty or 'Throttle' not in lap.columns:
+        return [{'thr_on': None, 'thr_lag': None} for _ in braking_zones]
+
+    results = []
+    for zone in braking_zones:
+        zone_center = zone['pct']
+        # Define the exit search window: from zone center to +15% of track
+        exit_start = zone_center - 2
+        exit_end = zone_center + 15
+
+        zone_data = lap[(lap['LapDistPct'] >= exit_start) & (lap['LapDistPct'] <= exit_end)]
+        if zone_data.empty:
+            results.append({'thr_on': None, 'thr_lag': None})
+            continue
+
+        # Find apex (minimum speed point in this zone)
+        apex_idx = zone_data['Speed'].idxmin()
+        apex_speed = zone_data.loc[apex_idx, 'Speed'] * 2.237  # mph
+
+        # Skip very slow hairpins where 100% throttle is trivial
+        if apex_speed < 30:
+            results.append({'thr_on': None, 'thr_lag': None})
+            continue
+
+        # Scan forward from apex
+        post_apex = lap.loc[apex_idx:]
+
+        # thr_on: time from apex to first sample where Throttle >= 99%
+        full_throttle = post_apex[post_apex['Throttle'] >= 99]
+        if not full_throttle.empty:
+            wot_idx = full_throttle.index.min()
+            thr_on = (wot_idx - apex_idx) / sample_rate
+            # Sanity: if > 10 seconds, something's wrong (next braking zone?)
+            if thr_on > 10:
+                thr_on = None
+        else:
+            thr_on = None
+
+        # thr_lag: time spent in 20-80% band before exceeding 80%
+        # Find where throttle first exceeds 80% after apex
+        above_80 = post_apex[post_apex['Throttle'] > 80]
+        if not above_80.empty:
+            exit_80_idx = above_80.index.min()
+            # Count samples between apex and exit_80 where throttle is 20-80%
+            mid_band = post_apex.loc[apex_idx:exit_80_idx]
+            feathering = mid_band[(mid_band['Throttle'] >= 20) & (mid_band['Throttle'] <= 80)]
+            thr_lag = len(feathering) / sample_rate
+        else:
+            thr_lag = None
+
+        results.append({'thr_on': round(thr_on, 2) if thr_on is not None else None,
+                        'thr_lag': round(thr_lag, 2) if thr_lag is not None else None})
+
+    return results
 
 
 def _extract_per_lap_brake_points(df, valid_laps, braking_zones):
