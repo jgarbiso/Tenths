@@ -750,8 +750,12 @@ def analyze(filepath):
     # Per-lap brake points (for consistency overlay)
     per_lap_brake_points = _extract_per_lap_brake_points(df, valid_laps, braking_zones)
 
-    # Exit metrics (Thr On, Thr Lag) for best lap
-    exit_metrics = _extract_exit_metrics(df, best_lap, braking_zones, sample_rate)
+    # Exit metrics (Thr On, Thr Lag, Brake Linearity) for all valid laps
+    exit_metrics_all = {}
+    for lap_num in valid_laps:
+        exit_metrics_all[lap_num] = _extract_exit_metrics(df, lap_num, braking_zones, sample_rate)
+    # Best lap metrics (backward compat)
+    exit_metrics = exit_metrics_all.get(best_lap, [])
 
     # Track length
     track_length = 0
@@ -785,6 +789,7 @@ def analyze(filepath):
         'gps_traces': gps_traces,
         'per_lap_brake_points': per_lap_brake_points,
         'exit_metrics': exit_metrics,
+        'exit_metrics_all': {str(k): v for k, v in exit_metrics_all.items()},
         'session_info': session_info,
     }
 

@@ -126,6 +126,7 @@ def generate_report(data, file_info, track_map, race_result=None):
         'corner_variance': corner_variance_js,
         'trail_braking': trail_braking_js,
         'per_lap_brake_points': per_lap_brake_points_js,
+        'exit_metrics_all': data.get('exit_metrics_all', {}),
         'lap_results': valid_results,
         'lap_abs_totals': data.get('lap_abs_totals', []),
         'abs_trend': data.get('abs_trend', {}),
@@ -1051,6 +1052,7 @@ function onLapChange() {
     charts.forEach(c => c.destroy());
     charts = [];
     initChart();
+    renderBrakeRelease();
 }
 
 // ─── Stats Panel ─────────────────────────────────────────────────────────
@@ -1209,40 +1211,84 @@ function renderBrakeRelease() {
     const grid = document.getElementById('brake-release-grid');
     if (!grid || !zones.length) return;
 
-    // Filter zones that have curve data
-    const withCurves = zones.filter(z => z.brake_release_curve && z.brake_release_curve.length > 0);
+    // Get exit metrics for selected lap
+    const lapKey = String(selectedLap);
+    const exitMetrics = DATA.exit_metrics_all && DATA.exit_metrics_all[lapKey]
+        ? DATA.exit_metrics_all[lapKey]
+        : zones.map(z => ({ brake_release_curve: z.brake_release_curve || [], brake_linearity: z.brake_linearity }));
+
+    // Get comparison lap exit metrics if active
+    let cmpMetrics = null;
+    if (compareLap !== null) {
+        const cmpKey = String(compareLap);
+        cmpMetrics = DATA.exit_metrics_all && DATA.exit_metrics_all[cmpKey]
+            ? DATA.exit_metrics_all[cmpKey] : null;
+    }
+
+    // Filter zones that have curve data for the selected lap
+    const withCurves = [];
+    for (let i = 0; i < zones.length; i++) {
+        const em = exitMetrics[i];
+        if (em && em.brake_release_curve && em.brake_release_curve.length > 0) {
+            withCurves.push({ zone: zones[i], em: em, idx: i });
+        }
+    }
+
     if (!withCurves.length) {
         document.getElementById('brake-release-section').style.display = 'none';
         return;
     }
+    document.getElementById('brake-release-section').style.display = '';
 
     const w = 120, h = 50;
 
-    grid.innerHTML = withCurves.map(z => {
-        const curve = z.brake_release_curve;
-        const score = z.brake_linearity;
-        const turnName = z.turn_name || `${z.pct.toFixed(0)}%`;
+    grid.innerHTML = withCurves.map(({ zone, em, idx }) => {
+        const curve = em.brake_release_curve;
+        const score = em.brake_linearity;
+        const turnName = zone.turn_name || `${zone.pct.toFixed(0)}%`;
 
-        // Score color: green (>0.8), amber (0.5-0.8), red (<0.5)
+        // Score color
         let scoreColor = 'var(--accent-green)';
         let scoreLabel = 'LINEAR';
         if (score < 0.5) { scoreColor = 'var(--accent-red)'; scoreLabel = 'STEP'; }
         else if (score < 0.8) { scoreColor = 'var(--accent-amber)'; scoreLabel = 'MIXED'; }
 
-        // Build SVG path from curve data
+        // Build primary SVG path
         const points = curve.map((v, i) => {
             const x = (i / (curve.length - 1)) * w;
-            const y = h - (v * h);  // v is 0-1, flip Y
+            const y = h - (v * h);
             return `${x.toFixed(1)},${y.toFixed(1)}`;
         }).join(' ');
 
-        // Reference line (perfect linear release) for comparison
+        // Reference line (perfect linear)
         const refPoints = `0,0 ${w},${h}`;
+
+        // Comparison curve (dashed, dimmed)
+        let cmpSvg = '';
+        if (cmpMetrics && cmpMetrics[idx] && cmpMetrics[idx].brake_release_curve && cmpMetrics[idx].brake_release_curve.length > 0) {
+            const cmpCurve = cmpMetrics[idx].brake_release_curve;
+            const cmpPoints = cmpCurve.map((v, i) => {
+                const x = (i / (cmpCurve.length - 1)) * w;
+                const y = h - (v * h);
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            }).join(' ');
+            const cmpScore = cmpMetrics[idx].brake_linearity;
+            cmpSvg = `<polyline points="${cmpPoints}" fill="none" stroke="#ffffff40" stroke-width="1.5" stroke-dasharray="4,3" stroke-linecap="round"/>`;
+
+            // Show delta score
+            if (cmpScore !== null && score !== null) {
+                const delta = score - cmpScore;
+                const deltaStr = delta >= 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2);
+                const deltaColor = delta >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                scoreLabel += ` <span style="color:${deltaColor};font-size:9px;">(${deltaStr})</span>`;
+            }
+        }
 
         return `<div class="release-card">
             <div class="release-card-title">${escHtml(turnName)}</div>
             <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
                 <polyline points="${refPoints}" fill="none" stroke="#ffffff15" stroke-width="1" stroke-dasharray="3,3"/>
+                ${cmpSvg}
                 <polyline points="${points}" fill="none" stroke="${scoreColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             <div class="release-card-score" style="color:${scoreColor}">${score !== null ? score.toFixed(2) : '—'}</div>
