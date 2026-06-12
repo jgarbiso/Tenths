@@ -196,14 +196,17 @@ def _build_html(data_json, car, track, date, best_time, race_data):
             <div class="card-header">
                 <h2>Track Map</h2>
                 <div class="map-controls">
+                    <span class="rotate-value" style="font-size:9px;color:var(--text-secondary);">Rotate</span>
                     <button class="rotate-btn" data-dir="1" title="Rotate left">↶</button>
                     <span class="rotate-value" id="rotate-label">90°</span>
                     <button class="rotate-btn" data-dir="-1" title="Rotate right">↷</button>
+                    <span class="controls-divider"></span>
                     <div class="toggle-group">
                         <button class="toggle-btn active" data-mode="speed">Speed</button>
                         <button class="toggle-btn" data-mode="brake">Brake</button>
                     </div>
-                    <button class="toggle-btn" id="brake-points-toggle" title="Show per-lap braking entry points">Brake Points</button>
+                    <span class="controls-divider"></span>
+                    <button class="action-btn" id="brake-points-toggle">⊕ Brake Points</button>
                 </div>
             </div>
             <div id="track-map"></div>
@@ -229,8 +232,11 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                 <h2>Telemetry</h2>
                 <div class="telemetry-controls">
                     <select id="lap-selector" class="lap-select"></select>
-                    <button id="compare-btn" class="toggle-btn">Compare</button>
-                    <select id="compare-selector" class="lap-select" style="display:none;"></select>
+                    <span class="controls-divider"></span>
+                    <button id="compare-btn" class="action-btn">⇄ Compare</button>
+                    <select id="compare-selector" class="lap-select" style="display:none;border-left:2px solid var(--accent-blue);"></select>
+                    <span id="compare-delta" class="compare-delta" style="display:none;"></span>
+                    <span class="controls-divider"></span>
                     <div class="chart-legend">
                         <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span>Throttle</span>
                         <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span>Brake</span>
@@ -581,6 +587,51 @@ body {
     color: var(--text-primary);
 }
 
+/* Action Buttons — distinct from mode toggles */
+.action-btn {
+    padding: 5px 12px;
+    font-size: 11px;
+    font-family: inherit;
+    font-weight: 500;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.action-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--text-primary);
+}
+.action-btn.active {
+    border-color: var(--accent-blue);
+    background: #448aff18;
+    color: var(--accent-blue);
+    font-weight: 600;
+}
+
+/* Compare delta badge */
+.compare-delta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 4px;
+}
+.compare-delta.faster { color: var(--accent-green); background: #00e67615; }
+.compare-delta.slower { color: var(--accent-red); background: #ff174415; }
+
+/* Control group separators */
+.controls-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 6px;
+}
+
 /* Chart — Stacked Panels */
 .trace-stack {
     display: flex;
@@ -811,11 +862,6 @@ function initLapSelector() {
 
     selectedLap = bestLap;
 
-    select.addEventListener('change', () => {
-        selectedLap = parseInt(select.value);
-        onLapChange();
-    });
-
     // Compare button toggle
     compareBtn.addEventListener('click', () => {
         if (compareLap !== null) {
@@ -823,6 +869,7 @@ function initLapSelector() {
             compareLap = null;
             compareBtn.classList.remove('active');
             compareSelect.style.display = 'none';
+            document.getElementById('compare-delta').style.display = 'none';
             document.getElementById('delta-panel').style.display = 'none';
         } else {
             // Activate comparison — pick a different lap
@@ -835,14 +882,42 @@ function initLapSelector() {
                 compareLap = worstLap.lap;
             }
             document.getElementById('delta-panel').style.display = '';
+            updateCompareDelta();
         }
         onLapChange();
     });
 
     compareSelect.addEventListener('change', () => {
         compareLap = parseInt(compareSelect.value);
+        updateCompareDelta();
         onLapChange();
     });
+
+    select.addEventListener('change', () => {
+        selectedLap = parseInt(select.value);
+        if (compareLap !== null) updateCompareDelta();
+        onLapChange();
+    });
+}
+
+function updateCompareDelta() {
+    const deltaEl = document.getElementById('compare-delta');
+    if (!deltaEl || compareLap === null) { if (deltaEl) deltaEl.style.display = 'none'; return; }
+
+    const primaryLap = DATA.lap_results.find(l => l.lap === selectedLap);
+    const cmpLap = DATA.lap_results.find(l => l.lap === compareLap);
+    if (!primaryLap || !cmpLap || primaryLap.time <= 0 || cmpLap.time <= 0) {
+        deltaEl.style.display = 'none';
+        return;
+    }
+
+    const delta = primaryLap.time - cmpLap.time;
+    const sign = delta >= 0 ? '+' : '';
+    const cls = delta <= 0 ? 'faster' : 'slower';
+    deltaEl.textContent = `Δ ${sign}${delta.toFixed(1)}s`;
+    deltaEl.className = `compare-delta ${cls}`;
+    deltaEl.style.display = '';
+}
 }
 
 function getSelectedTrace() {
