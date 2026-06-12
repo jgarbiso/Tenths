@@ -92,8 +92,10 @@ tools/
 | 1.6 | Auto-generate skeleton track maps | ✅ Done |
 | 1.3 | Time_to_100% + Throttle_Hesitation | ✅ Done (Thr On, Thr Lag) |
 | 1.4 | Brake_Linearity + visual release panel | ✅ Done (per-lap, compare overlay) |
-| 1.5 | Session progression summary | Not started |
-| 1.7 | Testing framework | ✅ Done (78 tests) |
+| 1.5 | Session progression summary | ✅ Done (backend — frontend in Phase 2) |
+| 1.7 | Testing framework | ✅ Done (85 tests) |
+
+**All CLI Enhancement tasks complete. Ready for Phase 2 (Local Web Dashboard).**
 
 ### Remaining items:
 

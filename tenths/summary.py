@@ -209,8 +209,135 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
     return summary
 
 
+def compute_progression(summary, session_dir):
+    """Compute session-over-session progression data.
+
+    Scans sibling session directories (same car/track, earlier dates) for their
+    session_summary.json files. Computes deltas vs previous session and vs all-time best.
+
+    Args:
+        summary: the current session's summary dict
+        session_dir: path to the current session directory (e.g., .../bmwm2csr/winton_national/2026-06-06)
+
+    Returns:
+        dict with progression data, or None if no previous sessions found.
+        {
+            'previous_session': {
+                'date': '2026-06-01',
+                'best_lap_time_s': 92.5,
+            },
+            'delta_vs_previous': {
+                'lap_time_s': -0.5,          # negative = faster (improved)
+                'cleanest_abs': -10,         # negative = fewer (improved)
+                'total_recoverable_s': -0.3, # negative = less time loss (improved)
+            },
+            'alltime_best': {
+                'lap_time_s': 90.965,
+                'date': '2026-06-06',
+                'is_new_pb': True,
+            },
+            'session_count': 4,              # total sessions at this car/track
+            'trend': {
+                'lap_times': [92.5, 91.7, 91.2, 90.965],  # ordered oldest→newest
+                'dates': ['2026-05-20', '2026-05-25', '2026-06-01', '2026-06-06'],
+                'abs_avgs': [150, 120, 80, 82],
+            },
+        }
+    """
+    if not session_dir or not os.path.isdir(session_dir):
+        return None
+
+    # Navigate up to car/track level (session_dir is .../car/track/date)
+    track_dir = os.path.dirname(session_dir)
+    if not os.path.isdir(track_dir):
+        return None
+
+    current_date = summary.get('session', {}).get('date', '')
+
+    # Find all session_summary.json files in sibling date directories
+    previous_sessions = []
+    for date_dir_name in sorted(os.listdir(track_dir)):
+        date_path = os.path.join(track_dir, date_dir_name)
+        if not os.path.isdir(date_path):
+            continue
+        summary_file = os.path.join(date_path, 'session_summary.json')
+        if not os.path.exists(summary_file):
+            continue
+        # Skip the current session
+        if date_dir_name == current_date:
+            continue
+
+        try:
+            with open(summary_file, 'r', encoding='utf-8') as f:
+                prev = json.load(f)
+            prev_time = prev.get('best_lap', {}).get('time_seconds', 0)
+            if prev_time > 0:
+                previous_sessions.append({
+                    'date': prev.get('session', {}).get('date', date_dir_name),
+                    'best_lap_time_s': prev_time,
+                    'cleanest_abs': prev.get('abs', {}).get('cleanest_hits', 0),
+                    'total_recoverable_s': prev.get('total_recoverable_time_s', 0),
+                    'abs_avg': sum(prev.get('abs', {}).get('per_lap_totals', [])) / max(1, len(prev.get('abs', {}).get('per_lap_totals', []))),
+                })
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    if not previous_sessions:
+        return None
+
+    # Sort by date (oldest first)
+    previous_sessions.sort(key=lambda s: s['date'])
+
+    # Current session stats
+    current_time = summary.get('best_lap', {}).get('time_seconds', 0)
+    current_abs = summary.get('abs', {}).get('cleanest_hits', 0)
+    current_recoverable = summary.get('total_recoverable_time_s', 0)
+    current_abs_avg = sum(summary.get('abs', {}).get('per_lap_totals', [])) / max(1, len(summary.get('abs', {}).get('per_lap_totals', [])))
+
+    # Most recent previous session
+    most_recent = previous_sessions[-1]
+
+    # All-time best
+    all_times = [s['best_lap_time_s'] for s in previous_sessions] + [current_time]
+    alltime_best_time = min(all_times) if all_times else current_time
+    alltime_best_date = current_date if current_time <= min(s['best_lap_time_s'] for s in previous_sessions) else \
+        min(previous_sessions, key=lambda s: s['best_lap_time_s'])['date']
+
+    # Build trend arrays (including current session at the end)
+    trend_times = [s['best_lap_time_s'] for s in previous_sessions] + [current_time]
+    trend_dates = [s['date'] for s in previous_sessions] + [current_date]
+    trend_abs = [s['abs_avg'] for s in previous_sessions] + [current_abs_avg]
+
+    progression = {
+        'previous_session': {
+            'date': most_recent['date'],
+            'best_lap_time_s': most_recent['best_lap_time_s'],
+        },
+        'delta_vs_previous': {
+            'lap_time_s': round(current_time - most_recent['best_lap_time_s'], 3),
+            'cleanest_abs': current_abs - most_recent['cleanest_abs'],
+            'total_recoverable_s': round(current_recoverable - most_recent['total_recoverable_s'], 3),
+        },
+        'alltime_best': {
+            'lap_time_s': alltime_best_time,
+            'date': alltime_best_date,
+            'is_new_pb': current_time <= alltime_best_time,
+        },
+        'session_count': len(previous_sessions) + 1,
+        'trend': {
+            'lap_times': [round(t, 3) for t in trend_times],
+            'dates': trend_dates,
+            'abs_avgs': [round(a, 1) for a in trend_abs],
+        },
+    }
+
+    return progression
+
+
 def write_session_summary(summary, output_dir):
     """Write the session summary to a JSON file.
+
+    Also computes and attaches session progression data if previous sessions exist.
 
     Args:
         summary: dict from generate_session_summary()
@@ -220,6 +347,14 @@ def write_session_summary(summary, output_dir):
         Path to the written file.
     """
     os.makedirs(output_dir, exist_ok=True)
+
+    # Compute progression (references sibling session directories)
+    progression = compute_progression(summary, output_dir)
+    if progression:
+        summary['progression'] = progression
+    else:
+        summary['progression'] = None
+
     filepath = os.path.join(output_dir, "session_summary.json")
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2, default=str)
