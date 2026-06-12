@@ -51,6 +51,11 @@ def main():
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         generate_report_cli()
 
+    elif command == "summary":
+        from tenths.summary import generate_summary_cli
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        generate_summary_cli()
+
     elif command in ("--help", "-h", "help"):
         print_help()
 
@@ -74,6 +79,7 @@ Commands:
   process --dry-run               Preview without writing files
   process <file.ibt>              Process a specific file
   report <file.ibt>               Generate HTML visual report for a session
+  summary <file.ibt>              Generate session_summary.json for a session
   incident <file.ibt> [laps]      Incident forensics (e.g., 2,3,4)
   results <file.json|csv>         Parse iRacing race results
 

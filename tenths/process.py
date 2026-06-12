@@ -30,6 +30,7 @@ import sys
 from tenths.analyzer import analyze, fmt_time, parse_ibt
 from tenths.track_map import load_track_map, get_turn_name
 from tenths.report import generate_report
+from tenths.summary import generate_session_summary, write_session_summary
 
 # ── Config ────────────────────────────────────────────────────────────────────
 TELEMETRY_ROOT = os.environ.get('TENTHS_TELEMETRY_ROOT', r"c:\Users\justi\Documents\iRacing\telemetry")
@@ -678,6 +679,14 @@ def main():
                 print(f"  Created: session_report.html")
             except Exception as e:
                 print(f"  Warning: HTML report generation failed: {e}")
+
+            # Generate session_summary.json
+            try:
+                summary = generate_session_summary(best_data, best_fi, track_map, best_rr)
+                summary_path = write_session_summary(summary, session_dir)
+                print(f"  Created: session_summary.json")
+            except Exception as e:
+                print(f"  Warning: JSON summary generation failed: {e}")
 
             # Copy race result file to session dir if found
             for file_info, data, race_result in sessions:
