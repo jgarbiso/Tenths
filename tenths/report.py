@@ -930,7 +930,7 @@ function renderVarianceTable() {
     const headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Avg</th><th class="num">Best</th><th class="num">Loss</th><th>Priority</th></tr>';
     const rows = cv.map(c => {
         const lossClass = c.loss > 0.5 ? 'bad' : (c.loss > 0.3 ? 'warn' : '');
-        const priority = c.loss > 0.5 ? '<strong class="bad">HIGH</strong>' : (c.loss > 0.3 ? '<span class="warn">Medium</span>' : '');
+        const priority = c.loss > 0.5 ? '<strong class="bad">HIGH</strong>' : (c.loss > 0.3 ? '<span class="warn">Medium</span>' : '<span style="color:var(--text-secondary)">Low</span>');
         return `<tr>
             <td>${c.pct.toFixed(1)}%</td>
             <td>${escHtml(c.turn_name)}</td>
