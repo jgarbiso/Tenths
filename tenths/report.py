@@ -841,7 +841,7 @@ function initLapSelector() {
     const select = document.getElementById('lap-selector');
     const compareSelect = document.getElementById('compare-selector');
     const compareBtn = document.getElementById('compare-btn');
-    if (!select) return;
+    if (!select || !compareSelect || !compareBtn) return;
 
     const laps = DATA.lap_results;
     const bestLap = DATA.best_lap;
@@ -917,7 +917,6 @@ function updateCompareDelta() {
     deltaEl.textContent = `Δ ${sign}${delta.toFixed(1)}s`;
     deltaEl.className = `compare-delta ${cls}`;
     deltaEl.style.display = '';
-}
 }
 
 function getSelectedTrace() {
