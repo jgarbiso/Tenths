@@ -1,51 +1,43 @@
 # UX Improvements — HTML Report
 
-## Status: Documented, not yet implemented
+## Status: Core issues RESOLVED ✅
+
+Issues 1-4 from the original review have been implemented. Additional enhancements remain documented below for future work.
 
 ---
 
-## Problem: Button Discoverability & Hierarchy
+## Resolved Issues
 
-### Issues
+### 1. Action buttons vs mode toggles ✅
+- Created new `.action-btn` CSS class — outlined border, accent-blue when active
+- "⊕ Brake Points" and "⇄ Compare" are visually distinct from pill-shaped Speed/Brake toggles
 
-1. **"Compare" and "Brake Points" look identical to mode toggles (Speed/Brake)** — All use the same `toggle-btn` class. Users can't distinguish view modes from action buttons.
-2. **Controls split across two areas** — Map controls in map header, telemetry controls in telemetry header. No visual grouping.
-3. **Active state too subtle** — When Compare is active, just gets slightly lighter background. Hard to tell what's on/off.
-4. **Rotation controls look like undo/redo** — ↶/↷ could be confusing.
+### 2. Controls visual grouping ✅
+- Added `.controls-divider` (1px vertical line) between control groups
+- Map: Rotate | Speed/Brake | Brake Points
+- Telemetry: Lap selector | Compare + delta | Legend
 
-### Recommended Fix: Option A — Outlined Action Buttons
+### 3. Active state clarity ✅
+- Active action buttons: `border-color: var(--accent-blue); background: #448aff18; color: var(--accent-blue)`
+- Compare shows lap time delta badge: "Δ -0.8s" (green) or "Δ +0.8s" (red)
+- Compare dropdown has blue left border when visible
 
-Give action buttons a distinct visual treatment from mode toggles:
+### 4. Rotation controls clarity ✅
+- Added "Rotate" text label before the ↶/↷ buttons
+- Now reads: "Rotate ↶ 45° ↷"
 
-- **Mode toggles** (Speed/Brake): Pill-shaped group, mutually exclusive, current style
-- **Action buttons** (Compare, Brake Points): 1px border with rounded corners, accent color border when active, filled background when active
+---
 
-```
-Inactive:  border: 1px solid var(--border); color: var(--text-secondary);
-Active:    border-color: var(--accent-blue); background: #448aff20; color: var(--text-primary);
-```
+## Development Notes (report.py)
 
-Visual treatment:
-```
-[ Speed | Brake ]   〔⊕ Brake Points〕
+### ⚠️ JS Code Structure Warning
 
-[ Lap 4 ★ ▾ ]   〔⇄ Compare〕  [ Lap 5 ▾ ]
-```
+The `_get_js()` function in `report.py` returns a large block of JavaScript as a Python string. When editing:
 
-### Additional Enhancements to Implement
-
-1. **Lap time delta between compare dropdowns** — Show "Δ +0.8s" so you immediately know the gap without reading the chart
-
-2. **Color-code comparison dropdown** — Left border in cyan/accent-blue when active to distinguish from primary selector
-
-3. **Keyboard shortcuts** (future):
-   - `1-9` to select laps
-   - `C` to toggle compare
-   - `B` for brake points
-   - `S` for speed mode, `K` for brake mode
-   - Show as tooltips on hover
-
-4. **Active state badge on section headers** — When Brake Points is active: `TRACK MAP • Brake Points`
+1. **Brace matching is critical** — Python doesn't validate JS syntax. A stray `}` will silently break all subsequent functions at runtime with no build-time error.
+2. **Test after every edit** — Always regenerate the HTML and open in browser after modifying JS in report.py. Check browser console (F12) for errors.
+3. **Function boundaries** — Each function must end with exactly one `}` at the correct indentation. When moving code between functions, double-check you didn't duplicate or lose a closing brace.
+4. **Template literals** — The JS uses backtick strings with `${}` interpolation. These are inside a Python string, so be careful with escaping. Python f-strings are NOT used inside `_get_js()`.
 
 ---
 
