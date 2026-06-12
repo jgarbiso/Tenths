@@ -288,6 +288,17 @@ def _build_html(data_json, car, track, date, best_time, race_data):
             </div>
         </section>
 
+        <!-- Brake Release Shapes -->
+        <section class="card table-full-width" id="brake-release-section">
+            <div class="card-header">
+                <h2>Brake Release Shape</h2>
+                <div class="chart-legend">
+                    <span class="legend-item" style="font-size:10px;color:var(--text-secondary)">Linear release = smooth weight transfer = faster rotation</span>
+                </div>
+            </div>
+            <div class="release-grid" id="brake-release-grid"></div>
+        </section>
+
         <!-- Tables -->
         <section class="card table-card table-full-width">
             <div class="card-header">
@@ -695,6 +706,44 @@ body {
 }
 
 /* Chart — Stacked Panels */
+.release-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+}
+.release-card {
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    text-align: center;
+}
+.release-card-title {
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.release-card-score {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    margin-top: 4px;
+}
+.release-card-label {
+    font-size: 9px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.release-card svg {
+    display: block;
+    margin: 0 auto;
+}
+
 .trace-stack {
     display: flex;
     flex-direction: column;
@@ -1054,6 +1103,7 @@ function renderTables() {
     renderBrakingTable();
     renderVarianceTable();
     renderLapTable();
+    renderBrakeRelease();
 }
 
 function renderBrakingTable() {
@@ -1152,6 +1202,53 @@ function renderLapTable() {
     }).join('');
 
     document.getElementById('lap-table').innerHTML = `<table><thead>${headers}</thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderBrakeRelease() {
+    const zones = DATA.braking_zones;
+    const grid = document.getElementById('brake-release-grid');
+    if (!grid || !zones.length) return;
+
+    // Filter zones that have curve data
+    const withCurves = zones.filter(z => z.brake_release_curve && z.brake_release_curve.length > 0);
+    if (!withCurves.length) {
+        document.getElementById('brake-release-section').style.display = 'none';
+        return;
+    }
+
+    const w = 120, h = 50;
+
+    grid.innerHTML = withCurves.map(z => {
+        const curve = z.brake_release_curve;
+        const score = z.brake_linearity;
+        const turnName = z.turn_name || `${z.pct.toFixed(0)}%`;
+
+        // Score color: green (>0.8), amber (0.5-0.8), red (<0.5)
+        let scoreColor = 'var(--accent-green)';
+        let scoreLabel = 'LINEAR';
+        if (score < 0.5) { scoreColor = 'var(--accent-red)'; scoreLabel = 'STEP'; }
+        else if (score < 0.8) { scoreColor = 'var(--accent-amber)'; scoreLabel = 'MIXED'; }
+
+        // Build SVG path from curve data
+        const points = curve.map((v, i) => {
+            const x = (i / (curve.length - 1)) * w;
+            const y = h - (v * h);  // v is 0-1, flip Y
+            return `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+
+        // Reference line (perfect linear release) for comparison
+        const refPoints = `0,0 ${w},${h}`;
+
+        return `<div class="release-card">
+            <div class="release-card-title">${escHtml(turnName)}</div>
+            <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+                <polyline points="${refPoints}" fill="none" stroke="#ffffff15" stroke-width="1" stroke-dasharray="3,3"/>
+                <polyline points="${points}" fill="none" stroke="${scoreColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="release-card-score" style="color:${scoreColor}">${score !== null ? score.toFixed(2) : '—'}</div>
+            <div class="release-card-label">${scoreLabel}</div>
+        </div>`;
+    }).join('');
 }
 
 // ─── Track Map (Leaflet) ─────────────────────────────────────────────────
