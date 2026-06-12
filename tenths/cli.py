@@ -56,6 +56,11 @@ def main():
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         generate_summary_cli()
 
+    elif command == "migrate":
+        from tenths.summary import migrate_cli
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        migrate_cli()
+
     elif command in ("--help", "-h", "help"):
         print_help()
 
@@ -80,6 +85,7 @@ Commands:
   process <file.ibt>              Process a specific file
   report <file.ibt>               Generate HTML visual report for a session
   summary <file.ibt>              Generate session_summary.json for a session
+  migrate [path]                  Upgrade all session_summary.json to current schema
   incident <file.ibt> [laps]      Incident forensics (e.g., 2,3,4)
   results <file.json|csv>         Parse iRacing race results
 

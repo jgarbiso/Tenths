@@ -225,7 +225,92 @@ def _fmt_time(seconds):
     return f"{mins}:{secs:06.3f}"
 
 
-# ─── CLI Entry Point ──────────────────────────────────────────────────────────
+# ─── Schema Migration System ─────────────────────────────────────────────────
+
+# Migration registry: maps (from_version, to_version) -> transform function.
+# Each migration receives the full summary dict and returns the modified dict.
+# Migrations are applied sequentially: 1.0.0 → 1.1.0 → 1.2.0 etc.
+MIGRATIONS = {
+    # Example (uncomment when first migration is needed):
+    # ("1.0.0", "1.1.0"): _migrate_1_0_0_to_1_1_0,
+}
+
+# Ordered list of all schema versions (oldest first)
+SCHEMA_VERSIONS = ["1.0.0"]
+
+
+def migrate_summary(filepath):
+    """Read a session_summary.json, migrate to current schema, write back.
+
+    Args:
+        filepath: path to session_summary.json file
+
+    Returns:
+        tuple (migrated: bool, from_version: str, to_version: str)
+        Returns (False, version, version) if already at current version.
+    """
+    with open(filepath, 'r', encoding='utf-8') as f:
+        summary = json.load(f)
+
+    file_version = summary.get('schema_version', '0.0.0')
+
+    if file_version == CURRENT_SCHEMA_VERSION:
+        return False, file_version, file_version
+
+    # Apply migrations sequentially
+    current = file_version
+    for i, version in enumerate(SCHEMA_VERSIONS):
+        if version == current and i + 1 < len(SCHEMA_VERSIONS):
+            next_version = SCHEMA_VERSIONS[i + 1]
+            migration_key = (current, next_version)
+            if migration_key in MIGRATIONS:
+                summary = MIGRATIONS[migration_key](summary)
+                summary['schema_version'] = next_version
+                current = next_version
+            else:
+                # No migration path — force-stamp current version
+                break
+
+    # If we couldn't migrate all the way, stamp current version anyway
+    # (additive changes don't need explicit migration — missing fields = null)
+    original_version = file_version
+    summary['schema_version'] = CURRENT_SCHEMA_VERSION
+
+    # Write back
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(summary, f, indent=2, default=str)
+
+    return True, original_version, CURRENT_SCHEMA_VERSION
+
+
+def migrate_directory(directory, recursive=True):
+    """Find and migrate all session_summary.json files under a directory.
+
+    Args:
+        directory: root directory to scan
+        recursive: if True, search subdirectories
+
+    Returns:
+        list of (filepath, migrated, from_version, to_version) tuples
+    """
+    results = []
+
+    if recursive:
+        for root, dirs, files in os.walk(directory):
+            if 'session_summary.json' in files:
+                filepath = os.path.join(root, 'session_summary.json')
+                migrated, from_v, to_v = migrate_summary(filepath)
+                results.append((filepath, migrated, from_v, to_v))
+    else:
+        filepath = os.path.join(directory, 'session_summary.json')
+        if os.path.exists(filepath):
+            migrated, from_v, to_v = migrate_summary(filepath)
+            results.append((filepath, migrated, from_v, to_v))
+
+    return results
+
+
+# ─── CLI Entry Points ─────────────────────────────────────────────────────────
 
 def generate_summary_cli():
     """CLI entry point: tenths summary <file.ibt>"""
@@ -282,3 +367,37 @@ def generate_summary_cli():
     print(f"  Corner variance entries: {len(summary['corner_variance'])}")
     if summary['race_result']:
         print(f"  Race: P{summary['race_result']['finish_position']}/{summary['race_result']['field_size']}, iR {summary['race_result']['irating_delta']:+d}")
+
+
+def migrate_cli():
+    """CLI entry point: tenths migrate [path]"""
+    import sys
+
+    # Default to telemetry root
+    from tenths.process import TELEMETRY_ROOT
+    target = sys.argv[1] if len(sys.argv) > 1 else TELEMETRY_ROOT
+
+    if not os.path.exists(target):
+        print(f"Path not found: {target}")
+        return
+
+    print(f"Scanning for session_summary.json files in: {target}")
+    print(f"Current schema version: {CURRENT_SCHEMA_VERSION}")
+    print()
+
+    results = migrate_directory(target)
+
+    if not results:
+        print("No session_summary.json files found.")
+        return
+
+    migrated_count = sum(1 for _, m, _, _ in results if m)
+    print(f"Found {len(results)} file(s):")
+    for filepath, migrated, from_v, to_v in results:
+        rel_path = os.path.relpath(filepath, target)
+        if migrated:
+            print(f"  ✅ {rel_path}: {from_v} → {to_v}")
+        else:
+            print(f"  ── {rel_path}: {from_v} (current)")
+
+    print(f"\nMigrated: {migrated_count} / {len(results)} files")
