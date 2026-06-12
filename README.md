@@ -23,35 +23,56 @@ A telemetry analysis and coaching tool for iRacing. Parses `.ibt` files, generat
 ```cmd
 cd c:\Users\justi\Documents\Sim\Tenths
 
-# Process all pending .ibt files (auto-archives, auto-matches race results)
+# Process all pending .ibt files (generates notes + HTML report + JSON summary)
 python -m tenths.process
+
+# Process a specific .ibt file
+python -m tenths.process "c:\Users\justi\Documents\iRacing\telemetry\_archive\bmwm2csr_winton national 2026-06-06 22-26-36.ibt"
 
 # Dry run (preview without writing)
 python -m tenths.process --dry-run
 
-# Generate HTML visual report for a session
+# Generate just the HTML visual report
 python -m tenths.cli report "path\to\file.ibt"
+
+# Generate just the JSON summary
+python -m tenths.cli summary "path\to\file.ibt"
+
+# Upgrade all session_summary.json files to current schema
+python -m tenths.cli migrate
 
 # Analyze a specific file (prints coaching report to stdout)
 python -m tenths.analyzer "path\to\file.ibt"
 
-# Parse race results (CSV or JSON from iRacing)
-python -m tenths.results "path\to\eventresult_12345_0.csv"
-
-# Incident forensics on specific laps
-python -m tenths.incidents "path\to\file.ibt" 2,3
+# Run tests
+python -m pytest tests/
 ```
+
+## What Gets Generated
+
+When you process a session, three files are created in `telemetry/<car>/<track>/<date>/`:
+
+| File | Purpose |
+|------|---------|
+| `session_notes.md` | Markdown coaching report with tables and findings |
+| `session_report.html` | Interactive visual report — open in any browser |
+| `session_summary.json` | Structured data contract for dashboards and progression |
 
 ## HTML Visual Report
 
-The `tenths report` command (or automatic during `tenths process`) generates a self-contained HTML file with:
+The `session_report.html` is a self-contained interactive report. Open in any browser, no server needed.
 
-- **Track heatmap** — GPS trace colored by speed or brake pressure, with rotation controls
-- **Telemetry traces** — stacked panels (MoTeC-style): Brake+Throttle, Speed
-- **Hover sync** — cursor position syncs between track map and charts in real-time
+**Features:**
+- **Track heatmap** — GPS trace colored by speed or brake pressure, rotatable to match iRacing view
+- **Per-lap brake points overlay** — shows braking consistency with spread metrics
+- **Telemetry traces** — stacked panels: Brake+Throttle, Speed, Steering (MoTeC-style)
+- **Lap selector** — switch between any valid lap, all charts update
+- **Lap comparison** — overlay two laps with speed delta panel (green = faster, red = slower)
+- **Brake Release Shape panel** — SVG curves showing release quality per corner with linearity scores
 - **Race result badge** — prominent P# with iRating delta and podium colors
-- **Data tables** — braking zones, corner variance, lap summary
-- **Corner labels** — turn names displayed directly on the track map
+- **Data tables** — braking zones (Thr On, Thr Lag metrics), corner variance, lap summary
+- **Corner labels + direction arrow** — turn names on the track map with travel direction
+- **ABS sparkline** — visual trend of ABS hits across the session
 
 Opens in any browser, no server needed. Uses the "Pit Wall" dark theme (F1 engineering screen aesthetic).
 
