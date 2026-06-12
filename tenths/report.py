@@ -229,7 +229,10 @@ def _build_html(data_json, car, track, date, best_time, race_data):
         <!-- Telemetry Traces (Stacked Panels — MoTeC style) -->
         <section class="card chart-card">
             <div class="card-header">
-                <h2>Telemetry</h2>
+                <div class="telemetry-header-left">
+                    <h2>Telemetry</h2>
+                    <span id="crosshair-info" class="crosshair-inline"></span>
+                </div>
                 <div class="telemetry-controls">
                     <select id="lap-selector" class="lap-select"></select>
                     <span class="controls-divider"></span>
@@ -287,9 +290,6 @@ def _build_html(data_json, car, track, date, best_time, race_data):
             <div id="lap-table"></div>
         </section>
     </main>
-
-    <!-- Hover crosshair indicator -->
-    <div id="crosshair-info" class="crosshair-info"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -762,25 +762,24 @@ tr:hover td {
     margin-top: 2px;
 }
 
-/* Crosshair Info */
-.crosshair-info {
-    position: fixed;
-    bottom: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 6px 14px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+/* Crosshair Info (inline in telemetry header) */
+.telemetry-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.crosshair-inline {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    color: var(--text-primary);
-    pointer-events: none;
+    color: var(--text-secondary);
     opacity: 0;
     transition: opacity 0.15s;
-    z-index: 1000;
+    white-space: nowrap;
 }
-.crosshair-info.visible { opacity: 1; }
+.crosshair-inline.visible {
+    opacity: 1;
+    color: var(--text-primary);
+}
 
 /* Responsive */
 @media (max-width: 900px) {
