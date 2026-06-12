@@ -1061,11 +1061,13 @@ def _extract_tire_temps(df, lap_num):
 
 
 def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
-    """Extract corner exit metrics for each braking zone.
+    """Extract corner exit metrics and brake release curve for each braking zone.
 
     For each zone, calculates:
     - thr_on: time from apex (min speed) to first 100% throttle (seconds)
     - thr_lag: time spent between 20-80% throttle before exceeding 80% (seconds)
+    - brake_linearity: R² score of linear fit to brake release phase (0–1)
+    - brake_release_curve: normalized array of brake % values from peak to zero (for visualization)
 
     Returns list of dicts parallel to braking_zones.
     """
@@ -1074,7 +1076,7 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
 
     lap = df[df['Lap'] == lap_num].copy().reset_index(drop=True)
     if lap.empty or 'Throttle' not in lap.columns:
-        return [{'thr_on': None, 'thr_lag': None} for _ in braking_zones]
+        return [{'thr_on': None, 'thr_lag': None, 'brake_linearity': None, 'brake_release_curve': []} for _ in braking_zones]
 
     results = []
     for zone in braking_zones:
@@ -1085,16 +1087,60 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
 
         zone_data = lap[(lap['LapDistPct'] >= exit_start) & (lap['LapDistPct'] <= exit_end)]
         if zone_data.empty:
-            results.append({'thr_on': None, 'thr_lag': None})
+            results.append({'thr_on': None, 'thr_lag': None, 'brake_linearity': None, 'brake_release_curve': []})
             continue
 
         # Find apex (minimum speed point in this zone)
         apex_idx = zone_data['Speed'].idxmin()
         apex_speed = zone_data.loc[apex_idx, 'Speed'] * 2.237  # mph
 
+        # === Brake Release Curve & Linearity ===
+        # Find peak brake in this zone, then extract the release phase (peak → 0%)
+        brake_in_zone = zone_data['Brake']
+        peak_brake_idx = brake_in_zone.idxmax()
+        peak_brake_val = brake_in_zone.loc[peak_brake_idx]
+
+        # Release phase: from peak brake to where brake drops below 2%
+        release_phase = lap.loc[peak_brake_idx:]
+        brake_zero = release_phase[release_phase['Brake'] < 2]
+        if not brake_zero.empty and peak_brake_val > 20:
+            end_release_idx = brake_zero.index.min()
+            release_data = lap.loc[peak_brake_idx:end_release_idx, 'Brake'].values
+
+            # Normalize to 0–1 for the curve (peak = 1.0, zero = 0.0)
+            if len(release_data) > 3:
+                curve_normalized = (release_data / peak_brake_val).tolist()
+                # Downsample to max 20 points for compact JSON
+                if len(curve_normalized) > 20:
+                    step = len(curve_normalized) / 20
+                    curve_normalized = [curve_normalized[int(i * step)] for i in range(20)]
+
+                # Linearity score: R² of linear fit
+                import numpy as np
+                n = len(release_data)
+                x = np.arange(n)
+                # Perfect linear release: y goes from max to 0 linearly
+                # Fit actual data with linear regression
+                if n > 2:
+                    coeffs = np.polyfit(x, release_data, 1)
+                    predicted = np.polyval(coeffs, x)
+                    ss_res = np.sum((release_data - predicted) ** 2)
+                    ss_tot = np.sum((release_data - np.mean(release_data)) ** 2)
+                    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+                    brake_linearity = round(max(0, min(1, r_squared)), 2)
+                else:
+                    brake_linearity = None
+            else:
+                curve_normalized = []
+                brake_linearity = None
+        else:
+            curve_normalized = []
+            brake_linearity = None
+
+        # === Throttle Exit Metrics ===
         # Skip very slow hairpins where 100% throttle is trivial
         if apex_speed < 30:
-            results.append({'thr_on': None, 'thr_lag': None})
+            results.append({'thr_on': None, 'thr_lag': None, 'brake_linearity': brake_linearity, 'brake_release_curve': curve_normalized})
             continue
 
         # Scan forward from apex
@@ -1105,26 +1151,27 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
         if not full_throttle.empty:
             wot_idx = full_throttle.index.min()
             thr_on = (wot_idx - apex_idx) / sample_rate
-            # Sanity: if > 10 seconds, something's wrong (next braking zone?)
             if thr_on > 10:
                 thr_on = None
         else:
             thr_on = None
 
         # thr_lag: time spent in 20-80% band before exceeding 80%
-        # Find where throttle first exceeds 80% after apex
         above_80 = post_apex[post_apex['Throttle'] > 80]
         if not above_80.empty:
             exit_80_idx = above_80.index.min()
-            # Count samples between apex and exit_80 where throttle is 20-80%
             mid_band = post_apex.loc[apex_idx:exit_80_idx]
             feathering = mid_band[(mid_band['Throttle'] >= 20) & (mid_band['Throttle'] <= 80)]
             thr_lag = len(feathering) / sample_rate
         else:
             thr_lag = None
 
-        results.append({'thr_on': round(thr_on, 2) if thr_on is not None else None,
-                        'thr_lag': round(thr_lag, 2) if thr_lag is not None else None})
+        results.append({
+            'thr_on': round(thr_on, 2) if thr_on is not None else None,
+            'thr_lag': round(thr_lag, 2) if thr_lag is not None else None,
+            'brake_linearity': brake_linearity,
+            'brake_release_curve': curve_normalized,
+        })
 
     return results
 

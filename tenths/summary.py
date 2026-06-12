@@ -131,9 +131,11 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
         if i < len(exit_metrics_data):
             zone['thr_on_s'] = exit_metrics_data[i].get('thr_on')
             zone['thr_lag_s'] = exit_metrics_data[i].get('thr_lag')
+            zone['brake_linearity'] = exit_metrics_data[i].get('brake_linearity')
         else:
             zone['thr_on_s'] = None
             zone['thr_lag_s'] = None
+            zone['brake_linearity'] = None
         braking_zones.append(zone)
 
     # Corner variance with turn names

@@ -61,9 +61,13 @@ def generate_report(data, file_info, track_map, race_result=None):
         if i < len(exit_metrics):
             zone_copy['thr_on'] = exit_metrics[i].get('thr_on')
             zone_copy['thr_lag'] = exit_metrics[i].get('thr_lag')
+            zone_copy['brake_linearity'] = exit_metrics[i].get('brake_linearity')
+            zone_copy['brake_release_curve'] = exit_metrics[i].get('brake_release_curve', [])
         else:
             zone_copy['thr_on'] = None
             zone_copy['thr_lag'] = None
+            zone_copy['brake_linearity'] = None
+            zone_copy['brake_release_curve'] = []
         braking_zones_js.append(zone_copy)
 
     # Corner variance with turn names
