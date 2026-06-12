@@ -458,7 +458,7 @@ body {
     font-family: 'JetBrains Mono', monospace;
     font-size: 13px;
     font-weight: 600;
-    color: #ffffff12;
+    color: #ffffff30;
     letter-spacing: 1px;
     text-transform: uppercase;
     pointer-events: none;
