@@ -566,6 +566,7 @@ def find_race_result(session_info):
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     dry_run = '--dry-run' in sys.argv
+    git_commit = '--git' in sys.argv
     specific = None
     for arg in sys.argv[1:]:
         if not arg.startswith('--') and os.path.exists(arg):
@@ -727,8 +728,8 @@ def main():
                 # Use the first session's file_info for the track file update
                 update_track_file(sessions[0][0], sessions[0][1], best_of_day, cleanest_of_day, is_first)
 
-    # Git commit
-    if not dry_run and day_groups:
+    # Git commit (opt-in with --git flag)
+    if git_commit and not dry_run and day_groups:
         print(f"\n{'='*60}")
         print("Git commit...")
         try:
