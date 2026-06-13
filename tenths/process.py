@@ -193,6 +193,8 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     track_display = f"{track_display_name}, {track_config}" if track_config else track_display_name
     event_type = si.get('event_type', 'Practice')
     car_class = si.get('car_class_short') or data.get('car_class', '')
+    # Don't show class if it's the same as the car name (single-make series)
+    show_class = car_class and car_class.lower().replace(' ', '') != car_display.lower().replace(' ', '')
 
     date = file_info['date']
     time_str = file_info['time']
@@ -211,7 +213,7 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     lines.append("## Session Info")
     lines.append(f"- **Car:** {car_display}")
     lines.append(f"- **Track:** {track_display}")
-    if car_class:
+    if show_class:
         lines.append(f"- **Class:** {car_class}")
     lines.append(f"- **Session Type:** {event_type}")
     if is_first_session:
@@ -759,6 +761,7 @@ def generate_day_notes(sessions, car, track, date, track_map, baseline):
     track_config = si.get('track_config_name', '')
     track_display = f"{track_display_name}, {track_config}" if track_config else track_display_name
     car_class = si.get('car_class_short') or first_data.get('car_class', '')
+    show_class = car_class and car_class.lower().replace(' ', '') != car_display.lower().replace(' ', '')
 
     is_first_session = baseline is None
 
@@ -771,7 +774,7 @@ def generate_day_notes(sessions, car, track, date, track_map, baseline):
     header_lines.append("## Session Info")
     header_lines.append(f"- **Car:** {car_display}")
     header_lines.append(f"- **Track:** {track_display}")
-    if car_class:
+    if show_class:
         header_lines.append(f"- **Class:** {car_class}")
 
     # Check if any session has race results
@@ -813,10 +816,10 @@ def generate_day_notes(sessions, car, track, date, track_map, baseline):
         # Strip the header from generate_notes (we already have one)
         # Find the first "---" separator and take everything after the Session Info block
         lines = session_notes.split('\n')
-        # Find the lap table section (starts with "## Practice" or "## Race")
+        # Find the lap table section (starts with "## Practice" or "## Race" etc.)
         start_idx = 0
         for i, line in enumerate(lines):
-            if line.startswith('## ') and ('Practice' in line or 'Race' in line or 'Qualify' in line):
+            if line.startswith('## ') and any(t in line for t in ('Practice', 'Race', 'Qualify', 'Test', 'Lone Qualify', 'Warmup')):
                 start_idx = i
                 break
         session_section = '\n'.join(lines[start_idx:])

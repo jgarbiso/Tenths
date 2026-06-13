@@ -392,7 +392,7 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
             if apex_brake > 15 and min_spd > 20:
                 notes.append("Over-slowing (Trust GT4 Grip)")
             # GT4: fast downshifts are optimal for engine braking
-            if brake_to_shift is not None and brake_to_shift < 0.15:
+            if brake_to_shift is not None and brake_to_shift >= 0 and brake_to_shift < 0.15:
                 notes.append("Early Shift (Protection Risk)")
             if max_ds_rpm > 7500:
                 notes.append("Over-rev Risk")
@@ -400,7 +400,7 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
                 notes.append("Lugging")
         else:
             # Touring car (M2 CS, etc.) — original logic
-            if brake_to_shift is not None and brake_to_shift < 0.2:
+            if brake_to_shift is not None and brake_to_shift >= 0 and brake_to_shift < 0.2:
                 notes.append("Early Shift")
             if max_ds_rpm > 7000:
                 notes.append("Aggressive Shift")
@@ -941,14 +941,14 @@ def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60):
                 notes.append("Late Brake Squeeze")
             if zone_data['apex_brake'] > 15 and min_spd > 20:
                 notes.append("Over-slowing (Trust GT4 Grip)")
-            if zone_data['brake_to_shift'] is not None and zone_data['brake_to_shift'] < 0.15:
+            if zone_data['brake_to_shift'] is not None and zone_data['brake_to_shift'] >= 0 and zone_data['brake_to_shift'] < 0.15:
                 notes.append("Early Shift (Protection Risk)")
             if zone_data['max_ds_rpm'] > 7500:
                 notes.append("Over-rev Risk")
             if zone_data['apex_rpm'] < 4000 and min_spd > 40:
                 notes.append("Lugging")
         else:
-            if zone_data['brake_to_shift'] is not None and zone_data['brake_to_shift'] < 0.2:
+            if zone_data['brake_to_shift'] is not None and zone_data['brake_to_shift'] >= 0 and zone_data['brake_to_shift'] < 0.2:
                 notes.append("Early Shift")
             if zone_data['max_ds_rpm'] > 7000:
                 notes.append("Aggressive Shift")
