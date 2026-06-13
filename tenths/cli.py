@@ -51,6 +51,13 @@ def main():
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         generate_report_cli()
 
+    elif command == "watch":
+        from tenths.service.watcher import TelemetryWatcher
+        # Optional: --no-open flag to disable auto-opening browser
+        auto_open = '--no-open' not in sys.argv
+        watcher = TelemetryWatcher(auto_open=auto_open)
+        watcher.start()
+
     elif command == "summary":
         from tenths.summary import generate_summary_cli
         sys.argv = [sys.argv[0]] + sys.argv[2:]
@@ -79,6 +86,8 @@ Tenths — Find your tenths.
 iRacing telemetry analysis and coaching tool.
 
 Commands:
+  watch                           Watch for new sessions and auto-process (Ctrl+C to stop)
+  watch --no-open                 Watch without auto-opening reports in browser
   analyze <file.ibt>              Full coaching report (prints to stdout)
   process                         Process all pending .ibt files → session notes
   process --dry-run               Preview without writing files
