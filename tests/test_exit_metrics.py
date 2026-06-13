@@ -90,3 +90,30 @@ class TestExitMetricsInSummary:
         for zone in summary['braking_zones']:
             if zone['brake_linearity'] is not None:
                 assert 0 <= zone['brake_linearity'] <= 1
+
+
+class TestApexConsistency:
+    """Tests for apex speed consistency metric."""
+
+    def test_apex_consistency_present(self, winton_race_data):
+        """analyze() should include apex_consistency in the return dict."""
+        assert 'apex_consistency' in winton_race_data
+        assert len(winton_race_data['apex_consistency']) == len(winton_race_data['braking_zones'])
+
+    def test_apex_std_values(self, winton_race_data):
+        """Std dev should be non-negative and reasonable (< 20 mph)."""
+        for ac in winton_race_data['apex_consistency']:
+            if ac['std_apex_mph'] is not None:
+                assert 0 <= ac['std_apex_mph'] < 20
+
+    def test_apex_avg_values(self, winton_race_data):
+        """Average apex speed should be positive and reasonable."""
+        for ac in winton_race_data['apex_consistency']:
+            if ac['avg_apex_mph'] is not None:
+                assert 20 < ac['avg_apex_mph'] < 200
+
+    def test_per_lap_apex_count(self, winton_race_data):
+        """Should have one entry per valid lap."""
+        num_laps = len(winton_race_data['valid_laps'])
+        for ac in winton_race_data['apex_consistency']:
+            assert len(ac['per_lap_apex']) == num_laps

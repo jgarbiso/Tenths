@@ -750,6 +750,9 @@ def analyze(filepath):
     # Per-lap brake points (for consistency overlay)
     per_lap_brake_points = _extract_per_lap_brake_points(df, valid_laps, braking_zones)
 
+    # Apex speed consistency (per-zone, across laps)
+    apex_consistency = _extract_apex_consistency(df, valid_laps, braking_zones)
+
     # Exit metrics (Thr On, Thr Lag, Brake Linearity) for all valid laps
     exit_metrics_all = {}
     for lap_num in valid_laps:
@@ -788,6 +791,7 @@ def analyze(filepath):
         'gps_trace': gps_trace,
         'gps_traces': gps_traces,
         'per_lap_brake_points': per_lap_brake_points,
+        'apex_consistency': apex_consistency,
         'exit_metrics': exit_metrics,
         'exit_metrics_all': {str(k): v for k, v in exit_metrics_all.items()},
         'session_info': session_info,
@@ -1177,6 +1181,55 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
             'brake_linearity': brake_linearity,
             'brake_release_curve': curve_normalized,
         })
+
+    return results
+
+
+def _extract_apex_consistency(df, valid_laps, braking_zones):
+    """Compute apex speed consistency for each braking zone across all valid laps.
+
+    For each zone, collects the minimum speed from every lap and computes:
+    - avg_apex_mph: mean min speed across laps
+    - std_apex_mph: standard deviation (lower = more consistent)
+    - per_lap_apex: list of {lap, apex_speed_mph} for each lap
+
+    Returns list of dicts parallel to braking_zones.
+    """
+    if not braking_zones or len(valid_laps) < 2:
+        return [{'avg_apex_mph': None, 'std_apex_mph': None, 'per_lap_apex': []} for _ in braking_zones]
+
+    results = []
+    for zone in braking_zones:
+        zone_center = zone['pct']
+        search_min = zone_center - 5
+        search_max = zone_center + 8
+
+        apex_speeds = []
+        per_lap = []
+        for lap_num in valid_laps:
+            lap_data = df[df['Lap'] == lap_num]
+            if lap_data.empty:
+                continue
+            zone_data = lap_data[
+                (lap_data['LapDistPct'] >= search_min) &
+                (lap_data['LapDistPct'] <= search_max)
+            ]
+            if zone_data.empty:
+                continue
+            min_speed_mph = zone_data['Speed'].min() * 2.237
+            apex_speeds.append(min_speed_mph)
+            per_lap.append({'lap': int(lap_num), 'apex_speed_mph': round(min_speed_mph, 1)})
+
+        if len(apex_speeds) >= 2:
+            avg = float(np.mean(apex_speeds))
+            std = float(np.std(apex_speeds))
+            results.append({
+                'avg_apex_mph': round(avg, 1),
+                'std_apex_mph': round(std, 1),
+                'per_lap_apex': per_lap,
+            })
+        else:
+            results.append({'avg_apex_mph': None, 'std_apex_mph': None, 'per_lap_apex': per_lap})
 
     return results
 

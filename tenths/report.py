@@ -54,6 +54,7 @@ def generate_report(data, file_info, track_map, race_result=None):
     # Build braking zones with turn names + exit metrics for JS
     braking_zones_js = []
     exit_metrics = data.get('exit_metrics', [])
+    apex_consistency = data.get('apex_consistency', [])
     for i, z in enumerate(braking_zones):
         zone_copy = dict(z)
         zone_copy['turn_name'] = get_turn_name(track_map, z['pct'])
@@ -68,6 +69,13 @@ def generate_report(data, file_info, track_map, race_result=None):
             zone_copy['thr_lag'] = None
             zone_copy['brake_linearity'] = None
             zone_copy['brake_release_curve'] = []
+        # Merge apex consistency
+        if i < len(apex_consistency):
+            zone_copy['apex_std_mph'] = apex_consistency[i].get('std_apex_mph')
+            zone_copy['apex_avg_mph'] = apex_consistency[i].get('avg_apex_mph')
+        else:
+            zone_copy['apex_std_mph'] = None
+            zone_copy['apex_avg_mph'] = None
         braking_zones_js.append(zone_copy)
 
     # Corner variance with turn names
@@ -1134,18 +1142,21 @@ function renderBrakingTable() {
             </tr>`;
         }).join('');
     } else {
-        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">ABS</th><th class="num">Brk2Shft</th><th class="num">Apex RPM</th><th class="num">Thr On</th><th class="num">Thr Lag</th><th>Notes</th></tr>';
+        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">Apex ±</th><th class="num">ABS</th><th class="num">Brk2Shft</th><th class="num">Apex RPM</th><th class="num">Thr On</th><th class="num">Thr Lag</th><th>Notes</th></tr>';
         rows = zones.map(z => {
             const absClass = z.abs > 0 ? 'bad' : '';
             const b2s = z.brake_to_shift != null && z.brake_to_shift >= 0 ? z.brake_to_shift.toFixed(2) + 's' : '—';
             const thrOn = z.thr_on != null ? z.thr_on.toFixed(2) + 's' : '—';
             const thrLag = z.thr_lag != null ? z.thr_lag.toFixed(2) + 's' : '—';
             const thrLagClass = z.thr_lag != null && z.thr_lag > 0.5 ? 'warn' : '';
+            const apexStd = z.apex_std_mph != null ? '±' + z.apex_std_mph.toFixed(1) : '—';
+            const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
             return `<tr>
                 <td>${z.pct.toFixed(1)}%</td>
                 <td>${escHtml(z.turn_name)}</td>
                 <td class="num">${Math.round(z.entry_mph)} mph</td>
                 <td class="num">${Math.round(z.min_mph)} mph</td>
+                <td class="num ${apexStdClass}">${apexStd}</td>
                 <td class="num ${absClass}">${z.abs}</td>
                 <td class="num">${b2s}</td>
                 <td class="num">${z.apex_rpm > 0 ? Math.round(z.apex_rpm) : '—'}</td>
