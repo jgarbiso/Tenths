@@ -23,6 +23,12 @@ A telemetry analysis and coaching tool for iRacing. Parses `.ibt` files, generat
 ```cmd
 cd c:\Users\justi\Documents\Sim\Tenths
 
+# Watch for new sessions and auto-process + open report (run before you race)
+python -m tenths.cli watch
+
+# Watch without auto-opening browser
+python -m tenths.cli watch --no-open
+
 # Process all pending .ibt files (generates notes + HTML report + JSON summary)
 python -m tenths.process
 
