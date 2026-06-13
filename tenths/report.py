@@ -1120,55 +1120,33 @@ function renderBrakingTable() {
     const zones = DATA.braking_zones;
     if (!zones.length) return;
 
-    const isGT4 = DATA.car_class === 'GT4';
-    let headers, rows;
-
-    if (isGT4) {
-        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">Apex ±</th><th class="num">ABS</th><th class="num">T2Peak</th><th class="num">Coast</th><th>Notes</th></tr>';
-        rows = zones.map(z => {
-            const absClass = z.abs > 0 ? 'bad' : '';
-            const t2p = z.t2peak != null ? z.t2peak.toFixed(2) + 's' : '—';
-            const t2pClass = z.t2peak != null ? (z.t2peak <= 0.4 ? 'good' : (z.t2peak <= 0.55 ? 'warn' : 'bad')) : '';
-            const coast = z.coast_time != null ? z.coast_time.toFixed(2) + 's' : '—';
-            const apexStd = z.apex_std_mph != null ? '±' + z.apex_std_mph.toFixed(1) : '—';
-            const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
-            return `<tr>
-                <td>${z.pct.toFixed(1)}%</td>
-                <td>${escHtml(z.turn_name)}</td>
-                <td class="num">${Math.round(z.entry_mph)} mph</td>
-                <td class="num">${Math.round(z.min_mph)} mph</td>
-                <td class="num ${apexStdClass}">${apexStd}</td>
-                <td class="num ${absClass}">${z.abs}</td>
-                <td class="num ${t2pClass}">${t2p}</td>
-                <td class="num">${coast}</td>
-                <td>${z.notes ? z.notes.join(', ') : ''}</td>
-            </tr>`;
-        }).join('');
-    } else {
-        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">Apex ±</th><th class="num">ABS</th><th class="num">Brk2Shft</th><th class="num">Apex RPM</th><th class="num">Thr On</th><th class="num">Thr Lag</th><th>Notes</th></tr>';
-        rows = zones.map(z => {
-            const absClass = z.abs > 0 ? 'bad' : '';
-            const b2s = z.brake_to_shift != null && z.brake_to_shift >= 0 ? z.brake_to_shift.toFixed(2) + 's' : '—';
-            const thrOn = z.thr_on != null ? z.thr_on.toFixed(2) + 's' : '—';
-            const thrLag = z.thr_lag != null ? z.thr_lag.toFixed(2) + 's' : '—';
-            const thrLagClass = z.thr_lag != null && z.thr_lag > 0.5 ? 'warn' : '';
-            const apexStd = z.apex_std_mph != null ? '±' + z.apex_std_mph.toFixed(1) : '—';
-            const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
-            return `<tr>
-                <td>${z.pct.toFixed(1)}%</td>
-                <td>${escHtml(z.turn_name)}</td>
-                <td class="num">${Math.round(z.entry_mph)} mph</td>
-                <td class="num">${Math.round(z.min_mph)} mph</td>
-                <td class="num ${apexStdClass}">${apexStd}</td>
-                <td class="num ${absClass}">${z.abs}</td>
-                <td class="num">${b2s}</td>
-                <td class="num">${z.apex_rpm > 0 ? Math.round(z.apex_rpm) : '—'}</td>
-                <td class="num">${thrOn}</td>
-                <td class="num ${thrLagClass}">${thrLag}</td>
-                <td>${z.notes ? z.notes.join(', ') : ''}</td>
-            </tr>`;
-        }).join('');
-    }
+    // Unified table for all car classes
+    const headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">Apex ±</th><th class="num">ABS</th><th class="num">T2Peak</th><th class="num">Brk Rel</th><th class="num">Thr On</th><th class="num">Thr Lag</th><th>Notes</th></tr>';
+    const rows = zones.map(z => {
+        const absClass = z.abs > 0 ? 'bad' : '';
+        const t2p = z.t2peak != null ? z.t2peak.toFixed(2) + 's' : '—';
+        const t2pClass = z.t2peak != null ? (z.t2peak <= 0.4 ? 'good' : (z.t2peak <= 0.55 ? 'warn' : 'bad')) : '';
+        const brkRel = z.brake_linearity != null ? z.brake_linearity.toFixed(2) : '—';
+        const brkRelClass = z.brake_linearity != null ? (z.brake_linearity >= 0.8 ? 'good' : (z.brake_linearity >= 0.5 ? 'warn' : 'bad')) : '';
+        const thrOn = z.thr_on != null ? z.thr_on.toFixed(2) + 's' : '—';
+        const thrLag = z.thr_lag != null ? z.thr_lag.toFixed(2) + 's' : '—';
+        const thrLagClass = z.thr_lag != null && z.thr_lag > 0.5 ? 'warn' : '';
+        const apexStd = z.apex_std_mph != null ? '±' + z.apex_std_mph.toFixed(1) : '—';
+        const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
+        return `<tr>
+            <td>${z.pct.toFixed(1)}%</td>
+            <td>${escHtml(z.turn_name)}</td>
+            <td class="num">${Math.round(z.entry_mph)} mph</td>
+            <td class="num">${Math.round(z.min_mph)} mph</td>
+            <td class="num ${apexStdClass}">${apexStd}</td>
+            <td class="num ${absClass}">${z.abs}</td>
+            <td class="num ${t2pClass}">${t2p}</td>
+            <td class="num ${brkRelClass}">${brkRel}</td>
+            <td class="num">${thrOn}</td>
+            <td class="num ${thrLagClass}">${thrLag}</td>
+            <td>${z.notes ? z.notes.join(', ') : ''}</td>
+        </tr>`;
+    }).join('');
 
     document.getElementById('braking-table').innerHTML = `<table><thead>${headers}</thead><tbody>${rows}</tbody></table>`;
 }
