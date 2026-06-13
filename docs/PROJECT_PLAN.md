@@ -97,6 +97,16 @@ tools/
 
 **All CLI Enhancement tasks complete. Ready for Phase 2 (Local Web Dashboard).**
 
+## Phase 2: Watcher Service
+
+**STATUS: Tier 1 COMPLETE ✅**
+
+- `tenths watch` — resource-efficient file watcher, auto-processes .ibt files, opens HTML report in browser
+- Validated in production: zero FPS impact during racing (confirmed via Grafana monitoring)
+- Processing time: ~2 seconds for a typical session
+- Event-driven (watchdog + ReadDirectoryChangesW), BELOW_NORMAL thread priority
+- Auto-generates track maps for new circuits
+
 ### Remaining items:
 
 1. De-duplicate header info (race context appears twice)
