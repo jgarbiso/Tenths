@@ -138,9 +138,9 @@ Three stacked panels (MoTeC-style layout):
 | Corner Variance | Time loss per corner, sorted by priority |
 | Lap Summary | All valid laps with time, ABS, max speed — best lap highlighted |
 
-- GT4 tables show T2Peak, Coast, Turn-In Brake
-- Touring tables show Brk2Shft, MaxDS RPM, Apex RPM
-- Color coding: red for ABS hits, amber for medium priority, red for high
+- Unified table for ALL car classes: Zone, Turn, Entry, Min, Apex ±, ABS, T2Peak, Brk Rel, Thr On, Thr Lag, Notes
+- Color coding: red for ABS/high variance, amber for medium, green for good linearity/consistency
+- Class-specific coaching flags in Notes column (e.g., "Lazy Initial Brake" for GT4, "Lugging" for Touring)
 
 ### 6. Session Stats Grid
 
