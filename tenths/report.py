@@ -1124,17 +1124,20 @@ function renderBrakingTable() {
     let headers, rows;
 
     if (isGT4) {
-        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">ABS</th><th class="num">T2Peak</th><th class="num">Coast</th><th>Notes</th></tr>';
+        headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">Apex ±</th><th class="num">ABS</th><th class="num">T2Peak</th><th class="num">Coast</th><th>Notes</th></tr>';
         rows = zones.map(z => {
             const absClass = z.abs > 0 ? 'bad' : '';
             const t2p = z.t2peak != null ? z.t2peak.toFixed(2) + 's' : '—';
             const t2pClass = z.t2peak != null ? (z.t2peak <= 0.4 ? 'good' : (z.t2peak <= 0.55 ? 'warn' : 'bad')) : '';
             const coast = z.coast_time != null ? z.coast_time.toFixed(2) + 's' : '—';
+            const apexStd = z.apex_std_mph != null ? '±' + z.apex_std_mph.toFixed(1) : '—';
+            const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
             return `<tr>
                 <td>${z.pct.toFixed(1)}%</td>
                 <td>${escHtml(z.turn_name)}</td>
                 <td class="num">${Math.round(z.entry_mph)} mph</td>
                 <td class="num">${Math.round(z.min_mph)} mph</td>
+                <td class="num ${apexStdClass}">${apexStd}</td>
                 <td class="num ${absClass}">${z.abs}</td>
                 <td class="num ${t2pClass}">${t2p}</td>
                 <td class="num">${coast}</td>
