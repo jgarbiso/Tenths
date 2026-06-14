@@ -64,11 +64,13 @@ def generate_report(data, file_info, track_map, race_result=None):
             zone_copy['thr_lag'] = exit_metrics[i].get('thr_lag')
             zone_copy['brake_linearity'] = exit_metrics[i].get('brake_linearity')
             zone_copy['brake_release_curve'] = exit_metrics[i].get('brake_release_curve', [])
+            zone_copy['brake_duration_s'] = exit_metrics[i].get('brake_duration_s')
         else:
             zone_copy['thr_on'] = None
             zone_copy['thr_lag'] = None
             zone_copy['brake_linearity'] = None
             zone_copy['brake_release_curve'] = []
+            zone_copy['brake_duration_s'] = None
         # Merge apex consistency
         if i < len(apex_consistency):
             zone_copy['apex_std_mph'] = apex_consistency[i].get('std_apex_mph')
@@ -1121,13 +1123,14 @@ function renderBrakingTable() {
     if (!zones.length) return;
 
     // Unified table for all car classes
-    const headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">Apex ±</th><th class="num">ABS</th><th class="num">T2Peak</th><th class="num">Brk Rel</th><th class="num">Thr On</th><th class="num">Thr Lag</th><th>Notes</th></tr>';
+    const headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Entry</th><th class="num">Min</th><th class="num">Apex ±</th><th class="num">ABS</th><th class="num">T2Peak</th><th class="num">Brk Rel</th><th class="num">Brk Dur</th><th class="num">Thr On</th><th class="num">Thr Lag</th><th>Notes</th></tr>';
     const rows = zones.map(z => {
         const absClass = z.abs > 0 ? 'bad' : '';
         const t2p = z.t2peak != null ? z.t2peak.toFixed(2) + 's' : '—';
         const t2pClass = z.t2peak != null ? (z.t2peak <= 0.4 ? 'good' : (z.t2peak <= 0.55 ? 'warn' : 'bad')) : '';
         const brkRel = z.brake_linearity != null ? z.brake_linearity.toFixed(2) : '—';
         const brkRelClass = z.brake_linearity != null ? (z.brake_linearity >= 0.8 ? 'good' : (z.brake_linearity >= 0.5 ? 'warn' : 'bad')) : '';
+        const brkDur = z.brake_duration_s != null ? z.brake_duration_s.toFixed(2) + 's' : '—';
         const thrOn = z.thr_on != null ? z.thr_on.toFixed(2) + 's' : '—';
         const thrLag = z.thr_lag != null ? z.thr_lag.toFixed(2) + 's' : '—';
         const thrLagClass = z.thr_lag != null && z.thr_lag > 0.5 ? 'warn' : '';
@@ -1142,6 +1145,7 @@ function renderBrakingTable() {
             <td class="num ${absClass}">${z.abs}</td>
             <td class="num ${t2pClass}">${t2p}</td>
             <td class="num ${brkRelClass}">${brkRel}</td>
+            <td class="num">${brkDur}</td>
             <td class="num">${thrOn}</td>
             <td class="num ${thrLagClass}">${thrLag}</td>
             <td>${z.notes ? z.notes.join(', ') : ''}</td>
