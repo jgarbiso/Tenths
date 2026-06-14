@@ -100,10 +100,8 @@ class TelemetryWatcher:
     """
 
     def __init__(self, telemetry_root=None, auto_open=True):
-        self._root = telemetry_root or os.environ.get(
-            'TENTHS_TELEMETRY_ROOT',
-            r"c:\Users\justi\Documents\iRacing\telemetry"
-        )
+        from tenths.config import TELEMETRY_ROOT as DEFAULT_ROOT
+        self._root = telemetry_root or os.environ.get('TENTHS_TELEMETRY_ROOT', DEFAULT_ROOT)
         self._auto_open = auto_open
         self._observer = None
         self._handler = None

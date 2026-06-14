@@ -19,7 +19,6 @@ _PACKAGE_ROOT = os.path.dirname(_SCRIPT_DIR)
 TRACK_MAPS_DIRS = [
     os.path.join(_PACKAGE_ROOT, "tracks"),  # Tenths repo tracks/
     os.environ.get('TENTHS_TRACKS_DIR', ''),  # env override
-    r"c:\Users\justi\Documents\Sim\Sim\tracks",  # SimRacing repo fallback
 ]
 
 

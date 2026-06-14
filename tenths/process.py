@@ -34,11 +34,7 @@ from tenths.summary import generate_session_summary, write_session_summary
 from tenths.track_map_generator import generate_skeleton_track_map, write_skeleton_track_map
 
 # ── Config ────────────────────────────────────────────────────────────────────
-TELEMETRY_ROOT = os.environ.get('TENTHS_TELEMETRY_ROOT', r"c:\Users\justi\Documents\iRacing\telemetry")
-ARCHIVE_DIR = os.path.join(TELEMETRY_ROOT, "_archive")
-SIM_ROOT = os.environ.get('TENTHS_SIM_ROOT', r"c:\Users\justi\Documents\Sim")
-TRACKS_DIR = os.path.join(SIM_ROOT, "Sim", "tracks")
-MIN_SESSION_SIZE = 1_000_000  # 1MB — below this is a false start
+from tenths.config import TELEMETRY_ROOT, ARCHIVE_DIR, TRACKS_DIR, MIN_SESSION_SIZE, DOWNLOADS_DIR
 
 FILENAME_PATTERN = re.compile(
     r'^(.+?)_(.+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})(.*?)(\.\w+)$'
@@ -539,7 +535,6 @@ def update_track_file(file_info, data, best_result, cleanest_result, is_first):
 
 
 # ── Race Result Auto-Matching ─────────────────────────────────────────────────
-DOWNLOADS_DIR = os.path.expanduser(r"~\Downloads")
 
 
 def find_race_result(session_info):

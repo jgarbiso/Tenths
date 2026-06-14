@@ -21,12 +21,7 @@ import pystray
 from PIL import Image
 
 from tenths.service.watcher import TelemetryWatcher
-
-# Paths
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-_PACKAGE_ROOT = os.path.dirname(os.path.dirname(_SCRIPT_DIR))
-ICON_PATH = os.path.join(_PACKAGE_ROOT, "assets", "tenths.ico")
-TELEMETRY_ROOT = os.environ.get('TENTHS_TELEMETRY_ROOT', r"c:\Users\justi\Documents\iRacing\telemetry")
+from tenths.config import ICON_PATH, TELEMETRY_ROOT
 
 # Registry key for startup
 STARTUP_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
