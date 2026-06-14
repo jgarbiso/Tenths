@@ -32,3 +32,8 @@ test_output/
 
 # iRacing API cache (contains account-specific data)
 cache/
+
+# Build output
+dist/
+build/
+installer/Output/
