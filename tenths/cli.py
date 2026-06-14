@@ -58,6 +58,10 @@ def main():
         watcher = TelemetryWatcher(auto_open=auto_open)
         watcher.start()
 
+    elif command == "tray":
+        from tenths.service.tray import main as tray_main
+        tray_main()
+
     elif command == "summary":
         from tenths.summary import generate_summary_cli
         sys.argv = [sys.argv[0]] + sys.argv[2:]
@@ -88,6 +92,7 @@ iRacing telemetry analysis and coaching tool.
 Commands:
   watch                           Watch for new sessions and auto-process (Ctrl+C to stop)
   watch --open                    Watch and auto-open reports in browser
+  tray                            Run as system tray app (no terminal window)
   analyze <file.ibt>              Full coaching report (prints to stdout)
   process                         Process all pending .ibt files → session notes
   process --dry-run               Preview without writing files

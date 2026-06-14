@@ -18,6 +18,8 @@ dependencies = [
     "numpy",
     "watchdog",
     "winotify",
+    "pystray",
+    "Pillow",
 ]
 
 [project.optional-dependencies]
