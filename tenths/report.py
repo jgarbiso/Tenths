@@ -1158,10 +1158,35 @@ function renderVarianceTable() {
         return;
     }
 
+    // Compute exit priority: corners before longer straights are more valuable
+    // Sort by weighted score: time_loss × exit_weight
+    const zones = DATA.braking_zones;
+    const trackLength = DATA.track_length_m || 3000;
+    const cvWithPriority = cv.map(c => {
+        // Find distance to next braking zone (proxy for straight length after this corner)
+        const zonePcts = zones.map(z => z.pct).sort((a, b) => a - b);
+        let nextZonePct = 100;  // wrap to start
+        for (const zp of zonePcts) {
+            if (zp > c.pct + 5) { nextZonePct = zp; break; }
+        }
+        const straightPct = nextZonePct - c.pct;
+        const straightM = (straightPct / 100) * trackLength;
+        // Exit weight: longer straight = more valuable (normalized 1-3x multiplier)
+        const exitWeight = 1 + Math.min(2, straightM / 500);
+        const score = c.loss * exitWeight;
+        return { ...c, exitWeight: exitWeight, score: score, straightM: Math.round(straightM) };
+    });
+
+    // Sort by score (highest first)
+    cvWithPriority.sort((a, b) => b.score - a.score);
+
     const headers = '<tr><th>Zone</th><th>Turn</th><th class="num">Avg</th><th class="num">Best</th><th class="num">Loss</th><th>Priority</th></tr>';
-    const rows = cv.map(c => {
+    const rows = cvWithPriority.map(c => {
         const lossClass = c.loss > 0.5 ? 'bad' : (c.loss > 0.3 ? 'warn' : '');
-        const priority = c.loss > 0.5 ? '<strong class="bad">HIGH</strong>' : (c.loss > 0.3 ? '<span class="warn">Medium</span>' : '<span style="color:var(--text-secondary)">Low</span>');
+        let priority;
+        if (c.score > 0.8) priority = '<strong class="bad">HIGH</strong>';
+        else if (c.score > 0.4) priority = '<span class="warn">Medium</span>';
+        else priority = '<span style="color:var(--text-secondary)">Low</span>';
         return `<tr>
             <td>${c.pct.toFixed(1)}%</td>
             <td>${escHtml(c.turn_name)}</td>

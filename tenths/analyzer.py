@@ -958,6 +958,17 @@ def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60):
                 notes.append("Aggressive Shift")
             if zone_data['apex_rpm'] < 3500 and min_spd > 40:
                 notes.append("Lugging")
+
+        # Input Stability: detect brake pumping during mid-corner phase
+        # Count sign changes in diff(Brake) between turn-in and apex
+        if brake_initial_idx is not None and not pd.isna(brake_initial_idx):
+            mid_corner = zone_full.loc[brake_initial_idx:min_speed_idx]
+            if len(mid_corner) > 5 and 'Brake' in mid_corner.columns:
+                brake_diff = mid_corner['Brake'].diff().dropna()
+                sign_changes = ((brake_diff[:-1].values * brake_diff[1:].values) < 0).sum()
+                if sign_changes >= 3:
+                    notes.append("[Oscillating]")
+
         zone_data['notes'] = notes
         zones.append(zone_data)
 
@@ -1085,7 +1096,7 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
 
     lap = df[df['Lap'] == lap_num].copy().reset_index(drop=True)
     if lap.empty or 'Throttle' not in lap.columns:
-        return [{'thr_on': None, 'thr_lag': None, 'brake_linearity': None, 'brake_release_curve': []} for _ in braking_zones]
+        return [{'thr_on': None, 'thr_lag': None, 'brake_linearity': None, 'brake_release_curve': [], 'brake_duration_s': None} for _ in braking_zones]
 
     results = []
     for zone in braking_zones:
@@ -1096,7 +1107,7 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
 
         zone_data = lap[(lap['LapDistPct'] >= exit_start) & (lap['LapDistPct'] <= exit_end)]
         if zone_data.empty:
-            results.append({'thr_on': None, 'thr_lag': None, 'brake_linearity': None, 'brake_release_curve': []})
+            results.append({'thr_on': None, 'thr_lag': None, 'brake_linearity': None, 'brake_release_curve': [], 'brake_duration_s': None})
             continue
 
         # Find apex (minimum speed point in this zone)
@@ -1146,10 +1157,16 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
             curve_normalized = []
             brake_linearity = None
 
+        # Brake duration: time from peak brake to release (end of braking event)
+        if not brake_zero.empty and peak_brake_val > 20:
+            brake_duration = round((end_release_idx - peak_brake_idx) / sample_rate, 2)
+        else:
+            brake_duration = None
+
         # === Throttle Exit Metrics ===
         # Skip very slow hairpins where 100% throttle is trivial
         if apex_speed < 30:
-            results.append({'thr_on': None, 'thr_lag': None, 'brake_linearity': brake_linearity, 'brake_release_curve': curve_normalized})
+            results.append({'thr_on': None, 'thr_lag': None, 'brake_linearity': brake_linearity, 'brake_release_curve': curve_normalized, 'brake_duration_s': brake_duration})
             continue
 
         # Scan forward from apex
@@ -1180,6 +1197,7 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
             'thr_lag': round(thr_lag, 2) if thr_lag is not None else None,
             'brake_linearity': brake_linearity,
             'brake_release_curve': curve_normalized,
+            'brake_duration_s': brake_duration,
         })
 
     return results
