@@ -17,6 +17,7 @@ dependencies = [
     "pandas",
     "numpy",
     "watchdog",
+    "winotify",
 ]
 
 [project.optional-dependencies]

@@ -240,6 +240,26 @@ class TelemetryWatcher:
             print(f"  ✓ Done in {elapsed:.1f}s — {laps} laps, best: {best_time}")
             print(f"  → {report_path}")
 
+            # Send toast notification
+            try:
+                from tenths.service.notifier import SessionNotifier, format_race_result
+                notifier = SessionNotifier()
+                track_name = summary.get('track', {}).get('name', track)
+                session_type = summary.get('session', {}).get('type', 'Practice')
+                race_info = format_race_result(summary)
+                is_pb = summary.get('progression', {}).get('alltime_best', {}).get('is_new_pb', False) if summary.get('progression') else False
+                notifier.notify_complete(
+                    best_time=best_time,
+                    laps=laps,
+                    track_name=track_name,
+                    session_type=session_type,
+                    report_path=report_path,
+                    race_result=race_info,
+                    is_pb=is_pb,
+                )
+            except Exception as e:
+                print(f"  ⚠ Notification failed: {e}")
+
             # Auto-open report in browser
             if self._auto_open:
                 webbrowser.open(f'file:///{report_path.replace(os.sep, "/")}')
