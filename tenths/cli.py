@@ -53,8 +53,8 @@ def main():
 
     elif command == "watch":
         from tenths.service.watcher import TelemetryWatcher
-        # Optional: --no-open flag to disable auto-opening browser
-        auto_open = '--no-open' not in sys.argv
+        # --open flag to auto-open browser (default: notification only)
+        auto_open = '--open' in sys.argv
         watcher = TelemetryWatcher(auto_open=auto_open)
         watcher.start()
 
@@ -87,7 +87,7 @@ iRacing telemetry analysis and coaching tool.
 
 Commands:
   watch                           Watch for new sessions and auto-process (Ctrl+C to stop)
-  watch --no-open                 Watch without auto-opening reports in browser
+  watch --open                    Watch and auto-open reports in browser
   analyze <file.ibt>              Full coaching report (prints to stdout)
   process                         Process all pending .ibt files → session notes
   process --dry-run               Preview without writing files
