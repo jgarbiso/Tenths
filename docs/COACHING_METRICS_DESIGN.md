@@ -69,23 +69,23 @@ Tenths turns professional coaching principles into automated, measurable telemet
 
 ### MVP (Already Built or Minimal Work)
 
-| # | Feature | Status | Work Needed |
-|---|---------|--------|-------------|
-| 1 | Brake Release Shape panel with linearity scoring | ✅ Built | — |
-| 2 | Brake Point dots + spread metric (±m) | ✅ Built | — |
-| 3 | Lap comparison overlay (solid vs dashed) | ✅ Built | — |
-| 4 | Speed delta panel (green/red shading) | ✅ Built | — |
-| 5 | Thr On + Thr Lag exit commitment metrics | ✅ Built | — |
+| # | Feature | Status |
+|---|---------|--------|
+| 1 | Brake Release Shape panel with linearity scoring | ✅ Built |
+| 2 | Brake Point dots + spread metric (±m) | ✅ Built |
+| 3 | Lap comparison overlay (solid vs dashed) | ✅ Built |
+| 4 | Speed delta panel (green/red shading) | ✅ Built |
+| 5 | Thr On + Thr Lag exit commitment metrics | ✅ Built |
 
 ### Next Iteration (Build Soon)
 
-| # | Feature | What It Does | Effort |
-|---|---------|-------------|--------|
-| 6 | **Apex Speed Consistency** | Show ±mph spread per corner across laps | Small — use per-lap braking zone data |
-| 7 | **Input Stability flag** | Detect brake/throttle oscillation → "[Oscillating]" in Notes | Medium — new detection logic |
-| 8 | **Brake Duration column** | Show how long braking lasts per zone | Small — time between entry and release |
-| 9 | **Corner ranking by exit value** | Sort corners by "importance to lap time" not just variance | Medium — needs straight-length calculation |
-| 10 | **Before/After progression view** | Show metric improvement between sessions | Backend done (Task 1.5), frontend in Phase 2 |
+| # | Feature | Status |
+|---|---------|--------|
+| 6 | Apex Speed Consistency (±mph in table) | ✅ Built |
+| 7 | Input Stability flag ("[Oscillating]" in Notes) | ✅ Built |
+| 8 | Brake Duration column | ✅ Built |
+| 9 | Corner ranking by exit value | ✅ Built |
+| 10 | Before/After progression view | Backend done (Task 1.5), frontend in Phase 2 |
 
 ### Future
 
