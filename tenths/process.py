@@ -543,7 +543,7 @@ def find_race_result(session_info):
     Searches Downloads folder for eventresult_<subsession_id>*.csv or .json.
     """
     subsession_id = session_info.get('subsession_id', 0)
-    if not subsession_id:
+    if not isinstance(subsession_id, int) or subsession_id <= 0:
         return None
 
     if not os.path.isdir(DOWNLOADS_DIR):

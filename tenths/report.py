@@ -152,6 +152,13 @@ def generate_report(data, file_info, track_map, race_result=None):
 
 def _build_html(data_json, car, track, date, best_time, race_data):
     """Build the complete HTML document."""
+    from html import escape as html_escape
+
+    # Escape all .ibt-sourced strings to prevent HTML injection
+    car = html_escape(car)
+    track = html_escape(track)
+    date = html_escape(date)
+    best_time = html_escape(best_time)
 
     # Race result badge HTML
     race_badge_html = ''

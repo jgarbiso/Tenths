@@ -36,9 +36,9 @@ def main():
         if len(sys.argv) < 3:
             print("Usage: tenths incident <file.ibt> [lap1,lap2,...]")
             return
-        # Re-route to incidents module
+        from tenths.incidents import main as incident_main
         sys.argv = [sys.argv[0]] + sys.argv[2:]
-        exec(open(os.path.join(os.path.dirname(__file__), "incidents.py")).read())
+        incident_main()
 
     elif command == "results":
         from tenths.results import main as results_main
