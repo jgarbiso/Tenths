@@ -63,24 +63,14 @@ def main():
         tray_main()
 
     elif command == "index":
-        from tenths.index_generator import generate_index
-        from tenths.config import TELEMETRY_ROOT
-        if len(sys.argv) > 2:
-            target = sys.argv[2]
-            # If relative path, resolve against telemetry root
-            if not os.path.isabs(target):
-                target = os.path.join(TELEMETRY_ROOT, target)
-        else:
-            print("Usage: tenths index <car/track>")
-            print("  Example: tenths index bmwm2g87/okayama_full")
-            return
-        result = generate_index(target)
+        from tenths.index_generator import generate_master_index
+        result = generate_master_index()
         if result:
             print(f"Index generated: {result}")
             import webbrowser
             webbrowser.open(f'file:///{result.replace(os.sep, "/")}')
         else:
-            print("No sessions found in that directory.")
+            print("No sessions found.")
 
     elif command == "summary":
         from tenths.summary import generate_summary_cli
