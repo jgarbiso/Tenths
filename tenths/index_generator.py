@@ -198,12 +198,19 @@ def _build_master_html(sessions, cars, tracks, root):
             transition: all 0.15s;
         }}
         .filter-btn:hover {{ border-color: var(--accent-blue); color: var(--text-primary); }}
-        .filter-btn.active {{
-            border-color: var(--accent-blue);
-            background: #448aff18;
-            color: var(--accent-blue);
-            font-weight: 600;
+        .filter-input {{
+            padding: 6px 12px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            outline: none;
+            width: 240px;
         }}
+        .filter-input:focus {{ border-color: var(--accent-blue); }}
+        .filter-input::placeholder {{ color: var(--text-secondary); }}
         .divider {{
             width: 1px;
             height: 20px;
@@ -281,10 +288,13 @@ def _build_master_html(sessions, cars, tracks, root):
 
     <div class="filters" id="filters">
         <span class="filter-label">Track:</span>
-        <button class="filter-btn active" data-filter="track" data-value="all">All</button>
+        <input type="text" list="track-list" id="track-filter" class="filter-input" placeholder="All Tracks" autocomplete="off">
+        <datalist id="track-list"></datalist>
         <span class="divider"></span>
         <span class="filter-label">Car:</span>
-        <button class="filter-btn active" data-filter="car" data-value="all">All</button>
+        <input type="text" list="car-list" id="car-filter" class="filter-input" placeholder="All Cars" autocomplete="off">
+        <datalist id="car-list"></datalist>
+        <button class="filter-btn" id="clear-filters">Clear</button>
     </div>
 
     <div class="count" id="count"></div>
@@ -310,52 +320,56 @@ const SESSIONS = {sessions_json};
 const CARS = {cars_json};
 const TRACKS = {tracks_json};
 
-let filterTrack = 'all';
-let filterCar = 'all';
+let filterTrack = '';
+let filterCar = '';
 
-// Build filter buttons
+// Build filter datalists
 function buildFilters() {{
-    const container = document.getElementById('filters');
+    const trackList = document.getElementById('track-list');
+    const carList = document.getElementById('car-list');
 
-    // Track buttons
-    const trackLabel = container.querySelector('[data-filter="track"][data-value="all"]');
     TRACKS.forEach(t => {{
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn';
-        btn.dataset.filter = 'track';
-        btn.dataset.value = t;
-        btn.textContent = t.length > 25 ? t.substring(0, 22) + '...' : t;
-        btn.title = t;
-        trackLabel.parentNode.insertBefore(btn, trackLabel.nextSibling.nextSibling);
+        const opt = document.createElement('option');
+        opt.value = t;
+        trackList.appendChild(opt);
     }});
-
-    // Car buttons
-    const carLabel = container.querySelector('[data-filter="car"][data-value="all"]');
     CARS.forEach(c => {{
-        const btn = document.createElement('button');
-        btn.className = 'filter-btn';
-        btn.dataset.filter = 'car';
-        btn.dataset.value = c;
-        btn.textContent = c.length > 20 ? c.substring(0, 17) + '...' : c;
-        btn.title = c;
-        carLabel.parentNode.appendChild(btn);
+        const opt = document.createElement('option');
+        opt.value = c;
+        carList.appendChild(opt);
     }});
 
-    // Click handlers
-    container.querySelectorAll('.filter-btn').forEach(btn => {{
-        btn.addEventListener('click', () => {{
-            const filter = btn.dataset.filter;
-            const value = btn.dataset.value;
+    // Input handlers — filter on every keystroke/selection
+    document.getElementById('track-filter').addEventListener('input', (e) => {{
+        const val = e.target.value;
+        // Only filter if value matches a known track or is empty
+        filterTrack = TRACKS.includes(val) ? val : (val === '' ? '' : filterTrack);
+        if (val === '') filterTrack = '';
+        renderTable();
+    }});
+    document.getElementById('track-filter').addEventListener('change', (e) => {{
+        filterTrack = e.target.value || '';
+        renderTable();
+    }});
 
-            // Deactivate siblings of same filter type
-            container.querySelectorAll(`[data-filter="${{filter}}"]`).forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+    document.getElementById('car-filter').addEventListener('input', (e) => {{
+        const val = e.target.value;
+        filterCar = CARS.includes(val) ? val : (val === '' ? '' : filterCar);
+        if (val === '') filterCar = '';
+        renderTable();
+    }});
+    document.getElementById('car-filter').addEventListener('change', (e) => {{
+        filterCar = e.target.value || '';
+        renderTable();
+    }});
 
-            if (filter === 'track') filterTrack = value;
-            if (filter === 'car') filterCar = value;
-
-            renderTable();
-        }});
+    // Clear button
+    document.getElementById('clear-filters').addEventListener('click', () => {{
+        document.getElementById('track-filter').value = '';
+        document.getElementById('car-filter').value = '';
+        filterTrack = '';
+        filterCar = '';
+        renderTable();
     }});
 }}
 
@@ -364,8 +378,8 @@ function renderTable() {{
     const countEl = document.getElementById('count');
 
     let filtered = SESSIONS;
-    if (filterTrack !== 'all') filtered = filtered.filter(s => s.track === filterTrack);
-    if (filterCar !== 'all') filtered = filtered.filter(s => s.car === filterCar);
+    if (filterTrack) filtered = filtered.filter(s => s.track === filterTrack);
+    if (filterCar) filtered = filtered.filter(s => s.car === filterCar);
 
     // Find best lap in filtered set
     const bestInFilter = filtered.length > 0 ? Math.min(...filtered.map(s => s.best_lap_s)) : 9999;
