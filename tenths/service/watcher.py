@@ -221,13 +221,32 @@ class TelemetryWatcher:
             with open(notes_path, 'w', encoding='utf-8') as f:
                 f.write(notes_content)
 
-            # 2. HTML report
-            report_html = generate_report(data, file_info, track_map, race_result)
+            # 2. HTML report — only overwrite if this session has a faster best lap
             report_path = os.path.join(session_dir, "session_report.html")
-            with open(report_path, 'w', encoding='utf-8') as f:
-                f.write(report_html)
+            should_write_report = True
+            if os.path.exists(report_path):
+                # Check existing summary to compare best laps
+                existing_summary_path = os.path.join(session_dir, "session_summary.json")
+                if os.path.exists(existing_summary_path):
+                    import json as _json
+                    try:
+                        with open(existing_summary_path, 'r') as ef:
+                            existing = _json.load(ef)
+                        existing_best = existing.get('best_lap', {}).get('time_seconds', 9999)
+                        current_best = summary_data_best_time = min(
+                            (r['time'] for r in data['lap_results'] if r['time'] > 0), default=9999)
+                        if current_best >= existing_best:
+                            should_write_report = False
+                            print(f"  Keeping existing report (existing {existing_best:.3f}s is faster than {current_best:.3f}s)")
+                    except Exception:
+                        pass  # If we can't read existing, overwrite
 
-            # 3. JSON summary
+            if should_write_report:
+                report_html = generate_report(data, file_info, track_map, race_result)
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    f.write(report_html)
+
+            # 3. JSON summary — always update (contains progression data)
             summary = generate_session_summary(data, file_info, track_map, race_result)
             write_session_summary(summary, session_dir)
 
