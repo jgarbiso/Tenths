@@ -208,8 +208,9 @@ class TelemetryWatcher:
                 from tenths.results import parse_result
                 race_result = parse_result(result_file)
 
-            # Output directory
-            session_dir = os.path.join(TELEMETRY_ROOT, car, track, date)
+            # Output directory — include session time so each session gets its own folder
+            session_time = file_info['time']  # e.g., "20-18-58"
+            session_dir = os.path.join(TELEMETRY_ROOT, car, track, date, session_time)
             os.makedirs(session_dir, exist_ok=True)
 
             # Generate all outputs
@@ -221,32 +222,13 @@ class TelemetryWatcher:
             with open(notes_path, 'w', encoding='utf-8') as f:
                 f.write(notes_content)
 
-            # 2. HTML report — only overwrite if this session has a faster best lap
+            # 2. HTML report — each session gets its own report (never overwrite)
+            report_html = generate_report(data, file_info, track_map, race_result)
             report_path = os.path.join(session_dir, "session_report.html")
-            should_write_report = True
-            if os.path.exists(report_path):
-                # Check existing summary to compare best laps
-                existing_summary_path = os.path.join(session_dir, "session_summary.json")
-                if os.path.exists(existing_summary_path):
-                    import json as _json
-                    try:
-                        with open(existing_summary_path, 'r') as ef:
-                            existing = _json.load(ef)
-                        existing_best = existing.get('best_lap', {}).get('time_seconds', 9999)
-                        current_best = summary_data_best_time = min(
-                            (r['time'] for r in data['lap_results'] if r['time'] > 0), default=9999)
-                        if current_best >= existing_best:
-                            should_write_report = False
-                            print(f"  Keeping existing report (existing {existing_best:.3f}s is faster than {current_best:.3f}s)")
-                    except Exception:
-                        pass  # If we can't read existing, overwrite
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_html)
 
-            if should_write_report:
-                report_html = generate_report(data, file_info, track_map, race_result)
-                with open(report_path, 'w', encoding='utf-8') as f:
-                    f.write(report_html)
-
-            # 3. JSON summary — always update (contains progression data)
+            # 3. JSON summary
             summary = generate_session_summary(data, file_info, track_map, race_result)
             write_session_summary(summary, session_dir)
 
