@@ -56,6 +56,27 @@ Tenths turns professional coaching principles into automated, measurable telemet
 - **Visualization:** Replace or augment `Brk2Shft` column with `Brk Dur` for context
 - **Coaching sentence:** "T3: Your braking lasts only 0.8s at 95% peak — try braking 0.3s earlier at 75% peak for a smoother entry and better rotation."
 
+### Min Speed Spread (NEXT — High Priority)
+- **Definition:** Per-corner comparison of minimum speed on each lap vs the best lap's minimum speed at the same corner
+- **Problem it solves:** Driver sees "0.33s variance at T5" but doesn't know WHY. The current report shows entry/min speed for the best lap only — it can't show that on average laps, you're braking 20mph deeper than necessary.
+- **Calculation:**
+  - For each braking zone, collect `min_speed_mph` from every valid lap
+  - Compute: `best_lap_min`, `average_min`, `worst_min`, `std_dev`
+  - Over-braking delta: `average_min - best_lap_min` (negative = braking too deep on average)
+- **Thresholds:**
+  - Spread > 10mph across laps = HIGH priority inconsistency
+  - Average min speed > 8mph below best-lap min speed = over-braking diagnosis
+- **Visualization:** In Summary View coaching sentence + in Detailed braking zones table as "Min: 106 (avg 85, ±15)"
+- **Coaching sentence examples:**
+  - "T5: Min speed varies 77-106mph — you carried 106 on your best lap. Trust the car and brake lighter."
+  - "T5: Over-braking by ~20mph on average — your best lap proves you can carry more speed. Pick a fixed brake marker and commit."
+- **Data required:** Per-lap min speed per braking zone (already computed in analyzer, just not exposed per-lap in the report DATA blob)
+- **Why this matters:** This is the #1 insight gap found in real racing (Road Atlanta Jul 22). The driver was consistent (low corner variance in time) but 1s off pace because they were over-slowing every corner by a small amount. The current system can't diagnose "you're braking too much" — only "you're inconsistent."
+- **Implementation notes:**
+  - `analyzer.py` already computes per-lap braking zones — need to expose per-lap min_speed array in the DATA blob
+  - Summary View coaching sentence generator needs a new threshold: `min_speed_spread > 10mph`
+  - Priority: should rank ABOVE brake linearity in the coaching priority order when triggered, because over-braking is a more fundamental issue than release shape
+
 ### Exit Priority Score (NEW)
 - **Definition:** Rank corners by coaching value: `straight_length_after × (max_speed_on_straight - current_exit_speed)`
 - **Calculation:** For each zone, measure the distance to the next braking zone (straight length) and the speed differential between your exit and theoretical max speed on that straight
@@ -95,7 +116,8 @@ Tenths turns professional coaching principles into automated, measurable telemet
 | 12 | Reference-point drift detection | Alert when braking point migrates >10m over a stint |
 | 13 | Brake-shape similarity score | Compare your release curve to a "textbook" progressive release |
 | 14 | Corner-connection scoring | Measure how smoothly you link successive corners |
-| 15 | Coaching sentence generator | Auto-generate plain-English coaching text per corner |
+| 15 | Coaching sentence generator | ✅ Built — auto-generates plain-English per corner in Summary View |
+| 16 | **Min Speed Spread diagnosis** | **Detect over-braking by comparing per-lap min speed to best-lap min speed** |
 
 ---
 

@@ -86,10 +86,13 @@ def _build_master_html(sessions, cars, tracks, root):
 
     total_sessions = len(sessions)
     total_laps = sum(s['laps'] for s in sessions)
-    best_ever = min(sessions, key=lambda s: s['best_lap_s'])
     unique_tracks = len(tracks)
 
+    # Find unique car count for the stats row
+    unique_cars = len(cars)
+
     # Build session rows as JSON for JS filtering
+    # HTML-escape report paths to prevent XSS in href attributes
     sessions_json = json.dumps([{
         'date': s['date'],
         'time': s['time'],
@@ -100,7 +103,7 @@ def _build_master_html(sessions, cars, tracks, root):
         'car': s['car'],
         'track': s['track'],
         'track_config': s['track_config'],
-        'report_path': os.path.relpath(s['report_path'], root).replace('\\', '/') if s['report_exists'] else '',
+        'report_path': html_escape(os.path.relpath(s['report_path'], root).replace('\\', '/')) if s['report_exists'] else '',
         'race_pos': s['race_result']['finish_position'] if s['race_result'] else 0,
         'race_field': s['race_result']['field_size'] if s['race_result'] else 0,
         'race_ir': s['race_result']['irating_delta'] if s['race_result'] else 0,
@@ -269,10 +272,6 @@ def _build_master_html(sessions, cars, tracks, root):
 
     <div class="stats">
         <div class="stat">
-            <div class="stat-value">{html_escape(best_ever['best_lap'])}</div>
-            <div class="stat-label">All-Time Best</div>
-        </div>
-        <div class="stat">
             <div class="stat-value">{total_sessions}</div>
             <div class="stat-label">Sessions</div>
         </div>
@@ -283,6 +282,10 @@ def _build_master_html(sessions, cars, tracks, root):
         <div class="stat">
             <div class="stat-value">{unique_tracks}</div>
             <div class="stat-label">Tracks</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{unique_cars}</div>
+            <div class="stat-label">Cars</div>
         </div>
     </div>
 
@@ -339,27 +342,14 @@ function buildFilters() {{
         carList.appendChild(opt);
     }});
 
-    // Input handlers — filter on every keystroke/selection
+    // Filter on every keystroke — partial case-insensitive match
     document.getElementById('track-filter').addEventListener('input', (e) => {{
-        const val = e.target.value;
-        // Only filter if value matches a known track or is empty
-        filterTrack = TRACKS.includes(val) ? val : (val === '' ? '' : filterTrack);
-        if (val === '') filterTrack = '';
-        renderTable();
-    }});
-    document.getElementById('track-filter').addEventListener('change', (e) => {{
-        filterTrack = e.target.value || '';
+        filterTrack = e.target.value.trim();
         renderTable();
     }});
 
     document.getElementById('car-filter').addEventListener('input', (e) => {{
-        const val = e.target.value;
-        filterCar = CARS.includes(val) ? val : (val === '' ? '' : filterCar);
-        if (val === '') filterCar = '';
-        renderTable();
-    }});
-    document.getElementById('car-filter').addEventListener('change', (e) => {{
-        filterCar = e.target.value || '';
+        filterCar = e.target.value.trim();
         renderTable();
     }});
 
@@ -373,15 +363,20 @@ function buildFilters() {{
     }});
 }}
 
+function matchesFilter(value, filter) {{
+    if (!filter) return true;
+    return value.toLowerCase().includes(filter.toLowerCase());
+}}
+
 function renderTable() {{
     const tbody = document.getElementById('sessions-body');
     const countEl = document.getElementById('count');
 
     let filtered = SESSIONS;
-    if (filterTrack) filtered = filtered.filter(s => s.track === filterTrack);
-    if (filterCar) filtered = filtered.filter(s => s.car === filterCar);
+    if (filterTrack) filtered = filtered.filter(s => matchesFilter(s.track, filterTrack));
+    if (filterCar) filtered = filtered.filter(s => matchesFilter(s.car, filterCar));
 
-    // Find best lap in filtered set
+    // Find best lap in filtered set (only meaningful when filtering by single track+car)
     const bestInFilter = filtered.length > 0 ? Math.min(...filtered.map(s => s.best_lap_s)) : 9999;
 
     countEl.textContent = `Showing ${{filtered.length}} of ${{SESSIONS.length}} sessions`;
@@ -393,7 +388,7 @@ function renderTable() {{
 
     tbody.innerHTML = filtered.map(s => {{
         const timeDisplay = s.time ? s.time.replace(/-/g, ':') : '';
-        const isPB = s.best_lap_s === bestInFilter;
+        const isPB = s.best_lap_s === bestInFilter && s.best_lap_s < 9999;
         const lapStyle = isPB ? 'color:var(--accent-green);font-weight:700;' : '';
         const pbMark = isPB ? ' ★' : '';
 

@@ -563,9 +563,28 @@ def main():
     dry_run = '--dry-run' in sys.argv
     git_commit = '--git' in sys.argv
     specific = None
+
+    # Collect non-flag arguments — these form the file path
+    # Handles paths with spaces whether quoted correctly or split by shell
+    path_parts = []
     for arg in sys.argv[1:]:
-        if not arg.startswith('--') and os.path.exists(arg):
-            specific = arg
+        if arg.startswith('--'):
+            continue
+        path_parts.append(arg)
+
+    if path_parts:
+        # Try the parts as a single joined path first (handles shell-split spaces)
+        joined = ' '.join(path_parts)
+        if os.path.exists(joined):
+            specific = joined
+        # Then try each part individually (handles multiple separate files — pick first valid)
+        elif len(path_parts) == 1 and os.path.exists(path_parts[0]):
+            specific = path_parts[0]
+        else:
+            # Last resort: maybe the path is correct but doesn't exist
+            # Give the user a useful error
+            print(f"File not found: {joined}")
+            return
 
     if dry_run:
         print("=== DRY RUN MODE ===\n")
@@ -685,7 +704,15 @@ def main():
                 (r['time'] for r in s[1]['lap_results'] if r['time'] > 0), default=9999))
             best_fi, best_data, best_rr = best_session
             try:
-                report_html = generate_report(best_data, best_fi, track_map, best_rr)
+                # Compute progression for summary view
+                progression = None
+                try:
+                    summary_for_prog = generate_session_summary(best_data, best_fi, track_map, best_rr)
+                    from tenths.summary import compute_progression
+                    progression = compute_progression(summary_for_prog, session_dir)
+                except Exception:
+                    pass
+                report_html = generate_report(best_data, best_fi, track_map, best_rr, progression=progression)
                 report_path = os.path.join(session_dir, "session_report.html")
                 with open(report_path, 'w', encoding='utf-8') as f:
                     f.write(report_html)

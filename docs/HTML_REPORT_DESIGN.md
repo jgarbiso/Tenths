@@ -66,6 +66,44 @@ All session data is embedded as a JSON blob in a `<script>` tag:
 
 ## Current Features
 
+### 0. Two-Tab Layout (Summary + Detailed)
+
+The report uses a tabbed interface:
+- **Summary tab** (default) — VR-readable coaching page, answers "where am I losing time?"
+- **Detailed tab** — full telemetry (map, charts, tables)
+
+View switcher in header: 18px font, 44px touch targets, fixed at top. View preference persisted in localStorage per report. Switching to Detailed triggers `map.invalidateSize()` + `fitBounds()` to fix Leaflet's hidden-container rendering issue.
+
+### 0a. Summary View Components
+
+| Component | Description |
+|-----------|-------------|
+| Hero Numbers | Best Lap, Recoverable Time (sum of corner_variance losses), Delta vs Previous, Laps |
+| Next Race Focus | Highest time-loss corner with technique diagnosis, speed context badge |
+| Focus Cards | Top 3 corners by time loss (excluding Next Race Focus), with coaching sentences |
+| Speed Context | Amber "157→70mph" badge showing entry→min speed for corner identification |
+| Mini Track Map | Canvas-rendered GPS outline (no Leaflet), red dots on problem corners, labels |
+| Coaching Sentences | Priority-based: brake linearity < apex consistency < throttle lag < brake spread |
+| Drill-Down | Click any card → switches to Detailed, scrolls to relevant data, 3s highlight |
+
+**VR Readability Standards:**
+- Hero numbers: 48px+ Orbitron
+- Turn names: 24px JetBrains Mono
+- Body text: 16px+ Inter, line-height 1.4
+- All critical info visible without scrolling at 1920×1080
+
+**No external dependencies:** Summary View uses only inline CSS/JS + Canvas API. Works fully offline.
+
+### 0b. Mini Track Map (Canvas)
+
+Renders the GPS trace as a lightweight polyline on a `<canvas>` element (280×280px, responsive):
+- Track outline in dark grey (`#2a2d3a`)
+- Problem corners highlighted as red dots (8px radius) with turn name labels
+- All braking zones shown as small blue dots (4px radius)
+- S/F marked with green dot
+- High-DPI aware (devicePixelRatio scaling)
+- Two-column layout: focus cards on left, mini map on right (stacks on mobile)
+
 ### 1. Track Heatmap (Leaflet)
 
 - **200-point GPS trace** at 0.5% lap distance intervals
@@ -263,3 +301,11 @@ The track map supports interactive rotation to match iRacing's overhead view:
 | 2026-06-11 | Per-lap brake points overlay | Consistency visualization, all laps clustered |
 | 2026-06-11 | Lap selector dropdown | Switch any lap for map+charts, brake points unaffected |
 | 2026-06-11 | All-laps dense trace extraction | 200 pts × N laps stored in gps_traces dict |
+| 2026-06-21 | Two-tab Summary + Detailed | Driver needs instant "where am I losing time?" in VR between races |
+| 2026-06-21 | Summary is default tab | Coaching-first — raw data is secondary |
+| 2026-06-21 | Canvas mini map (no Leaflet) | No external deps for Summary, works offline, lightweight |
+| 2026-06-21 | Speed context badges | "157→70mph" immediately identifies corner without looking at map |
+| 2026-06-21 | Next Race Focus deduped from cards | Don't repeat the same corner twice on the page |
+| 2026-06-21 | Coaching sentence priority order | brake_linearity > apex_std > thr_lag > spread — highest-impact first |
+| 2026-06-21 | localStorage view persistence | Remember user's tab preference per report file |
+| 2026-06-21 | Leaflet invalidateSize on tab switch | Hidden container causes zero-size rendering — must re-fit on show |

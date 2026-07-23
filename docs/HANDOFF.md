@@ -1,30 +1,33 @@
 # Tenths Development Handoff — Context for Next Session
 
-## Current State (as of 2026-06-14)
+## Current State (as of 2026-07-22)
 
 ### What Tenths Is
-An iRacing telemetry analysis tool that auto-processes .ibt files and generates interactive HTML coaching reports. Runs as a Windows system tray app — zero-friction background service.
+An iRacing telemetry analysis tool that auto-processes .ibt files and generates interactive HTML coaching reports with a VR-readable Summary View. Runs as a Windows system tray app — zero-friction background service.
 
 ### Repository
 - **Path:** `c:\Users\justi\Documents\Sim\Tenths`
 - **GitHub:** `git@github.com:jgarbiso/Tenths.git`
 - **Branch:** `main`
 - **Version:** 0.9.0
-- **Tests:** 106 passing (pytest), 8.5s runtime
+- **Tests:** 176 passing (pytest), ~10s runtime
 
 ### Architecture
 ```
 tenths/
 ├── config.py              # Centralized config (auto-detects paths)
-├── cli.py                 # CLI entry: watch, tray, process, report, summary, migrate
+├── cli.py                 # CLI entry: watch, tray, process, report, summary, migrate, index
 ├── analyzer.py            # Core .ibt parser + all metrics
 ├── process.py             # Session notes orchestrator
-├── report.py              # HTML report generator (inline JS/CSS, Leaflet + Chart.js)
+├── report.py              # HTML report generator (Summary + Detailed views, inline JS/CSS)
 ├── summary.py             # session_summary.json generator + schema migration
+├── index_generator.py     # Master session browser (index.html at telemetry root)
 ├── track_map.py           # Track map file parser (% → turn names)
 ├── track_map_generator.py # Auto-generates skeleton track maps from GPS
 ├── results.py             # iRacing race result parser
 ├── incidents.py           # Incident forensics
+├── data/
+│   └── trackLandmarksData.json  # Bundled corner data (457 iRacing tracks, from CrewChief community)
 └── service/
     ├── watcher.py         # File system watcher (watchdog, event-driven)
     ├── notifier.py        # Windows toast notifications (winotify)
@@ -32,6 +35,7 @@ tenths/
 ```
 
 ### Key Design Decisions
+- **Two-tab report** — Summary (VR-readable, coaching-first) + Detailed (full telemetry)
 - **Pit Wall theme** — dark mode with specific color tokens (docs/HTML_REPORT_DESIGN.md)
 - **Orbitron font** for hero numbers, Inter for UI, JetBrains Mono for data
 - **Unified braking zones table** — one template for ALL car classes
@@ -40,51 +44,103 @@ tenths/
 - **Toast notification** by default, browser auto-open is opt-in (`--open` flag)
 - **No git commit** by default (`--git` flag to opt-in)
 - **Config auto-detects** `~/Documents/iRacing/telemetry` for any user
+- **Master index auto-regenerates** after each session processed by watcher
 
 ### What's Complete
 - ✅ CLI Enhancement Tasks 1.1–1.7 (JSON contract, schema migration, track maps, metrics)
-- ✅ HTML Report (map, charts, compare, brake release, brake points, steering)
-- ✅ Watcher Tier 1 (CLI `tenths watch`)
-- ✅ Watcher Tier 2 (toast notifications)
-- ✅ Watcher Tier 3 (system tray app)
+- ✅ HTML Report — Detailed View (map, charts, compare, brake release, brake points, steering)
+- ✅ HTML Report — Summary View (hero numbers, coaching sentences, focus cards, mini track map, speed context)
+- ✅ Watcher Tier 1–3 (CLI watch, toast notifications, system tray app)
 - ✅ Coaching metrics (Apex ±, Input Stability, Brake Duration, Corner Ranking, T2Peak, Thr On, Thr Lag, Brake Linearity)
+- ✅ Coaching Sentences (plain-English per-corner technique diagnosis in Summary View)
+- ✅ Master Session Index (browser with type-ahead filters, auto-regenerates)
+- ✅ PyInstaller + Inno Setup packaging
+- ✅ Security review + fixes
+- ✅ Per-session folders (no overwrite)
+- ✅ Track map library (30+ hand-built configs + 457-track bundled database from CrewChief community)
+- ✅ CLI path-with-spaces bug fixed (P2)
+- ✅ Leaflet hidden-container rendering fix
+- ✅ Summary View coaching threshold lowered to 0.1s
 - ✅ MVP prep (centralized config, no hardcoded paths, v0.9.0)
+
+---
+
+## Summary View Features (NEW — 2026-06-21)
+
+The report now opens to a **Summary tab** by default:
+- **Hero numbers**: Best Lap, Recoverable Time, Delta vs Previous, Laps
+- **Next Race Focus**: Single most important coaching priority with turn name + speed context
+- **Focus Cards**: Top 3 time-loss corners (excluding Next Race Focus) with coaching sentences
+- **Speed context**: Amber "157→70mph" badge on each card for corner identification
+- **Mini track map**: Canvas-rendered GPS outline with red dots on problem corners
+- **Drill-down**: Click any card to jump to supporting data in Detailed view
+- **View persistence**: localStorage remembers your tab preference per report
+- **Leaflet fix**: Map invalidates size on first show (hidden container issue resolved)
+- **No external deps**: Summary View works fully offline (no CDN needed)
+
+---
+
+## Track Map Library
+
+**Bundled database:** `tenths/data/trackLandmarksData.json` — 457 iRacing tracks with corner names and positions (meters from S/F). Source: CrewChief community (GPL-3.0). NOT YET WIRED UP — integration is next session's #1 priority.
+
+**Hand-built configs** (30+ track map .md files) — used until landmark integration is complete:
+- Okayama (Full)
+- Oulton Park (8 configs)
+- Navarra (Speed Circuit)
+- Road America (Full/Bend)
+- Road Atlanta (Full)
+- VIR (5 configs)
+- Summit Point (5 configs)
+- Tsukuba (7 configs)
+- Laguna Seca
+- Lime Rock (5 configs)
+- Winton National, Mid-Ohio (Full, Chicane)
+
+**Known slug mismatches** (TM1 bug — will be resolved by landmark integration):
+- `summit_summit_raceway` (iRacing) → `summit_point_raceway.md` (our file)
+- `limerock_2019_gp` (iRacing) → `lime_rock_grand_prix.md` (our file)
+
+---
+
+## Known Tech Debt (Priority)
+
+| ID | Issue | Status |
+|----|-------|--------|
+| TM1-4 | Track map system bugs (slug matching, percentage ambiguity) | **Solution found** — bundled trackLandmarksData.json, implementation next session |
+| P2 | CLI path with spaces fails | **FIXED** |
+| P3 | No standalone race results processing | Documented, high priority future |
+| NEW | Min Speed Spread metric not implemented | Documented in COACHING_METRICS_DESIGN.md |
+| NEW | Coaching threshold at 0.1s may show noise on some tracks | Monitor — may need per-track or adaptive threshold |
+
+See `docs/TECH_DEBT.md` for full list and implementation plans.
 
 ---
 
 ## NEXT STEPS (in priority order)
 
-### 1. PyInstaller + Inno Setup Packaging
-**Goal:** Single .exe installer that any iRacing user can download and run.
+### 1. Integrate trackLandmarksData into track_map.py (HIGH — next session)
+**Goal:** Replace manual percentage-based track mapping with data-driven corner lookup.
+- Data already bundled at `tenths/data/trackLandmarksData.json` (457 tracks)
+- New function `load_track_from_landmarks(ir_track_slug)` converts distance→percentage
+- Lookup order: bundled data → hand-tuned .md files → CrewChief install → auto-generate
+- Eliminates TM1-TM4 bugs entirely
+- See `docs/TECH_DEBT.md` for full implementation plan
 
-**Steps:**
-1. Create `installer/tenths.spec` (PyInstaller spec file)
-   - Bundle: tenths/ package, all deps, Python runtime, assets/tenths.ico, tracks/*.md
-   - Entry point: `tenths/service/tray.py:main`
-   - Flags: `--noconsole`, `--onefile` or `--onedir`
-2. Test the .exe runs standalone (no Python installed)
-3. Create `installer/tenths_setup.iss` (Inno Setup)
-   - Install to `%LOCALAPPDATA%/Tenths/`
-   - Start Menu entry, optional Desktop shortcut
-   - Register startup key
-   - Create uninstaller
-4. Test on a clean VM or another PC
+### 2. Min Speed Spread coaching metric (HIGH — next session)
+**Goal:** Detect over-braking by comparing per-lap min speed to best-lap min speed.
+- Exposes why a driver is slow even when they're "consistent" (low variance)
+- "T5: Min speed varies 77-106mph — you carried 106 on your best lap, trust the car"
+- See `docs/COACHING_METRICS_DESIGN.md` for full spec
 
-**Dependencies for packaging:**
-- PyInstaller (`pip install pyinstaller`)
-- Inno Setup (download from jrsoftware.org — not pip)
+### 3. Standalone Race Results Processing (P3)
+**Goal:** `tenths results "path/to/eventresult.json"` for races without telemetry.
+- See `docs/TECH_DEBT.md` P3 section for spec
 
-**Key files to include in bundle:**
-- `assets/tenths.ico`
-- `tracks/*.md` (all track maps)
-- All Python packages in dependencies list
+### 4. Lower coaching threshold to 0.1s (DONE — 2026-07-18)
+Changed from 0.3s to 0.1s so distributed time loss across corners surfaces in Summary View.
 
-### 2. Coaching Sentences (Future iteration)
-Auto-generate plain-English coaching text per corner:
-- "T4: Your apex speed varies by ±17mph — find a consistent visual reference"
-- "T1: Brake release is stepped (0.41) — work on progressive release"
-
-### 3. iRacing OAuth2 (Phase 5)
+### 5. iRacing OAuth2 (Phase 5 — future)
 - Auto-pull race results (no manual CSV download)
 - Full track catalog with turn positions for all circuits
 
@@ -95,7 +151,7 @@ Auto-generate plain-English coaching text per corner:
 - `docs/HTML_REPORT_DESIGN.md` — Report features, Pit Wall theme spec
 - `docs/WATCHER_ARCHITECTURE.md` — 3-tier watcher design
 - `docs/COACHING_METRICS_DESIGN.md` — Morad-style coaching → Tenths metrics mapping
-- `docs/TECH_DEBT.md` — Known issues for future resolution
+- `docs/TECH_DEBT.md` — Known issues + proposed fixes
 - `docs/UX_IMPROVEMENTS.md` — UI/UX items (resolved + remaining)
 - `docs/PROJECT_PLAN.md` — Phase status tracker
 
@@ -113,8 +169,11 @@ pythonw -m tenths.cli tray
 # CLI watch (development)
 python -m tenths.cli watch
 
-# Process specific file
-python -m tenths.process "path\to\file.ibt"
+# Process specific file (supports paths with spaces)
+python -m tenths.cli process "path\to\file.ibt"
+
+# Generate master session index
+python -m tenths.cli index
 ```
 
 ## Steering File

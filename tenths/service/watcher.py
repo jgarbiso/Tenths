@@ -223,13 +223,17 @@ class TelemetryWatcher:
                 f.write(notes_content)
 
             # 2. HTML report — each session gets its own report (never overwrite)
-            report_html = generate_report(data, file_info, track_map, race_result)
+            # Compute summary + progression before report generation so Summary View has it
+            from tenths.summary import compute_progression as _compute_progression
+            summary = generate_session_summary(data, file_info, track_map, race_result)
+            progression = _compute_progression(summary, session_dir)
+
+            report_html = generate_report(data, file_info, track_map, race_result, progression=progression)
             report_path = os.path.join(session_dir, "session_report.html")
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report_html)
 
-            # 3. JSON summary
-            summary = generate_session_summary(data, file_info, track_map, race_result)
+            # 3. JSON summary (write_session_summary re-computes progression internally)
             write_session_summary(summary, session_dir)
 
             elapsed = time.time() - start_time
@@ -258,6 +262,13 @@ class TelemetryWatcher:
                 )
             except Exception as e:
                 print(f"  ⚠ Notification failed: {e}")
+
+            # Regenerate master index so new session appears immediately
+            try:
+                from tenths.index_generator import generate_master_index
+                generate_master_index()
+            except Exception:
+                pass  # Non-critical — index can be rebuilt manually
 
             # Auto-open report in browser
             if self._auto_open:

@@ -19,7 +19,7 @@ import json
 from tenths.track_map import get_turn_name
 
 
-def generate_report(data, file_info, track_map, race_result=None):
+def generate_report(data, file_info, track_map, race_result=None, progression=None):
     """Generate a self-contained HTML session report.
 
     Args:
@@ -27,6 +27,8 @@ def generate_report(data, file_info, track_map, race_result=None):
         file_info: dict with car, track, date, time keys
         track_map: track map data from load_track_map()
         race_result: optional dict from results.parse_result()
+        progression: optional dict from compute_progression() — session-over-session
+                     progress data (delta vs previous, PB detection, trend)
 
     Returns:
         Complete HTML string ready to write to file.
@@ -142,6 +144,7 @@ def generate_report(data, file_info, track_map, race_result=None):
         'abs_trend': data.get('abs_trend', {}),
         'tire_temps': data.get('tire_temps', {}),
         'race_result': race_data,
+        'progression': progression,
     }
 
     data_json = json.dumps(report_data, default=str)
@@ -204,140 +207,160 @@ def _build_html(data_json, car, track, date, best_time, race_data):
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
 {_get_css()}
+{_get_summary_css()}
     </style>
 </head>
 <body>
-    <!-- Header -->
+    <!-- Header with View Switcher -->
     <header class="header">
         <div class="header-left">
             <h1 class="title">{car}</h1>
             <div class="subtitle">{track} — {date}</div>
         </div>
-        <div class="header-center">
-            <div class="hero-time">{best_time}</div>
-            <div class="hero-label">Best Lap</div>
+        <div class="view-switcher" role="tablist">
+            <button class="view-tab active" role="tab" aria-selected="true" data-view="summary" tabindex="0">Summary</button>
+            <button class="view-tab" role="tab" aria-selected="false" data-view="detailed" tabindex="-1">Detailed</button>
         </div>
         <div class="header-right">
             {race_badge_html}
         </div>
     </header>
 
-    <!-- Main Grid -->
-    <main class="grid">
-        <!-- Track Map -->
-        <section class="card map-card">
-            <div class="card-header">
-                <h2>Track Map</h2>
-                <div class="map-controls">
-                    <span class="rotate-value" style="font-size:9px;color:var(--text-secondary);">Rotate</span>
-                    <button class="rotate-btn" data-dir="1" title="Rotate left">↶</button>
-                    <span class="rotate-value" id="rotate-label">90°</span>
-                    <button class="rotate-btn" data-dir="-1" title="Rotate right">↷</button>
-                    <span class="controls-divider"></span>
-                    <div class="toggle-group">
-                        <button class="toggle-btn active" data-mode="speed">Speed</button>
-                        <button class="toggle-btn" data-mode="brake">Brake</button>
+    <!-- Summary View (default) -->
+    <main id="summary-view" class="view-panel active">
+        <div class="summary-container">
+            <div class="hero-row" id="summary-heroes"></div>
+            <div class="summary-body">
+                <div class="summary-left">
+                    <div class="next-focus" id="next-focus"></div>
+                    <div class="focus-cards" id="focus-cards"></div>
+                </div>
+                <div class="summary-right">
+                    <canvas id="mini-map" width="280" height="280"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Detailed View (existing report) -->
+    <main id="detailed-view" class="view-panel">
+        <!-- Main Grid -->
+        <div class="grid">
+            <!-- Track Map -->
+            <section class="card map-card">
+                <div class="card-header">
+                    <h2>Track Map</h2>
+                    <div class="map-controls">
+                        <span class="rotate-value" style="font-size:9px;color:var(--text-secondary);">Rotate</span>
+                        <button class="rotate-btn" data-dir="1" title="Rotate left">↶</button>
+                        <span class="rotate-value" id="rotate-label">90°</span>
+                        <button class="rotate-btn" data-dir="-1" title="Rotate right">↷</button>
+                        <span class="controls-divider"></span>
+                        <div class="toggle-group">
+                            <button class="toggle-btn active" data-mode="speed">Speed</button>
+                            <button class="toggle-btn" data-mode="brake">Brake</button>
+                        </div>
+                        <span class="controls-divider"></span>
+                        <button class="action-btn" id="brake-points-toggle">⊕ Brake Points</button>
                     </div>
-                    <span class="controls-divider"></span>
-                    <button class="action-btn" id="brake-points-toggle">⊕ Brake Points</button>
                 </div>
-            </div>
-            <div id="track-map"></div>
-            <div class="map-watermark" id="map-watermark"></div>
-            <div class="map-zoom">
-                <button class="map-zoom-btn" id="zoom-in" title="Zoom in">+</button>
-                <button class="map-zoom-btn" id="zoom-out" title="Zoom out">−</button>
-            </div>
-            <div id="brake-points-legend" class="bp-legend" style="display:none;">
-                <span class="bp-legend-title">Brake Points</span>
-                <div class="bp-legend-bar">
-                    <span class="bp-legend-label">Early laps</span>
-                    <div class="bp-legend-gradient"></div>
-                    <span class="bp-legend-label">Late laps</span>
+                <div id="track-map"></div>
+                <div class="map-watermark" id="map-watermark"></div>
+                <div class="map-zoom">
+                    <button class="map-zoom-btn" id="zoom-in" title="Zoom in">+</button>
+                    <button class="map-zoom-btn" id="zoom-out" title="Zoom out">−</button>
                 </div>
-            </div>
-        </section>
+                <div id="brake-points-legend" class="bp-legend" style="display:none;">
+                    <span class="bp-legend-title">Brake Points</span>
+                    <div class="bp-legend-bar">
+                        <span class="bp-legend-label">Early laps</span>
+                        <div class="bp-legend-gradient"></div>
+                        <span class="bp-legend-label">Late laps</span>
+                    </div>
+                </div>
+            </section>
 
-        <!-- Session Stats -->
-        <section class="card stats-card">
-            <div class="card-header"><h2>Session</h2></div>
-            <div id="stats-grid"></div>
-        </section>
+            <!-- Session Stats -->
+            <section class="card stats-card">
+                <div class="card-header"><h2>Session</h2></div>
+                <div id="stats-grid"></div>
+            </section>
 
-        <!-- Telemetry Traces (Stacked Panels — MoTeC style) -->
-        <section class="card chart-card">
-            <div class="card-header">
-                <div class="telemetry-header-left">
-                    <h2>Telemetry</h2>
-                    <span id="crosshair-info" class="crosshair-inline"></span>
+            <!-- Telemetry Traces (Stacked Panels — MoTeC style) -->
+            <section class="card chart-card">
+                <div class="card-header">
+                    <div class="telemetry-header-left">
+                        <h2>Telemetry</h2>
+                        <span id="crosshair-info" class="crosshair-inline"></span>
+                    </div>
+                    <div class="telemetry-controls">
+                        <select id="lap-selector" class="lap-select"></select>
+                        <span class="controls-divider"></span>
+                        <button id="compare-btn" class="action-btn">⇄ Compare</button>
+                        <select id="compare-selector" class="lap-select" style="display:none;border-left:2px solid var(--accent-blue);"></select>
+                        <span id="compare-delta" class="compare-delta" style="display:none;"></span>
+                        <span class="controls-divider"></span>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span>Throttle</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span>Brake</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#ffab00"></span>Speed</span>
+                            <span class="legend-item"><span class="legend-dot" style="background:#448aff"></span>Steering</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="telemetry-controls">
-                    <select id="lap-selector" class="lap-select"></select>
-                    <span class="controls-divider"></span>
-                    <button id="compare-btn" class="action-btn">⇄ Compare</button>
-                    <select id="compare-selector" class="lap-select" style="display:none;border-left:2px solid var(--accent-blue);"></select>
-                    <span id="compare-delta" class="compare-delta" style="display:none;"></span>
-                    <span class="controls-divider"></span>
+                <div class="trace-stack">
+                    <div class="trace-panel trace-panel-tall">
+                        <span class="trace-label">Brake / Throttle</span>
+                        <canvas id="chart-brake-throttle"></canvas>
+                    </div>
+                    <div class="trace-panel">
+                        <span class="trace-label">Speed</span>
+                        <canvas id="chart-speed"></canvas>
+                    </div>
+                    <div class="trace-panel trace-panel-delta" id="delta-panel" style="display:none;">
+                        <span class="trace-label">Speed Delta</span>
+                        <canvas id="chart-delta"></canvas>
+                    </div>
+                    <div class="trace-panel">
+                        <span class="trace-label">Steering</span>
+                        <canvas id="chart-steering"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Brake Release Shapes -->
+            <section class="card table-full-width" id="brake-release-section">
+                <div class="card-header">
+                    <h2>Brake Release Shape</h2>
                     <div class="chart-legend">
-                        <span class="legend-item"><span class="legend-dot" style="background:#00e676"></span>Throttle</span>
-                        <span class="legend-item"><span class="legend-dot" style="background:#ff1744"></span>Brake</span>
-                        <span class="legend-item"><span class="legend-dot" style="background:#ffab00"></span>Speed</span>
-                        <span class="legend-item"><span class="legend-dot" style="background:#448aff"></span>Steering</span>
+                        <span class="legend-item" style="font-size:10px;color:var(--text-secondary)">Linear release = smooth weight transfer = faster rotation</span>
                     </div>
                 </div>
-            </div>
-            <div class="trace-stack">
-                <div class="trace-panel trace-panel-tall">
-                    <span class="trace-label">Brake / Throttle</span>
-                    <canvas id="chart-brake-throttle"></canvas>
-                </div>
-                <div class="trace-panel">
-                    <span class="trace-label">Speed</span>
-                    <canvas id="chart-speed"></canvas>
-                </div>
-                <div class="trace-panel trace-panel-delta" id="delta-panel" style="display:none;">
-                    <span class="trace-label">Speed Delta</span>
-                    <canvas id="chart-delta"></canvas>
-                </div>
-                <div class="trace-panel">
-                    <span class="trace-label">Steering</span>
-                    <canvas id="chart-steering"></canvas>
-                </div>
-            </div>
-        </section>
+                <div class="release-grid" id="brake-release-grid"></div>
+            </section>
 
-        <!-- Brake Release Shapes -->
-        <section class="card table-full-width" id="brake-release-section">
-            <div class="card-header">
-                <h2>Brake Release Shape</h2>
-                <div class="chart-legend">
-                    <span class="legend-item" style="font-size:10px;color:var(--text-secondary)">Linear release = smooth weight transfer = faster rotation</span>
+            <!-- Tables -->
+            <section class="card table-card table-full-width" id="braking-zones-table-section">
+                <div class="card-header">
+                    <h2>Braking Zones</h2>
                 </div>
-            </div>
-            <div class="release-grid" id="brake-release-grid"></div>
-        </section>
+                <div id="braking-table"></div>
+            </section>
 
-        <!-- Tables -->
-        <section class="card table-card table-full-width">
-            <div class="card-header">
-                <h2>Braking Zones</h2>
-            </div>
-            <div id="braking-table"></div>
-        </section>
+            <section class="card table-card">
+                <div class="card-header">
+                    <h2>Corner Variance</h2>
+                </div>
+                <div id="variance-table"></div>
+            </section>
 
-        <section class="card table-card">
-            <div class="card-header">
-                <h2>Corner Variance</h2>
-            </div>
-            <div id="variance-table"></div>
-        </section>
-
-        <section class="card table-card">
-            <div class="card-header">
-                <h2>Lap Summary</h2>
-            </div>
-            <div id="lap-table"></div>
-        </section>
+            <section class="card table-card">
+                <div class="card-header">
+                    <h2>Lap Summary</h2>
+                </div>
+                <div id="lap-table"></div>
+            </section>
+        </div>
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -347,6 +370,9 @@ const DATA = {data_json};
     </script>
     <script>
 {_get_js()}
+    </script>
+    <script>
+{_get_summary_js()}
     </script>
 </body>
 </html>'''
@@ -1370,6 +1396,10 @@ function initMap() {
         zoomDelta: 0.5,
     });
 
+    // Expose globally so view-switcher can invalidateSize when Detailed becomes visible
+    window._tenthsMap = map;
+    window._tenthsMapBounds = bounds;
+
     map.getContainer().style.background = '#000';
 
     // Track name watermark
@@ -2010,6 +2040,695 @@ function escHtml(s) {
 '''
 
 
+def _get_summary_css():
+    """CSS for the Summary View — VR-readable, no external dependencies."""
+    return '''
+/* ─── View Switching ──────────────────────────────────────────────────────── */
+.view-switcher {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px;
+}
+.view-tab {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 18px;
+    font-weight: 500;
+    padding: 10px 24px;
+    min-width: 44px;
+    min-height: 44px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: all 0.15s;
+}
+.view-tab.active {
+    background: var(--bg-surface-raised);
+    color: var(--text-primary);
+}
+.view-tab:hover:not(.active) {
+    color: var(--text-primary);
+}
+.view-tab:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+}
+.view-panel { display: none; }
+.view-panel.active { display: block; }
+
+/* ─── Summary View ────────────────────────────────────────────────────────── */
+.summary-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+}
+.hero-row {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+}
+.hero-stat {
+    text-align: center;
+}
+.hero-value {
+    font-family: 'Orbitron', system-ui, sans-serif;
+    font-size: 48px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+.hero-value.green { color: var(--accent-green); }
+.hero-value.red { color: var(--accent-red); }
+.hero-value.muted { color: var(--text-secondary); font-size: 28px; }
+.hero-label {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 4px;
+}
+.pb-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent-green);
+    background: #00e67615;
+    border: 1px solid #00e67640;
+    border-radius: 4px;
+    padding: 2px 8px;
+    margin-left: 8px;
+}
+.race-info-summary {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Next Race Focus */
+.next-focus {
+    background: var(--bg-surface);
+    border: 2px solid var(--accent-blue);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+.next-focus:hover {
+    border-color: var(--accent-green);
+}
+.next-focus-header {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+}
+.next-focus-turn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+.next-focus-loss {
+    font-family: 'Orbitron', system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-red);
+    margin-bottom: 8px;
+}
+.next-focus-sentence {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+.next-focus-hidden { display: none; }
+
+/* Focus Cards */
+.focus-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Summary two-column layout */
+.summary-body {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+.summary-left {
+    flex: 1;
+    min-width: 0;
+}
+.summary-right {
+    flex: 0 0 280px;
+    position: sticky;
+    top: 80px;
+}
+#mini-map {
+    width: 280px;
+    height: 280px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-surface);
+}
+@media (max-width: 900px) {
+    .summary-body { flex-direction: column-reverse; }
+    .summary-right { flex: none; width: 100%; position: static; }
+    #mini-map { width: 100%; height: 200px; }
+}
+.focus-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.focus-card:hover {
+    border-color: var(--accent-blue);
+    background: var(--bg-surface-raised);
+}
+.focus-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+}
+.focus-card-turn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.focus-card-loss {
+    font-family: 'Orbitron', system-ui, sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-red);
+}
+.focus-card-sentence {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+.focus-card-speed, .next-focus-speed {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--accent-amber);
+    margin-left: 8px;
+}
+.consistent-message {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 18px;
+    color: var(--accent-green);
+    text-align: center;
+    padding: 32px;
+}
+
+/* Drill-down highlight */
+.highlight-row {
+    animation: row-pulse 3s ease-out;
+}
+@keyframes row-pulse {
+    0% { background: var(--accent-blue); }
+    100% { background: transparent; }
+}
+'''
+
+
+def _get_summary_js():
+    """JavaScript for the Summary View — view switching, coaching logic, drill-down."""
+    return '''
+// ─── View Switching ──────────────────────────────────────────────────────────
+(function() {
+    const storageKey = 'tenths_view_' + document.title;
+    const tabs = document.querySelectorAll('.view-tab');
+    const panels = document.querySelectorAll('.view-panel');
+    let currentView = 'summary';
+
+    function getStoredView() {
+        try { return localStorage.getItem(storageKey) || 'summary'; }
+        catch(e) { return 'summary'; }
+    }
+
+    function setStoredView(view) {
+        try { localStorage.setItem(storageKey, view); }
+        catch(e) {}
+    }
+
+    function switchView(view) {
+        if (view === currentView) return;
+        currentView = view;
+        tabs.forEach(tab => {
+            const isActive = tab.dataset.view === view;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-selected', isActive);
+            tab.tabIndex = isActive ? 0 : -1;
+        });
+        panels.forEach(panel => {
+            const isActive = panel.id === view + '-view';
+            panel.classList.toggle('active', isActive);
+        });
+        setStoredView(view);
+        window.scrollTo(0, 0);
+
+        // Leaflet can't render in a hidden container — invalidate size when Detailed becomes visible
+        if (view === 'detailed' && window._tenthsMap) {
+            setTimeout(() => {
+                window._tenthsMap.invalidateSize();
+                if (window._tenthsMapBounds) {
+                    window._tenthsMap.fitBounds(window._tenthsMapBounds, { padding: [30, 30] });
+                }
+            }, 50);
+        }
+    }
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => switchView(tab.dataset.view));
+        tab.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                switchView(tab.dataset.view);
+            }
+        });
+    });
+
+    // Restore saved preference
+    const saved = getStoredView();
+    if (saved === 'detailed') switchView('detailed');
+
+    // Expose for drill-down
+    window.switchToDetailed = function() { switchView('detailed'); };
+
+// ─── Coaching Data Builder ───────────────────────────────────────────────────
+    function buildCoachingData() {
+        const cv = DATA.corner_variance || [];
+        const bz = DATA.braking_zones || [];
+        const bp = DATA.per_lap_brake_points || [];
+
+        const qualifying = cv
+            .filter(c => c.loss > 0.1)
+            .sort((a, b) => b.loss - a.loss)
+            .slice(0, 3);
+
+        return qualifying.map(c => {
+            const zone = bz.find(z => z.turn_name === c.turn_name);
+            const brakePoint = bp.find(p => p.turn_name === c.turn_name);
+            return {
+                turn_name: c.turn_name || 'Unknown',
+                loss: c.loss,
+                pct: c.pct || 0,
+                brake_linearity: zone?.brake_linearity ?? null,
+                apex_std_mph: zone?.apex_std_mph ?? null,
+                thr_lag: zone?.thr_lag ?? null,
+                spread_meters: brakePoint?.spread_meters ?? null,
+                entry_mph: zone?.entry_mph ?? null,
+                min_mph: zone?.min_mph ?? null,
+            };
+        });
+    }
+
+// ─── Coaching Sentence Generator ─────────────────────────────────────────────
+    function generateCoachingSentence(corner) {
+        const turn = corner.turn_name;
+        const loss = corner.loss.toFixed(3);
+
+        // Priority order: brake linearity, apex consistency, throttle lag, brake spread
+        if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) {
+            return truncate(`${turn}: Release brake progressively — losing ${loss}s to stepped release`);
+        }
+        if (corner.apex_std_mph !== null && corner.apex_std_mph > 4) {
+            const std = Math.round(corner.apex_std_mph);
+            return truncate(`${turn}: Apex speed varies \\u00b1${std}mph — find a consistent visual reference`);
+        }
+        if (corner.thr_lag !== null && corner.thr_lag > 0.5) {
+            const lag = corner.thr_lag.toFixed(1);
+            return truncate(`${turn}: Throttle delayed ${lag}s after apex — commit to exit earlier`);
+        }
+        if (corner.spread_meters !== null && corner.spread_meters > 15) {
+            const spread = Math.round(corner.spread_meters);
+            return truncate(`${turn}: Brake reference drifting \\u00b1${spread}m — pick a fixed board marker`);
+        }
+        // Generic fallback
+        return truncate(`${turn}: Losing ${loss}s — review telemetry in Detailed view`);
+    }
+
+    function getDiagnosisType(corner) {
+        if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) return 'brake_linearity';
+        if (corner.apex_std_mph !== null && corner.apex_std_mph > 4) return 'apex_consistency';
+        if (corner.thr_lag !== null && corner.thr_lag > 0.5) return 'throttle_lag';
+        if (corner.spread_meters !== null && corner.spread_meters > 15) return 'brake_spread';
+        return 'generic';
+    }
+
+    function truncate(s) {
+        return s.length > 120 ? s.slice(0, 117) + '...' : s;
+    }
+
+// ─── Hero Numbers Renderer ───────────────────────────────────────────────────
+    function renderHeroes() {
+        const container = document.getElementById('summary-heroes');
+        if (!container) return;
+
+        // Best lap
+        const bestTime = DATA.best_time || '—';
+
+        // Total recoverable time
+        const cv = DATA.corner_variance || [];
+        const totalLoss = cv.reduce((sum, c) => sum + (c.loss || 0), 0);
+        const lossStr = totalLoss.toFixed(3) + 's';
+
+        // Progression delta
+        const prog = DATA.progression;
+        let deltaHtml = '';
+        if (prog && prog.delta_vs_previous) {
+            const delta = prog.delta_vs_previous.lap_time_s;
+            const sign = delta < 0 ? '' : '+';
+            const cls = delta < 0 ? 'green' : 'red';
+            deltaHtml = `<div class="hero-stat">
+                <div class="hero-value ${cls}">${sign}${delta.toFixed(3)}</div>
+                <div class="hero-label">vs Previous</div>
+            </div>`;
+            if (prog.alltime_best && prog.alltime_best.is_new_pb) {
+                deltaHtml = `<div class="hero-stat">
+                    <div class="hero-value ${cls}">${sign}${delta.toFixed(3)}<span class="pb-badge">New PB</span></div>
+                    <div class="hero-label">vs Previous</div>
+                </div>`;
+            }
+        } else {
+            deltaHtml = `<div class="hero-stat">
+                <div class="hero-value muted">First Session</div>
+                <div class="hero-label">vs Previous</div>
+            </div>`;
+        }
+
+        // Laps + race result
+        const laps = DATA.valid_laps || 0;
+        let raceHtml = '';
+        if (DATA.race_result) {
+            const r = DATA.race_result;
+            const irColor = r.ir_delta >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+            const irSign = r.ir_delta >= 0 ? '+' : '';
+            raceHtml = `<div class="race-info-summary">P${r.finish_pos}/${r.entries} <span style="color:${irColor}">iR ${irSign}${r.ir_delta}</span></div>`;
+        }
+
+        container.innerHTML = `
+            <div class="hero-stat">
+                <div class="hero-value">${bestTime}</div>
+                <div class="hero-label">Best Lap</div>
+                ${raceHtml}
+            </div>
+            <div class="hero-stat">
+                <div class="hero-value red">${lossStr}</div>
+                <div class="hero-label">Recoverable</div>
+            </div>
+            ${deltaHtml}
+            <div class="hero-stat">
+                <div class="hero-value">${laps}</div>
+                <div class="hero-label">Laps</div>
+            </div>
+        `;
+    }
+
+// ─── Next Race Focus Renderer ────────────────────────────────────────────────
+    function renderNextFocus(coachingData) {
+        const container = document.getElementById('next-focus');
+        if (!container) return;
+
+        const cv = DATA.corner_variance || [];
+        if (cv.length === 0) {
+            container.classList.add('next-focus-hidden');
+            return;
+        }
+
+        // Find highest-loss corner WITH a specific diagnosis
+        let focus = null;
+        const allByLoss = [...cv].sort((a, b) => b.loss - a.loss);
+        const bz = DATA.braking_zones || [];
+        const bp = DATA.per_lap_brake_points || [];
+
+        for (const c of allByLoss) {
+            if (c.loss <= 0) continue;
+            const zone = bz.find(z => z.turn_name === c.turn_name);
+            const brakePoint = bp.find(p => p.turn_name === c.turn_name);
+            const corner = {
+                turn_name: c.turn_name || 'Unknown',
+                loss: c.loss,
+                pct: c.pct || 0,
+                brake_linearity: zone?.brake_linearity ?? null,
+                apex_std_mph: zone?.apex_std_mph ?? null,
+                thr_lag: zone?.thr_lag ?? null,
+                spread_meters: brakePoint?.spread_meters ?? null,
+                entry_mph: zone?.entry_mph ?? null,
+                min_mph: zone?.min_mph ?? null,
+            };
+            const diag = getDiagnosisType(corner);
+            if (diag !== 'generic') {
+                focus = corner;
+                break;
+            }
+        }
+
+        // Fallback: highest loss corner overall
+        if (!focus && allByLoss.length > 0 && allByLoss[0].loss > 0) {
+            const c = allByLoss[0];
+            const zone = bz.find(z => z.turn_name === c.turn_name);
+            const brakePoint = bp.find(p => p.turn_name === c.turn_name);
+            focus = {
+                turn_name: c.turn_name || 'Unknown',
+                loss: c.loss,
+                pct: c.pct || 0,
+                brake_linearity: zone?.brake_linearity ?? null,
+                apex_std_mph: zone?.apex_std_mph ?? null,
+                thr_lag: zone?.thr_lag ?? null,
+                spread_meters: brakePoint?.spread_meters ?? null,
+                entry_mph: zone?.entry_mph ?? null,
+                min_mph: zone?.min_mph ?? null,
+            };
+        }
+
+        // All corners with zero/negative loss
+        if (!focus) {
+            container.innerHTML = `
+                <div class="next-focus-header">Next Race Focus</div>
+                <div class="next-focus-sentence">Maintain consistency — no significant time loss detected</div>
+            `;
+            return;
+        }
+
+        const sentence = generateCoachingSentence(focus);
+        const diagType = getDiagnosisType(focus);
+        const speedCtx = focus.entry_mph && focus.min_mph
+            ? `<span class="next-focus-speed">${Math.round(focus.entry_mph)}→${Math.round(focus.min_mph)}mph</span>`
+            : '';
+
+        container.innerHTML = `
+            <div class="next-focus-header">Next Race Focus</div>
+            <div class="next-focus-turn">${focus.turn_name} ${speedCtx}</div>
+            <div class="next-focus-loss">${focus.loss.toFixed(3)}s</div>
+            <div class="next-focus-sentence">${sentence}</div>
+        `;
+        container.dataset.turn = focus.turn_name;
+        container.dataset.diag = diagType;
+        container.addEventListener('click', () => drillDown(focus.turn_name, diagType));
+    }
+
+// ─── Focus Cards Renderer ────────────────────────────────────────────────────
+    function renderFocusCards(coachingData) {
+        const container = document.getElementById('focus-cards');
+        if (!container) return;
+
+        if (coachingData.length === 0) {
+            container.innerHTML = '<div class="consistent-message">No significant time loss detected — consistent session</div>';
+            return;
+        }
+
+        // Exclude the Next Race Focus corner from the cards (already shown above)
+        const nextFocusEl = document.getElementById('next-focus');
+        const nextFocusTurn = nextFocusEl?.dataset?.turn || '';
+        const filtered = coachingData.filter(c => c.turn_name !== nextFocusTurn);
+
+        if (filtered.length === 0) return;
+
+        container.innerHTML = filtered.map(corner => {
+            const sentence = generateCoachingSentence(corner);
+            const diagType = getDiagnosisType(corner);
+            const speedCtx = corner.entry_mph && corner.min_mph
+                ? `<span class="focus-card-speed">${Math.round(corner.entry_mph)}\u2192${Math.round(corner.min_mph)}mph</span>`
+                : '';
+            return `
+                <div class="focus-card" data-turn="${corner.turn_name}" data-diag="${diagType}">
+                    <div class="focus-card-header">
+                        <span class="focus-card-turn">${corner.turn_name} ${speedCtx}</span>
+                        <span class="focus-card-loss">${corner.loss.toFixed(3)}s</span>
+                    </div>
+                    <div class="focus-card-sentence">${sentence}</div>
+                </div>
+            `;
+        }).join('');
+
+        // Attach click handlers
+        container.querySelectorAll('.focus-card').forEach(card => {
+            card.addEventListener('click', () => {
+                drillDown(card.dataset.turn, card.dataset.diag);
+            });
+        });
+    }
+
+// ─── Drill-Down Navigation ───────────────────────────────────────────────────
+    function drillDown(turnName, diagnosisType) {
+        window.switchToDetailed();
+
+        setTimeout(() => {
+            let target = null;
+
+            if (diagnosisType === 'brake_linearity') {
+                // Try to find the brake release panel for this corner
+                const releaseGrid = document.getElementById('brake-release-grid');
+                if (releaseGrid) {
+                    const panels = releaseGrid.querySelectorAll('.release-card');
+                    panels.forEach(p => {
+                        if (p.textContent.includes(turnName)) target = p;
+                    });
+                }
+            }
+
+            if (!target) {
+                // Find the row in braking zones table
+                const tableSection = document.getElementById('braking-zones-table-section');
+                if (tableSection) {
+                    const rows = tableSection.querySelectorAll('tr');
+                    rows.forEach(row => {
+                        if (row.textContent.includes(turnName)) target = row;
+                    });
+                }
+            }
+
+            if (!target) {
+                // Fallback: scroll to braking zones table top
+                target = document.getElementById('braking-zones-table-section');
+            }
+
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                target.classList.add('highlight-row');
+                setTimeout(() => target.classList.remove('highlight-row'), 3000);
+            }
+        }, 100);
+    }
+
+// ─── Mini Track Map Renderer ─────────────────────────────────────────────────
+    function renderMiniMap(coachingData) {
+        const canvas = document.getElementById('mini-map');
+        if (!canvas || !DATA.gps_trace || DATA.gps_trace.length < 10) return;
+
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        ctx.scale(dpr, dpr);
+
+        // Extract lat/lon from GPS trace
+        const points = DATA.gps_trace;
+        const lats = points.map(p => p.lat);
+        const lons = points.map(p => p.lon);
+        const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+        const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+
+        // Scale to canvas with padding
+        const pad = 30;
+        const scaleX = (w - pad * 2) / (maxLon - minLon || 1);
+        const scaleY = (h - pad * 2) / (maxLat - minLat || 1);
+        const scale = Math.min(scaleX, scaleY);
+
+        const cx = w / 2;
+        const cy = h / 2;
+        const midLon = (minLon + maxLon) / 2;
+        const midLat = (minLat + maxLat) / 2;
+
+        function toX(lon) { return cx + (lon - midLon) * scale; }
+        function toY(lat) { return cy - (lat - midLat) * scale; }
+
+        // Draw track outline
+        ctx.beginPath();
+        ctx.moveTo(toX(points[0].lon), toY(points[0].lat));
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(toX(points[i].lon), toY(points[i].lat));
+        }
+        ctx.strokeStyle = '#2a2d3a';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+
+        // Highlight problem corners from coaching data
+        const bz = DATA.braking_zones || [];
+        const focusPcts = coachingData.map(c => c.pct);
+
+        // Draw all braking zones as small dots
+        for (const zone of bz) {
+            const pct = zone.pct;
+            const idx = Math.round((pct / 100) * (points.length - 1));
+            if (idx < 0 || idx >= points.length) continue;
+            const pt = points[idx];
+            const isFocus = focusPcts.some(fp => Math.abs(fp - pct) < 3);
+
+            ctx.beginPath();
+            ctx.arc(toX(pt.lon), toY(pt.lat), isFocus ? 8 : 4, 0, Math.PI * 2);
+            ctx.fillStyle = isFocus ? '#ff1744' : '#448aff40';
+            ctx.fill();
+
+            // Label focus corners
+            if (isFocus) {
+                const label = zone.turn_name || 'T?';
+                ctx.font = '11px Inter, system-ui, sans-serif';
+                ctx.fillStyle = '#e8eaf0';
+                ctx.textAlign = 'center';
+                ctx.fillText(label, toX(pt.lon), toY(pt.lat) - 12);
+            }
+        }
+
+        // Draw S/F line indicator
+        if (points.length > 0) {
+            const sf = points[0];
+            ctx.beginPath();
+            ctx.arc(toX(sf.lon), toY(sf.lat), 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#00e676';
+            ctx.fill();
+        }
+    }
+
+// ─── Initialize Summary View ─────────────────────────────────────────────────
+    const coachingData = buildCoachingData();
+    renderHeroes();
+    renderNextFocus(coachingData);
+    renderFocusCards(coachingData);
+    renderMiniMap(coachingData);
+})();
+'''
+
+
 # ─── CLI Entry Point ──────────────────────────────────────────────────────────
 
 def generate_report_cli():
@@ -2055,12 +2774,22 @@ def generate_report_cli():
         from tenths.results import parse_result
         race_result = parse_result(result_file)
 
-    # Generate report
-    html = generate_report(data, file_info, track_map, race_result)
-
-    # Write to session directory
+    # Generate report (with progression if available)
     session_dir = os.path.join(TELEMETRY_ROOT, file_info['car'], file_info['track'], file_info['date'])
     os.makedirs(session_dir, exist_ok=True)
+
+    # Try to compute progression
+    progression = None
+    try:
+        from tenths.summary import generate_session_summary, compute_progression
+        summary = generate_session_summary(data, file_info, track_map, race_result)
+        progression = compute_progression(summary, session_dir)
+    except Exception:
+        pass  # Non-critical — report works without progression
+
+    html = generate_report(data, file_info, track_map, race_result, progression=progression)
+
+    # Write to session directory
     report_path = os.path.join(session_dir, "session_report.html")
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(html)

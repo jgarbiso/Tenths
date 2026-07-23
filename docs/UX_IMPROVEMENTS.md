@@ -57,4 +57,32 @@ The `_get_js()` function in `report.py` returns a large block of JavaScript as a
 
 ### Mobile
 - Current layout breaks below ~900px — the grid collapses but map becomes very small
-- Consider a mobile-first "summary mode" that shows just: lap time, position badge, ABS sparkline, key findings text
+- ~~Consider a mobile-first "summary mode" that shows just: lap time, position badge, ABS sparkline, key findings text~~ **DONE** — Summary View serves this purpose (VR-readable, works at any resolution)
+
+---
+
+## Completed in This Session (2026-06-21)
+
+### Summary View ✅
+- Two-tab layout (Summary default, Detailed secondary)
+- Hero numbers (Best Lap, Recoverable Time, Delta vs Previous, Laps)
+- Next Race Focus callout with coaching sentence + speed context
+- Focus cards (top 3 corners) with speed badges and coaching
+- Mini track map (Canvas, no Leaflet) with highlighted problem corners
+- Drill-down navigation (click card → jumps to Detailed data)
+- View persistence (localStorage per report)
+- Leaflet invalidateSize fix for hidden container rendering
+
+### Master Session Index ✅
+- Type-ahead filters (partial matching, case-insensitive)
+- Auto-regenerates after watcher processes each session
+- Stats: Sessions, Total Laps, Tracks, Cars
+
+### Track Map Library ✅
+- 30+ track configs built from iRacing screenshots
+- Covers full upcoming race schedule through Aug 31
+
+### Bug Fixes ✅
+- P2: CLI path with spaces now works correctly
+- Road America track map slug mismatch fixed
+- Okayama turn numbers corrected from iRacing screenshot
