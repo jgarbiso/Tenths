@@ -2,156 +2,149 @@
 
 *Find your tenths.*
 
-A telemetry analysis and coaching tool for iRacing. Parses `.ibt` files, generates session notes with braking diagnostics, GPS track mapping, corner variance analysis, and driver progression tracking.
+Tenths is an automated race engineer for iRacing. It runs quietly in your system tray, watches for new telemetry, and the moment a session ends it builds a visual coaching report that tells you **where you're losing time and why** — in plain English, no charts to decipher.
 
-## Features
+No manual steps. No accounts. Works offline.
 
-- **Physics-aware braking analysis** — GT4 vs Touring car detection with class-specific diagnostics
-- **5 Stages of Braking metrics** — T2Peak, Coast Time, Turn-In Brake %, Apex Brake %
-- **GPS track mapping** — real coordinates for every braking zone
-- **Corner variance & time loss** — identifies priority corners automatically
-- **Track map integration** — maps telemetry percentages to actual turn names
-- **Session notes generation** — complete markdown coaching reports, zero AI tokens
-- **HTML visual reports** — interactive track heatmap, telemetry charts, hover sync (see below)
-- **Multi-session per day** — practice + qualifying + race combined in one notes file
-- **Race result auto-matching** — finds iRacing results by subsession_id in Downloads
-- **Incident forensics** — spin detection, contact evidence, GPS location
-- **Car/track metadata from .ibt header** — no API needed, works offline
+---
 
-## Quick Start
+## For drivers
+
+**→ [Getting Started Guide](docs/GETTING_STARTED.md)** — install, enable telemetry, and read your first report in about five minutes.
+
+The short version:
+1. Install `Tenths_Setup.exe` (no admin needed, adds itself to your tray)
+2. Enable iRacing telemetry (Alt+L in-sim, or `irsdkLogAll=1` in `app.ini` for always-on)
+3. Drive
+4. Click the notification when your session finishes — your report opens in the browser
+
+### What you get
+
+Every session becomes a self-contained HTML report with two views:
+
+**Summary** (opens by default, built to read at a glance — even in VR):
+- Hero numbers: best lap, recoverable time, delta vs your last session, lap count
+- **Next Race Focus** — the single most important thing to fix, in plain English
+- Top 3 time-loss corners, each with a coaching sentence and speed context
+- Mini track map with your problem corners marked
+
+**Detailed** (the full data):
+- Interactive track heatmap (speed/brake coloring, rotatable)
+- Stacked telemetry traces (brake/throttle, speed, steering)
+- Lap selector + lap comparison with speed delta
+- Brake-release shape curves with linearity scores
+- Braking zones, corner variance, and lap tables
+- Race result badge with iRating delta
+
+Corner names come from a built-in database covering **450+ iRacing tracks** — no setup required.
+
+---
+
+## Highlights
+
+- **Zero-friction** — install once, it runs in the background and processes every session automatically
+- **Coaching-first** — translates raw telemetry into "release the brake more progressively at T5," not just line charts
+- **Progression tracking** — a master index of every session; compare against your past self, session over session
+- **Physics-aware** — different braking diagnostics for different car classes
+- **Self-contained & offline** — all track data bundled; no API, no internet needed to analyze
+- **Resource-light** — event-driven watcher, near-zero idle CPU, low priority during processing so it never steals frames while you race
+
+---
+
+## For developers
+
+### Requirements
+- Python 3.10+
+- Dependencies are declared in `pyproject.toml` (pyirsdk, pandas, numpy, watchdog, winotify, pystray, Pillow, PyYAML)
 
 ```cmd
-cd c:\Users\justi\Documents\Sim\Tenths
+python -m pip install -e .
+```
 
-# Watch for new sessions and auto-process (notification when done)
-python -m tenths.cli watch
+### Running from source
 
-# Watch and also auto-open report in browser
-python -m tenths.cli watch --open
+```cmd
+# System tray app (production entry point)
+pythonw -m tenths.cli tray
 
-# Process all pending .ibt files (generates notes + HTML report + JSON summary)
-python -m tenths.process
+# CLI watcher (foreground, with console output)
+python -m tenths.cli watch          # notification only
+python -m tenths.cli watch --open   # also auto-open reports
 
-# Process a specific .ibt file
-python -m tenths.process "c:\Users\justi\Documents\iRacing\telemetry\_archive\bmwm2csr_winton national 2026-06-06 22-26-36.ibt"
+# Process pending .ibt files (notes + HTML report + JSON summary)
+python -m tenths.cli process
+python -m tenths.cli process "path\to\file.ibt"
+python -m tenths.cli process --dry-run
 
-# Dry run (preview without writing)
-python -m tenths.process --dry-run
-
-# Generate just the HTML visual report
+# Generate a single report / summary
 python -m tenths.cli report "path\to\file.ibt"
-
-# Generate just the JSON summary
 python -m tenths.cli summary "path\to\file.ibt"
 
-# Upgrade all session_summary.json files to current schema
+# Master session index
+python -m tenths.cli index
+
+# Incident forensics (spin/contact/stop detection) for specific laps
+python -m tenths.cli incident "path\to\file.ibt" 2,3,4
+
+# Upgrade session_summary.json files to the current schema
 python -m tenths.cli migrate
 
-# Analyze a specific file (prints coaching report to stdout)
-python -m tenths.analyzer "path\to\file.ibt"
-
-# Run tests
+# Tests
 python -m pytest tests/
 ```
 
-## What Gets Generated
+### What gets generated
 
-When you process a session, three files are created in `telemetry/<car>/<track>/<date>/`:
+Per session, under `telemetry/<car>/<track>/<date>/`:
 
 | File | Purpose |
 |------|---------|
-| `session_notes.md` | Markdown coaching report with tables and findings |
-| `session_report.html` | Interactive visual report — open in any browser |
-| `session_summary.json` | Structured data contract for dashboards and progression |
+| `session_report.html` | Interactive visual report (Summary + Detailed) |
+| `session_notes.md` | Markdown coaching notes |
+| `session_summary.json` | Structured data contract (schema-versioned) |
 
-## HTML Visual Report
+A master `index.html` at the telemetry root lists all sessions with filters.
 
-The `session_report.html` is a self-contained interactive report. Open in any browser, no server needed.
-
-**Features:**
-- **Track heatmap** — GPS trace colored by speed or brake pressure, rotatable to match iRacing view
-- **Per-lap brake points overlay** — shows braking consistency with spread metrics
-- **Telemetry traces** — stacked panels: Brake+Throttle, Speed, Steering (MoTeC-style)
-- **Lap selector** — switch between any valid lap, all charts update
-- **Lap comparison** — overlay two laps with speed delta panel (green = faster, red = slower)
-- **Brake Release Shape panel** — SVG curves showing release quality per corner with linearity scores
-- **Race result badge** — prominent P# with iRating delta and podium colors
-- **Data tables** — braking zones (Thr On, Thr Lag metrics), corner variance, lap summary
-- **Corner labels + direction arrow** — turn names on the track map with travel direction
-- **ABS sparkline** — visual trend of ABS hits across the session
-
-Opens in any browser, no server needed. Uses the "Pit Wall" dark theme (F1 engineering screen aesthetic).
-
-## How It Works
-
-1. **Find** — scans telemetry root for unprocessed `.ibt` files
-2. **Group** — groups files by car/track/date (multi-session support)
-3. **Analyze** — runs full analysis on each valid session (lap times, ABS, braking zones, GPS, tire temps)
-4. **Match** — auto-finds race results from Downloads by subsession_id
-5. **Map** — applies turn names from track map files
-6. **Generate** — produces complete `session_notes.md` with all sessions for the day
-7. **Archive** — moves `.ibt` files to `_archive/`
-8. **Commit** — git add + commit + push
-
-## Data Sources
-
-| Data | Source | Notes |
-|---|---|---|
-| Car display name | `.ibt` file header (`CarScreenName`) | No API needed |
-| Track display name | `.ibt` file header (`TrackDisplayName`) | No API needed |
-| Session type | `.ibt` file header (`EventType`) | Practice/Qualify/Race auto-detected |
-| Turn names | Track map files (`tracks/*.md`) | One-time manual creation per track |
-| Race results | iRacing CSV/JSON exports | Auto-matched by subsession_id |
-| Telemetry data | `.ibt` channels (60Hz) | Speed, brake, throttle, GPS, temps, etc. |
-
-## Project Structure
+### Project structure
 
 ```
 tenths/
-├── __init__.py          # Version
-├── cli.py               # Entry point (tenths command)
-├── analyzer.py          # Core analysis engine + analyze() API
-├── process.py           # Session notes orchestrator (multi-session, results matching)
-├── report.py            # HTML visual report generator (track map, charts, tables)
-├── track_map.py         # Track map file parser (% → turn names)
-├── results.py           # iRacing race result parser (CSV + JSON)
-├── incidents.py         # Incident forensics (spin/contact detection)
-└── setup_iracing_cache.py  # iRacing API cache (OAuth2 required, not yet functional)
+├── cli.py                 # Entry point (tenths command)
+├── config.py              # Centralized config, path/console setup
+├── analyzer.py            # Core .ibt parser + all metrics
+├── process.py             # Session-notes orchestrator (multi-session, results matching)
+├── report.py              # HTML report generator (Summary + Detailed)
+├── summary.py             # session_summary.json + schema migration
+├── index_generator.py     # Master session browser
+├── track_map.py           # Turn-name lookup (landmark DB + .md fallback)
+├── track_map_generator.py # Skeleton track maps from GPS
+├── results.py             # iRacing race-result parser (CSV/JSON)
+├── incidents.py           # Incident forensics
+├── data/                  # Bundled trackLandmarksData.json (450+ tracks)
+└── service/
+    ├── watcher.py         # File watcher (watchdog, event-driven)
+    ├── notifier.py        # Windows toast notifications
+    └── tray.py            # System tray app
 ```
 
-## Requirements
+### Configuration (optional env vars)
+- `TENTHS_TELEMETRY_ROOT` — iRacing telemetry directory (auto-detected: `~/Documents/iRacing/telemetry`)
+- `TENTHS_TRACKS_DIR` — override for track-map `.md` files
 
-- Python 3.10+
-- pyirsdk
-- pandas
-- numpy
-- PyYAML
+### Building the installer
+See `installer/` — `tenths.spec` (PyInstaller) and `tenths_setup.iss` (Inno Setup). Run `python installer/build.py` (add `--full` to also build the installer, requires Inno Setup).
 
-```cmd
-python -m pip install pyirsdk pandas pyyaml
-```
+### Documentation
+- `docs/GETTING_STARTED.md` — user onboarding
+- `docs/ARCHITECTURE_VISION.md` — product vision & roadmap
+- `docs/HTML_REPORT_DESIGN.md` — report design & theme
+- `docs/COACHING_METRICS_DESIGN.md` — metrics → coaching mapping
+- `docs/WATCHER_ARCHITECTURE.md` — watcher design
+- `docs/DISTRIBUTION_READINESS.md` — distribution review & status
+- `docs/TECH_DEBT.md` — known issues & plans
 
-## Track Maps
-
-Track maps are markdown files that map telemetry percentages to turn names. Located in `tracks/`:
-- `fuji_nochicane.md`
-- `midohio_full.md`
-- `navarra_speedlong.md`
-- `winton_national.md`
-
-To create a new track map:
-1. Run a session at the track (Tenths will use percentages as fallback)
-2. Get a screenshot of the iRacing track map
-3. Cross-reference GPS coordinates from the session with the map
-4. Create a markdown file with the turn mapping table
-
-## Configuration
-
-Environment variables (optional):
-- `TENTHS_TELEMETRY_ROOT` — path to iRacing telemetry directory (default: `c:\Users\justi\Documents\iRacing\telemetry`)
-- `TENTHS_SIM_ROOT` — path to SimRacing repo root (default: `c:\Users\justi\Documents\Sim`)
-- `TENTHS_TRACKS_DIR` — path to track map files
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

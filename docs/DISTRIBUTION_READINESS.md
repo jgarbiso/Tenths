@@ -62,7 +62,7 @@ The architecture is solid (clean separation, event-driven watcher, 204 tests, sc
 - **Location:** All nine `docs/*.md` are developer-facing; README has personal paths and `python -m` invocations.
 - **Impact:** A user who installs the exe has no getting-started: how to enable iRacing telemetry, what the tray icon does, where reports land.
 - **Fix:** Add a user-facing getting-started (in README or a `docs/GETTING_STARTED.md`): install, enable telemetry, first session, where to find reports, tray menu overview.
-- **Status:** OPEN
+- **Status:** ✅ FIXED (2026-07-28) — created `docs/GETTING_STARTED.md` (install → enable telemetry via Alt+L or `irsdkLogAll=1` → drive → read report → tray menu → troubleshooting). Rewrote `README.md` to lead with the driver story and link the guide; developer content moved to a clearly separated section. Tray menu documented to match the actual menu (Open Last Report / Pause Processing / Start with Windows / Exit).
 
 ### D8 — `process` batch crashes on one bad file
 - **Location:** `process.py main` does not wrap `analyze()`; `results.parse_csv_result` indexes `lines[0]/[1]` with no length check.
