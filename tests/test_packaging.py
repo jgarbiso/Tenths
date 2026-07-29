@@ -46,6 +46,20 @@ class TestPackagingFiles:
         md_files = [f for f in os.listdir(tracks_dir) if f.endswith('.md')]
         assert len(md_files) >= 4, f"Expected 4+ track maps, found {len(md_files)}"
 
+    def test_landmark_data_bundled(self):
+        """The primary track data (trackLandmarksData.json) must ship in the package."""
+        landmark_file = os.path.join(PROJECT_ROOT, "tenths", "data", "trackLandmarksData.json")
+        assert os.path.exists(landmark_file), "Bundled landmark data missing — new users would have no track data"
+
+    def test_landmark_data_has_tracks(self):
+        """The bundled landmark data must contain iRacing tracks."""
+        import json
+        landmark_file = os.path.join(PROJECT_ROOT, "tenths", "data", "trackLandmarksData.json")
+        with open(landmark_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        ir_tracks = [e for e in data['trackLandmarksData'] if 'irTrackName' in e]
+        assert len(ir_tracks) >= 400, f"Expected 400+ iRacing tracks, found {len(ir_tracks)}"
+
 
 class TestEntryPoints:
     """Verify all entry points import cleanly."""
@@ -118,6 +132,13 @@ class TestSpecFileContent:
         assert "tray.py" in content
         assert "tenths.ico" in content
         assert "tracks" in content
+
+    def test_spec_bundles_landmark_data(self):
+        """The spec must bundle tenths/data so new users get the 457-track database."""
+        spec = os.path.join(PROJECT_ROOT, "installer", "tenths.spec")
+        with open(spec, 'r') as f:
+            content = f.read()
+        assert "'data'" in content, "Spec must bundle the data folder (trackLandmarksData.json)"
 
     def test_spec_excludes_unnecessary(self):
         spec = os.path.join(PROJECT_ROOT, "installer", "tenths.spec")

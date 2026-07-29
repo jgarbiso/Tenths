@@ -28,8 +28,10 @@ a = Analysis(
     datas=[
         # Include assets (icon)
         (os.path.join(PROJECT_ROOT, 'assets', 'tenths.ico'), 'assets'),
-        # Include track map files
+        # Include track map files (legacy .md fallback)
         (os.path.join(PROJECT_ROOT, 'tracks'), 'tracks'),
+        # Include bundled track landmark data (PRIMARY track source — 457 tracks)
+        (os.path.join(PROJECT_ROOT, 'tenths', 'data'), 'data'),
     ],
     hiddenimports=[
         'tenths',

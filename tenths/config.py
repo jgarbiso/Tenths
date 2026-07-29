@@ -25,7 +25,13 @@ def _find_iracing_telemetry():
 
 
 def _find_package_root():
-    """Find the Tenths package root directory."""
+    """Find the Tenths package/resource root directory.
+
+    Handles both running from source and from a PyInstaller frozen exe.
+    In a frozen app, bundled resources live under sys._MEIPASS.
+    """
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return sys._MEIPASS
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

@@ -699,9 +699,18 @@ def main():
             print(f"\n  Created: {notes_path} ({len(sessions)} session(s))")
 
             # Generate HTML report for the best session of the day
-            # Use the session with the fastest best lap
-            best_session = max(sessions, key=lambda s: -min(
-                (r['time'] for r in s[1]['lap_results'] if r['time'] > 0), default=9999))
+            # Priority: Race > Qualify > Practice. Within same type, pick fastest lap.
+            def session_priority(s):
+                fi, data, rr = s
+                event_type = data.get('session_info', {}).get('event_type', '').lower()
+                type_rank = 0  # Practice/Test
+                if 'race' in event_type:
+                    type_rank = 2
+                elif 'qual' in event_type:
+                    type_rank = 1
+                best_time = min((r['time'] for r in data['lap_results'] if r['time'] > 0), default=9999)
+                return (type_rank, -best_time)  # Higher type_rank wins, then faster lap
+            best_session = max(sessions, key=session_priority)
             best_fi, best_data, best_rr = best_session
             try:
                 # Compute progression for summary view
@@ -768,6 +777,13 @@ def main():
 
     print(f"\n{'='*60}")
     print("DONE")
+
+    # Regenerate master index so new sessions appear
+    try:
+        from tenths.index_generator import generate_master_index
+        generate_master_index()
+    except Exception:
+        pass  # Non-critical
 
 
 def generate_day_notes(sessions, car, track, date, track_map, baseline):
