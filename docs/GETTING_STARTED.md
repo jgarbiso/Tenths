@@ -11,7 +11,7 @@ This guide gets you from install to your first report in about five minutes.
 - **iRacing** (any membership)
 - **Windows 10 or 11**
 
-That's it. Tenths is self-contained — no Python, no accounts, no internet required to analyze your laps.
+That's it for installation. Tenths analyzes laps and renders the Summary view locally. The current Detailed map/charts load third-party CDN assets and need internet access for full functionality.
 
 ---
 
@@ -49,7 +49,7 @@ Most people prefer Option B so they never forget.
 
 ## Step 3 — Drive
 
-Just race. Practice, qualifying, or a race — Tenths handles all of them. When you leave the session (or the session ends), iRacing finishes writing the telemetry file.
+With Tenths running, drive a practice, qualifying session, or race. When you leave the session (or the session ends), iRacing finishes writing the telemetry file. Files created while Tenths is stopped are not yet recovered automatically on startup; this is a documented release blocker.
 
 ---
 
@@ -98,13 +98,13 @@ Right-click the Tenths tray icon:
 | **Start with Windows** | Toggle auto-launch on boot |
 | **Exit** | Stops Tenths |
 
-> To browse every session you've recorded, open **`index.html`** at the top of your telemetry folder (see "Where your data lives" below).
+> To browse indexed sessions, open **`index.html`** at the top of your telemetry folder (see "Where your data lives" below).
 
 ---
 
 ## Where your data lives
 
-Everything is saved under your telemetry folder, organized by car → track → date → session time (so each session gets its own folder and nothing is overwritten):
+Successfully processed watcher sessions are saved under your telemetry folder, organized by car → track → date → session time. Manual CLI output is not yet fully consistent with this layout and is tracked as a release blocker:
 
 ```
 Documents\iRacing\telemetry\
@@ -118,7 +118,7 @@ Documents\iRacing\telemetry\
 │               └── session_summary.json  ← Raw data
 ```
 
-Open **`index.html`** at the top level (or use **Browse Sessions** in the tray) to see every session, filter by car or track, and track your progression over time.
+Open **`index.html`** at the top level to see every indexed session and filter by car or track. The current tray menu does not include a Browse Sessions action.
 
 ---
 
@@ -149,4 +149,4 @@ Right-click the tray icon → Exit. To stop it launching on boot, uncheck "Start
 
 ## That's it
 
-Race as normal. Tenths does the rest. Every session becomes a report, every report tells you where to find your next tenth.
+Race as normal with Tenths and telemetry recording enabled. Each successfully processed session produces coaching that points to the next opportunity; startup recovery, retries, and complete per-session CLI consistency remain pre-release work.

@@ -1,5 +1,7 @@
 # Distribution Readiness Review
 
+> **Superseded implementation guidance:** This file records the first 2026-07-28 review and includes statuses that are now stale. Use [`RELEASE_REMEDIATION_PLAN.md`](RELEASE_REMEDIATION_PLAN.md) as the canonical release gate and implementation plan. In particular, old finding D5 is **not a proven startup blocker**: the frozen command was smoke-tested and launched successfully, although its extra arguments should be cleaned up under RR-020.
+
 Senior developer review conducted 2026-07-28, with the lens: *"another sim racer downloads the installer and starts using it."*
 
 The architecture is solid (clean separation, event-driven watcher, 204 tests, schema migrations). The blockers below are single-machine / single-account assumptions that would make the app misbehave silently for anyone who isn't the original developer.
@@ -46,11 +48,11 @@ The architecture is solid (clean separation, event-driven watcher, 204 tests, sc
 
 ## 🟠 High priority
 
-### D5 — In-app "Start with Windows" writes a broken command for the frozen exe
+### D5 — In-app "Start with Windows" writes unnecessary arguments for the frozen exe
 - **Location:** `tray._register_startup` → `sys.executable.replace('python.exe','pythonw.exe')`
-- **Impact:** In a frozen build `sys.executable` is `Tenths.exe`, so the registered command becomes `Tenths.exe -m tenths.cli tray`, which the frozen entry ignores. The Inno installer's Run key is correct, so this only affects users who toggle the in-app option.
-- **Fix:** Detect frozen mode — register `"{Tenths.exe}"` with no `-m` args when frozen; use pythonw only when running from source.
-- **Status:** OPEN
+- **Impact:** In a frozen build the registered command becomes `"Tenths.exe" -m tenths.cli tray`. A frozen smoke test confirmed that this command still launches, so it is not a proven startup failure. The arguments are unnecessary and make source/frozen behavior harder to reason about.
+- **Fix:** Detect frozen mode and register only the quoted executable; use `pythonw -m tenths.cli tray` when running from source. Test command construction with mocked registry access.
+- **Status:** DOWNGRADED TO LOW — tracked as RR-020 in `RELEASE_REMEDIATION_PLAN.md`.
 
 ### D6 — Failed sessions in watch mode are lost
 - **Location:** `watcher._process_file` catches all exceptions but the file is already in `self._processed`, is not archived, and `notifier.notify_error()` (which exists) is never wired up.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A self-contained HTML file generated per session alongside `session_notes.md`. Opens in any browser with no server, no build step, no dependencies to install. The report provides a visual, interactive complement to the markdown notes — track map with speed/brake heatmap, synced telemetry charts, and result tables.
+A single local HTML file generated per session alongside `session_notes.md`. It opens in a browser with no server, build step, or installed web dependencies. Tenths' application CSS/JavaScript and session data are inline, while the current Detailed view loads Google Fonts, Leaflet, and Chart.js from CDNs. The Summary view is designed to remain functional offline.
 
 ## Status: POC v1 — BUILT ✅
 
@@ -16,7 +16,7 @@ All core features implemented and working. Tested against Winton (Touring/M2 CS)
 
 | File | Change |
 |------|--------|
-| `tenths/report.py` | **NEW** — HTML report generator (self-contained, inline CSS/JS) |
+| `tenths/report.py` | **NEW** — single-file HTML report generator (Tenths application CSS/JS inline; Detailed libraries via CDN) |
 | `tenths/analyzer.py` | Modified `_extract_gps_trace()` — now returns 200 dense points with Speed/Brake/Throttle/Gear |
 | `tenths/process.py` | Added import + auto-generates `session_report.html` during normal processing |
 | `tenths/cli.py` | Added `tenths report <file.ibt>` command |
@@ -42,7 +42,7 @@ Output: `session_report.html` in the session directory alongside `session_notes.
 ```
 .ibt file
     → analyzer.analyze()       → structured dict (200-point GPS trace)
-    → report.generate_report() → session_report.html (self-contained)
+    → report.generate_report() → session_report.html (single local file; Detailed CDN assets)
     → process.generate_notes() → session_notes.md (unchanged)
 ```
 
@@ -114,7 +114,7 @@ Renders the GPS trace as a lightweight polyline on a `<canvas>` element (280×28
 - **Corner name labels** — permanent labels at each braking zone from track map data
 - **Direction arrow** — white arrow showing travel direction near start/finish
 - **S/F marker** — white dot with "S/F" label at start/finish line
-- **Pure black background** — no tiles, no internet needed, works offline
+- **Pure black background** — no online map-tile requests; Leaflet itself is currently loaded from a CDN
 - **Hover cursor** — white dot follows mouse position, synced with charts
 
 ### 2. Telemetry Charts (Chart.js — Stacked Panels)
@@ -290,7 +290,7 @@ The track map supports interactive rotation to match iRacing's overhead view:
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-06-07 | Chart.js over Recharts | No React/build step needed for static HTML |
-| 2026-06-07 | Pure black map background | Works offline, cleaner than tiles |
+| 2026-06-07 | Pure black map background | Avoids online map tiles and is cleaner; Leaflet library still loads via CDN |
 | 2026-06-07 | 200-point GPS trace | One sample every ~15m, smooth corners |
 | 2026-06-07 | Pit Wall theme (Option A) | Professional F1 data screen aesthetic |
 | 2026-06-07 | Celebrate the wins | Prominent race badge with podium colors |

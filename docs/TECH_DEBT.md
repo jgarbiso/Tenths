@@ -1,5 +1,7 @@
 # Technical Debt
 
+> **Release source of truth:** Use [`RELEASE_REMEDIATION_PLAN.md`](RELEASE_REMEDIATION_PLAN.md) for current priorities, implementation instructions, required tests, and acceptance criteria. Some historical proposals below no longer describe the implemented architecture.
+
 Items identified during development that are acceptable for current use but should be addressed before production distribution.
 
 ---
@@ -67,47 +69,27 @@ Items identified during development that are acceptable for current use but shou
 | TM3 | **Auto-generated skeletons can shadow hand-tuned maps** — if both `roadamerica_full.md` (skeleton) and `road_america_full.md` (tuned) exist, exact match wins | User must manually delete the skeleton after building a proper map. No warning or conflict detection. | Medium — add dedup check in `load_track_map()` |
 | TM4 | **No canonical slug registry** — the mapping from iRacing .ibt filename slugs to track map files is implicit via fuzzy matching | No way to guarantee a specific file will be loaded for a given slug. Renaming a file can silently break lookups for all sessions at that track. | Medium — implement alias table |
 
-### Proposed Fixes
+### Current Implementation and Remaining Work
 
-**TM1-TM4 — RESOLVED: CrewChief trackLandmarksData integration (2026-07-22)**
+The bundled landmark integration is active in `tenths/track_map.py`:
 
-The manual percentage-based track mapping system is being replaced with a data-driven approach using CrewChief's community-contributed `trackLandmarksData.json` (457 iRacing tracks with corner positions in meters).
+1. `load_track_map()` first calls `_load_from_landmarks()`.
+2. `_load_from_landmarks()` reads the bundled `tenths/data/trackLandmarksData.json`, converts the iRacing filename slug from underscores to spaces, and performs an exact `irTrackName` lookup.
+3. Landmark start/end distances are converted to percentages using `approximateTrackLength`; `get_turn_name()` still matches percentage ranges/centers rather than raw telemetry distance.
+4. If no bundled landmark entry is found, `_load_from_md_file()` uses a legacy `tracks/*.md` map.
+5. Frozen resource lookup uses `sys._MEIPASS`.
+6. CrewChief is not searched or required at runtime.
 
-**Data file:** `tenths/data/trackLandmarksData.json` (bundled, 985KB)
-**Source:** CrewChief V4 (GPL-3.0, community-contributed corner data)
+This resolves most legacy slug/coverage problems for tracks present in the bundled data, but it does not make every old TM1-TM4 concern universally impossible. Legacy Markdown fallback matching remains fuzzy, generated maps can still need maintenance, and percentage conversion remains part of matching.
 
-**Lookup order:**
-1. Tenths bundled data (`tenths/data/trackLandmarksData.json`) — self-contained, always available
-2. CrewChief install (`C:\Program Files (x86)\Britton IT Ltd\CrewChiefV4\trackLandmarksData.json`) — fallback for newer data
+**Remaining release work:**
 
-**Implementation plan:**
-1. New function `load_track_from_landmarks(ir_track_slug)` in `track_map.py`:
-   - Reads `trackLandmarksData.json`
-   - Finds entry where `irTrackName` matches the slug from .ibt filename
-   - Converts `distanceRoundLapStart/End` to track percentage using `approximateTrackLength`
-   - Returns the same zone list format as `load_track_map()` currently returns
-   - Corner names come from `landmarkNames` array (e.g., "turn1", "the_esses", "canada_corner")
+- **RR-001:** Verify the exact landmark source revision, ownership, dataset-specific license, attribution, and redistribution obligations. The former GPL-3.0 assumption is not evidence.
+- **RR-015:** Make `TENTHS_TRACKS_DIR` a real Markdown-map override. It is currently listed after built-in directories, and the loader stops at the first directory that exists even if it lacks the requested map.
+- Keep Tenths standalone; do not add a CrewChief installation dependency as a workaround.
 
-2. Modified `load_track_map()` lookup order:
-   - First: check bundled `trackLandmarksData.json` by slug (covers 457 tracks)
-   - Second: check hand-tuned `tracks/*.md` files (for tracks with custom coaching notes)
-   - Third: fallback to CrewChief install path (newer data)
-   - Fourth: return empty (skeleton will be auto-generated from GPS)
+### Current Workarounds
 
-3. `get_turn_name()` fix: use distance-based matching (meters from S/F) instead of percentage ranges. The landmarks data provides exact start/end distances — a braking zone at 3360m matches the landmark whose range contains 3360m. No ambiguity, no tolerance hacks.
-
-**Benefits:**
-- Eliminates manual track mapping entirely for 457 tracks
-- No more percentage-guessing or screenshot interpretation
-- Slug matching is exact (the JSON uses the same slugs as .ibt filenames)
-- Corner names are standardized across the community
-- Self-contained — works without CrewChief installed
-
-**What remains manual:**
-- Custom coaching notes in `tracks/*.md` (performance history, coaching sentences)
-- Tracks not in CrewChief's database (rare/new tracks)
-
-### Workarounds (current state)
-- Track map filenames must exactly match the iRacing slug (e.g., `roadamerica_full.md` not `road_america_full.md`)
-- Percentage ranges in track maps must be set so braking zones land clearly inside the correct turn's range, accounting for the 4% tolerance and closest-center algorithm
-- If both a skeleton and tuned map exist, delete the skeleton manually
+- Bundled landmark data remains the primary source for covered tracks.
+- For an uncovered track, ensure a legacy Markdown filename can be found by the existing fallback matcher.
+- If a generated fallback map conflicts with a hand-tuned map, remove or rename the generated file until explicit conflict handling is implemented.

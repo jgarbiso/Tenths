@@ -4,7 +4,7 @@
 
 Tenths is an automated race engineer for iRacing. It runs quietly in your system tray, watches for new telemetry, and the moment a session ends it builds a visual coaching report that tells you **where you're losing time and why** — in plain English, no charts to decipher.
 
-No manual steps. No accounts. Works offline.
+No accounts. Telemetry analysis and the Summary view run locally. The current Detailed view loads chart, map, and font assets from third-party CDNs, so it requires internet access for full functionality; fully offline Detailed reporting is tracked in the release remediation plan.
 
 ---
 
@@ -20,7 +20,7 @@ The short version:
 
 ### What you get
 
-Every session becomes a self-contained HTML report with two views:
+Each successfully processed watcher session produces one local HTML report with two views:
 
 **Summary** (opens by default, built to read at a glance — even in VR):
 - Hero numbers: best lap, recoverable time, delta vs your last session, lap count
@@ -42,12 +42,12 @@ Corner names come from a built-in database covering **450+ iRacing tracks** — 
 
 ## Highlights
 
-- **Zero-friction** — install once, it runs in the background and processes every session automatically
+- **Low-friction** — while Tenths is running, it watches for completed sessions and processes them automatically; startup recovery and retry handling are tracked release blockers
 - **Coaching-first** — translates raw telemetry into "release the brake more progressively at T5," not just line charts
-- **Progression tracking** — a master index of every session; compare against your past self, session over session
-- **Physics-aware** — different braking diagnostics for different car classes
-- **Self-contained & offline** — all track data bundled; no API, no internet needed to analyze
-- **Resource-light** — event-driven watcher, near-zero idle CPU, low priority during processing so it never steals frames while you race
+- **Progression tracking** — a master index of processed sessions; compare against your past self, session over session
+- **Physics profiles in development** — GT4-specific diagnostics exist; broader metadata-driven class handling is required before public release
+- **Local analysis** — track data and Summary coaching are bundled; the current Detailed view still loads CDN assets
+- **Resource-conscious design** — event-driven watcher and low processing priority; formal CPU/RAM measurements remain pending
 
 ---
 
@@ -95,7 +95,7 @@ python -m pytest tests/
 
 ### What gets generated
 
-Per session, under `telemetry/<car>/<track>/<date>/`:
+Watcher-generated sessions are stored under `telemetry/<car>/<track>/<date>/<time>/`. Manual and standalone CLI commands still have known date-level output inconsistencies tracked in `docs/RELEASE_REMEDIATION_PLAN.md`.
 
 | File | Purpose |
 |------|---------|
@@ -140,8 +140,9 @@ See `installer/` — `tenths.spec` (PyInstaller) and `tenths_setup.iss` (Inno Se
 - `docs/HTML_REPORT_DESIGN.md` — report design & theme
 - `docs/COACHING_METRICS_DESIGN.md` — metrics → coaching mapping
 - `docs/WATCHER_ARCHITECTURE.md` — watcher design
-- `docs/DISTRIBUTION_READINESS.md` — distribution review & status
-- `docs/TECH_DEBT.md` — known issues & plans
+- `docs/RELEASE_REMEDIATION_PLAN.md` — canonical release blockers, implementation steps, tests, and acceptance criteria
+- `docs/DISTRIBUTION_READINESS.md` — historical first distribution review
+- `docs/TECH_DEBT.md` — known issues and historical plans
 
 ---
 
