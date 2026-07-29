@@ -560,6 +560,9 @@ def find_race_result(session_info):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
+    from tenths.config import configure_console
+    configure_console()
+
     dry_run = '--dry-run' in sys.argv
     git_commit = '--git' in sys.argv
     specific = None
@@ -643,7 +646,7 @@ def main():
             result_file = find_race_result(si)
             if result_file:
                 from tenths.results import parse_result
-                race_result = parse_result(result_file)
+                race_result = parse_result(result_file, my_cust_id=si.get('driver_id'))
                 if race_result and race_result.get('my_result'):
                     me = race_result['my_result']
                     print(f"    Race result: P{me['finish_pos']}/{race_result['entries']}, iR {me.get('old_irating',0)}->{me.get('new_irating',0)}")

@@ -16,13 +16,22 @@ import json
 import os
 import sys
 
-MY_CUST_ID = 1434150  # Justin Garbiso
 
+def parse_csv_result(filepath, my_cust_id=None):
+    """Parse an iRacing CSV event result file.
 
-def parse_csv_result(filepath):
-    """Parse an iRacing CSV event result file."""
+    Args:
+        filepath: path to the eventresult CSV
+        my_cust_id: the driver's iRacing customer ID (from the .ibt session_info
+                    'driver_id'). Used to identify which result row is the user's.
+                    If None, my_result will be None.
+    """
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
+
+    # Need at least the metadata header + values + a results header
+    if len(lines) < 2:
+        return None
 
     # First line pair is race metadata
     # Line 1: headers for metadata
@@ -48,7 +57,7 @@ def parse_csv_result(filepath):
         'season_year': meta.get('Season Year', ''),
         'season_quarter': meta.get('Season Quarter', ''),
         'race_week': meta.get('Race Week', ''),
-        'sof': int(meta.get('Strength of Field', 0)),
+        'sof': _safe_int(meta.get('Strength of Field', 0)),
         'start_time': meta.get('Start Time', ''),
         'entries': len(results),
         'results': [],
@@ -79,14 +88,20 @@ def parse_csv_result(filepath):
         }
         race_data['results'].append(entry)
 
-        if entry['cust_id'] == MY_CUST_ID:
+        if my_cust_id is not None and entry['cust_id'] == my_cust_id:
             race_data['my_result'] = entry
 
     return race_data
 
 
-def parse_json_result(filepath):
-    """Parse an iRacing JSON event result file."""
+def parse_json_result(filepath, my_cust_id=None):
+    """Parse an iRacing JSON event result file.
+
+    Args:
+        filepath: path to the eventresult JSON
+        my_cust_id: the driver's iRacing customer ID (from the .ibt session_info
+                    'driver_id'). If None, my_result will be None.
+    """
     with open(filepath, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
@@ -146,24 +161,42 @@ def parse_json_result(filepath):
         }
         race_data['results'].append(entry)
 
-        if entry['cust_id'] == MY_CUST_ID:
+        if my_cust_id is not None and entry['cust_id'] == my_cust_id:
             race_data['my_result'] = entry
 
     return race_data
 
 
-def parse_result(filepath):
-    """Auto-detect format and parse."""
+def _safe_int(value, default=0):
+    """Convert to int, returning default on failure (handles blank/malformed fields)."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def parse_result(filepath, my_cust_id=None):
+    """Auto-detect format and parse.
+
+    Args:
+        filepath: path to the eventresult file (.csv or .json)
+        my_cust_id: the driver's iRacing customer ID from the .ibt session_info
+                    ('driver_id'). Required to identify the user's own result row.
+    """
     if not os.path.exists(filepath):
         print(f"File not found: {filepath}")
         return None
 
-    if filepath.endswith('.csv'):
-        return parse_csv_result(filepath)
-    elif filepath.endswith('.json'):
-        return parse_json_result(filepath)
-    else:
-        print(f"Unknown format: {filepath}")
+    try:
+        if filepath.endswith('.csv'):
+            return parse_csv_result(filepath, my_cust_id=my_cust_id)
+        elif filepath.endswith('.json'):
+            return parse_json_result(filepath, my_cust_id=my_cust_id)
+        else:
+            print(f"Unknown format: {filepath}")
+            return None
+    except (IndexError, ValueError, KeyError, csv.Error) as e:
+        print(f"Could not parse result file ({os.path.basename(filepath)}): {e}")
         return None
 
 
@@ -210,13 +243,15 @@ def generate_race_context_markdown(race_data):
     lines.append("| Pos | Driver | Car | Avg Lap | Fast Lap | Inc |")
     lines.append("|---|---|---|---|---|---|")
 
+    my_cust_id = me['cust_id']
+
     show_indices = set()
     # Always show top 3
     for i in range(min(3, len(results))):
         show_indices.add(i)
     # Always show you
     for i, r in enumerate(results):
-        if r['cust_id'] == MY_CUST_ID:
+        if r['cust_id'] == my_cust_id:
             show_indices.add(i)
             # Show car ahead and behind
             if i > 0:
@@ -229,7 +264,7 @@ def generate_race_context_markdown(race_data):
         if shown_last >= 0 and i - shown_last > 1:
             lines.append("| ... | | | | | |")
         r = results[i]
-        bold = "**" if r['cust_id'] == MY_CUST_ID else ""
+        bold = "**" if r['cust_id'] == my_cust_id else ""
         avg = format_lap_time(r['avg_lap_time'])
         fast = format_lap_time(r['fastest_lap_time'])
         lines.append(f"| {bold}P{r['finish_pos']}{bold} | {bold}{r['name']}{bold} | {r['car']} | {avg} | {fast} | {r['incidents']} |")
@@ -283,10 +318,11 @@ def print_summary(race_data):
             delta = me['new_irating'] - me['old_irating']
             print(f"  iRating: {me['old_irating']} -> {me['new_irating']} ({delta:+d})")
 
+    my_cust_id = me['cust_id'] if me else None
     print(f"\n  === FULL RESULTS ===")
     print(f"  {'Pos':>3} {'Name':<25} {'Avg':>8} {'Best':>8} {'Inc':>4}")
     for r in results:
-        marker = " ← YOU" if r['cust_id'] == MY_CUST_ID else ""
+        marker = " ← YOU" if (my_cust_id is not None and r['cust_id'] == my_cust_id) else ""
         avg = format_lap_time(r['avg_lap_time'])
         fast = format_lap_time(r['fastest_lap_time'])
         print(f"  P{r['finish_pos']:>2} {r['name'][:24]:<25} {avg:>8} {fast:>8} {r['incidents']:>4}{marker}")
@@ -296,12 +332,14 @@ def print_summary(race_data):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python -m tenths.results <eventresult file>")
+        print("Usage: python -m tenths.results <eventresult file> [my_cust_id]")
         print("  Supports .csv and .json formats")
+        print("  my_cust_id: your iRacing customer ID (to highlight your result)")
         return
 
     filepath = sys.argv[1]
-    race_data = parse_result(filepath)
+    my_cust_id = _safe_int(sys.argv[2], default=None) if len(sys.argv) > 2 else None
+    race_data = parse_result(filepath, my_cust_id=my_cust_id)
 
     if race_data:
         print_summary(race_data)

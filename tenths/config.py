@@ -9,6 +9,24 @@ import os
 import sys
 
 
+def configure_console():
+    """Reconfigure stdout/stderr to UTF-8 so Unicode (→, ✓, °, etc.) prints on
+    stock Windows consoles (default cp1252) without UnicodeEncodeError.
+
+    Safe to call from any entry point. Guarded for frozen/no-console builds
+    where stdout may be None, and for streams lacking reconfigure().
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def _find_iracing_telemetry():
     """Auto-detect the iRacing telemetry directory for the current user."""
     # Standard iRacing telemetry location

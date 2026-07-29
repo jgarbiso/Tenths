@@ -108,8 +108,39 @@ class TelemetryWatcher:
         self._running = False
         self._processed = set()  # track files we've already handled this session
 
+    def _ensure_watch_root(self):
+        """Ensure the telemetry folder exists before watching.
+
+        Returns True if the folder is ready, False if it couldn't be found/created.
+        On a fresh PC (or before iRacing telemetry is enabled) the folder may not
+        exist yet — watchdog would raise if we scheduled against a missing path.
+        """
+        if os.path.isdir(self._root):
+            return True
+        # Try to create it — iRacing will populate it once telemetry is enabled
+        try:
+            os.makedirs(self._root, exist_ok=True)
+            return True
+        except OSError:
+            return False
+
     def start(self):
         """Start watching. Blocks until interrupted (Ctrl+C)."""
+        if not self._ensure_watch_root():
+            msg = (f"iRacing telemetry folder not found:\n  {self._root}\n"
+                   "Enable telemetry in iRacing (Options > Telemetry) and restart Tenths.")
+            print(msg)
+            # Surface to the user via toast if available (tray mode)
+            try:
+                from tenths.service.notifier import SessionNotifier
+                SessionNotifier().notify_error(
+                    "Telemetry folder not found",
+                    "Enable telemetry in iRacing (Options > Telemetry), then restart Tenths.",
+                )
+            except Exception:
+                pass
+            return
+
         print(f"Tenths Watch — Monitoring: {self._root}")
         print(f"  Auto-open report: {self._auto_open}")
         print(f"  Min file size: {MIN_FILE_SIZE / 1_000_000:.0f} MB")
@@ -206,7 +237,7 @@ class TelemetryWatcher:
             result_file = find_race_result(si)
             if result_file:
                 from tenths.results import parse_result
-                race_result = parse_result(result_file)
+                race_result = parse_result(result_file, my_cust_id=si.get('driver_id'))
 
             # Output directory — include session time so each session gets its own folder
             session_time = file_info['time']  # e.g., "20-18-58"

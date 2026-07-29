@@ -496,7 +496,7 @@ def generate_summary_cli():
     result_file = find_race_result(si)
     if result_file:
         from tenths.results import parse_result
-        race_result = parse_result(result_file)
+        race_result = parse_result(result_file, my_cust_id=si.get('driver_id'))
 
     # Generate summary
     summary = generate_session_summary(data, file_info, track_map, race_result)

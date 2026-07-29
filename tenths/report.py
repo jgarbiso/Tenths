@@ -2772,7 +2772,7 @@ def generate_report_cli():
     result_file = find_race_result(si)
     if result_file:
         from tenths.results import parse_result
-        race_result = parse_result(result_file)
+        race_result = parse_result(result_file, my_cust_id=si.get('driver_id'))
 
     # Generate report (with progression if available)
     session_dir = os.path.join(TELEMETRY_ROOT, file_info['car'], file_info['track'], file_info['date'])

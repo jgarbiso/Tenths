@@ -14,6 +14,9 @@ import os
 
 
 def main():
+    from tenths.config import configure_console
+    configure_console()
+
     if len(sys.argv) < 2:
         print_help()
         return

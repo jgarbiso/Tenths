@@ -175,6 +175,8 @@ class TenthsTray:
 
 def main():
     """Entry point for the tray application."""
+    from tenths.config import configure_console
+    configure_console()
     app = TenthsTray()
     app.run()
 

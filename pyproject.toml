@@ -20,6 +20,7 @@ dependencies = [
     "winotify>=1.1,<2.0",
     "pystray>=0.19,<1.0",
     "Pillow>=10.0,<12.0",
+    "PyYAML>=6.0,<7.0",
 ]
 
 [project.optional-dependencies]
