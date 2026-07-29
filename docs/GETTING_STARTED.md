@@ -17,9 +17,9 @@ That's it. Tenths is self-contained — no Python, no accounts, no internet requ
 
 ## Step 1 — Install Tenths
 
-1. Download the latest **Tenths installer** (`Tenths_Setup.exe`).
+1. Download the latest **Tenths installer** (`TenthsSetup.exe`).
 2. Run it. It installs to your user folder (no admin rights needed) and adds a Start Menu entry.
-3. On the last screen, leave **"Start with Windows"** checked so Tenths is always ready when you race.
+3. During setup, leave **"Start Tenths with Windows"** checked so Tenths is always ready when you race.
 
 Tenths runs quietly in your **system tray** (bottom-right of the taskbar, near the clock). Look for the Tenths icon — that's it running in the background.
 
@@ -55,12 +55,14 @@ Just race. Practice, qualifying, or a race — Tenths handles all of them. When 
 
 ## Step 4 — Get your report
 
-A few seconds after your session ends, Tenths pops a **Windows notification**:
+A few seconds after your session ends, Tenths pops a **Windows notification**. For a race it looks like:
 
-> **Tenths — Session Complete**
-> Mid-Ohio · Best 1:31.8 · P4/12 · iR +23
+> **P4/12 at Mid-Ohio | iR +23**
+> Best: 1:31.8 (14 laps)
 
-Click the notification to open your report in the browser. (You can also right-click the tray icon → **Open Last Report**.)
+For a practice or test session the title is just the session type and track (e.g. *"Practice at Mid-Ohio"*), and a new personal best adds a *"🏆 NEW PERSONAL BEST!"* line.
+
+Click the **Open Report** button on the notification to open your report in the browser. (You can also right-click the tray icon → **Open Last Report**.)
 
 ---
 
@@ -102,17 +104,18 @@ Right-click the Tenths tray icon:
 
 ## Where your data lives
 
-Everything is saved under your telemetry folder, organized by car → track → date:
+Everything is saved under your telemetry folder, organized by car → track → date → session time (so each session gets its own folder and nothing is overwritten):
 
 ```
 Documents\iRacing\telemetry\
-├── index.html                     ← Browse all your sessions
+├── index.html                        ← Browse all your sessions
 ├── bmwm4gt3\
 │   └── roadatlanta_full\
 │       └── 2026-07-22\
-│           ├── session_report.html   ← Your visual report
-│           ├── session_notes.md      ← Text coaching notes
-│           └── session_summary.json  ← Raw data
+│           └── 20-57-09\
+│               ├── session_report.html   ← Your visual report
+│               ├── session_notes.md      ← Text coaching notes
+│               └── session_summary.json  ← Raw data
 ```
 
 Open **`index.html`** at the top level (or use **Browse Sessions** in the tray) to see every session, filter by car or track, and track your progression over time.

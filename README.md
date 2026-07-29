@@ -13,7 +13,7 @@ No manual steps. No accounts. Works offline.
 **→ [Getting Started Guide](docs/GETTING_STARTED.md)** — install, enable telemetry, and read your first report in about five minutes.
 
 The short version:
-1. Install `Tenths_Setup.exe` (no admin needed, adds itself to your tray)
+1. Install `TenthsSetup.exe` (no admin needed, adds itself to your tray)
 2. Enable iRacing telemetry (Alt+L in-sim, or `irsdkLogAll=1` in `app.ini` for always-on)
 3. Drive
 4. Click the notification when your session finishes — your report opens in the browser
