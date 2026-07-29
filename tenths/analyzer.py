@@ -750,8 +750,8 @@ def analyze(filepath):
     # Per-lap brake points (for consistency overlay)
     per_lap_brake_points = _extract_per_lap_brake_points(df, valid_laps, braking_zones)
 
-    # Apex speed consistency (per-zone, across laps)
-    apex_consistency = _extract_apex_consistency(df, valid_laps, braking_zones)
+    # Apex speed consistency + Min Speed Spread (per-zone, across laps)
+    apex_consistency = _extract_apex_consistency(df, valid_laps, braking_zones, best_lap)
 
     # Exit metrics (Thr On, Thr Lag, Brake Linearity) for all valid laps
     exit_metrics_all = {}
@@ -1203,18 +1203,123 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
     return results
 
 
-def _extract_apex_consistency(df, valid_laps, braking_zones):
-    """Compute apex speed consistency for each braking zone across all valid laps.
+def _clean_lap_numbers(df, valid_laps, slower_factor=1.10, min_laps=3, fallback_n=5):
+    """Return laps excluding incidents (>10% slower than best).
 
-    For each zone, collects the minimum speed from every lap and computes:
+    Mirrors the lap selection already used by corner variance so speed-based
+    coaching metrics are computed over the same laps as the time-loss figures
+    they are presented alongside. A single spin or off-track lap would otherwise
+    dominate a min-speed range.
+
+    Falls back to all valid laps when lap times are unavailable.
+    """
+    if 'LapLastLapTime' not in df.columns:
+        return list(valid_laps)
+
+    lap_times = {}
+    for lap in valid_laps:
+        lap_data = df[df['Lap'] == lap]
+        if lap_data.empty:
+            continue
+        lap_time = float(lap_data['LapLastLapTime'].iloc[-1])
+        if lap_time > 0:
+            lap_times[lap] = lap_time
+
+    if not lap_times:
+        return list(valid_laps)
+
+    best_time = min(lap_times.values())
+    clean = [lap for lap, t in lap_times.items() if t < best_time * slower_factor]
+    if len(clean) < min_laps:
+        clean = sorted(lap_times, key=lap_times.get)[:fallback_n]
+    return clean
+
+
+# Minimum clean laps before outlier rejection is applied to the min-speed band.
+# Below this there is not enough data to distinguish an outlier from real spread.
+MIN_LAPS_FOR_OUTLIER_REJECTION = 5
+
+# Tukey fence multiplier for rejecting min-speed outliers (standard 1.5 x IQR)
+OUTLIER_IQR_MULTIPLIER = 1.5
+
+
+def _outlier_trimmed_band(values):
+    """Return (low, high) for values with Tukey-fence outliers removed.
+
+    Uses the standard 1.5 x IQR rule. A single off-track moment sits outside the
+    fence and is dropped, so the band describes laps the driver actually repeats.
+    Falls back to the raw range when there is too little data or when trimming
+    would remove everything.
+    """
+    if len(values) < MIN_LAPS_FOR_OUTLIER_REJECTION:
+        return float(min(values)), float(max(values))
+
+    q1 = float(np.percentile(values, 25))
+    q3 = float(np.percentile(values, 75))
+    iqr = q3 - q1
+    low_fence = q1 - OUTLIER_IQR_MULTIPLIER * iqr
+    high_fence = q3 + OUTLIER_IQR_MULTIPLIER * iqr
+
+    kept = [float(v) for v in values if low_fence <= v <= high_fence]
+    if not kept:
+        return float(min(values)), float(max(values))
+    return min(kept), max(kept)
+
+
+def _empty_apex_result():
+    """Return an apex/min-speed result dict with all metrics unavailable."""
+    return {
+        'avg_apex_mph': None,
+        'std_apex_mph': None,
+        'per_lap_apex': [],
+        'min_speed_best_mph': None,
+        'min_speed_worst_mph': None,
+        'min_speed_typical_low_mph': None,
+        'min_speed_typical_high_mph': None,
+        'min_speed_spread_mph': None,
+        'over_braking_mph': None,
+    }
+
+
+def _extract_apex_consistency(df, valid_laps, braking_zones, best_lap=None):
+    """Compute apex speed consistency and Min Speed Spread per braking zone.
+
+    For each zone, collects the minimum speed from every valid lap and computes:
     - avg_apex_mph: mean min speed across laps
     - std_apex_mph: standard deviation (lower = more consistent)
     - per_lap_apex: list of {lap, apex_speed_mph} for each lap
+    - min_speed_best_mph: min speed recorded on the best lap in this zone
+    - min_speed_worst_mph: true slowest min speed across clean laps
+    - min_speed_typical_low_mph / min_speed_typical_high_mph: representative band
+      with Tukey-fence outliers removed once there are enough clean laps
+    - min_speed_spread_mph: width of that representative band
+    - over_braking_mph: best-lap min speed minus average min speed
+
+    The band trims outliers for larger samples because a raw max-minus-min range
+    is dominated by a single off-track moment, which would report a large spread
+    for an otherwise repeatable corner.
+
+    Sign convention: `over_braking_mph` is POSITIVE when the average lap carries
+    less speed than the best lap — i.e. the driver is over-slowing by that many
+    mph on a typical lap. Negative means the best lap was the slowest through
+    the corner, so over-braking is not indicated.
+
+    Aggregates (avg/std/spread/over-braking) are computed over clean laps only,
+    excluding incident laps, so a single spin cannot masquerade as over-braking.
+    `per_lap_apex` still reports every valid lap for transparency.
+
+    Args:
+        df: normalized telemetry DataFrame
+        valid_laps: list of valid lap numbers
+        braking_zones: braking zones from the best lap
+        best_lap: best lap number, used for the over-braking reference
 
     Returns list of dicts parallel to braking_zones.
     """
     if not braking_zones or len(valid_laps) < 2:
-        return [{'avg_apex_mph': None, 'std_apex_mph': None, 'per_lap_apex': []} for _ in braking_zones]
+        return [_empty_apex_result() for _ in braking_zones]
+
+    clean_laps = set(_clean_lap_numbers(df, valid_laps))
 
     results = []
     for zone in braking_zones:
@@ -1224,6 +1329,7 @@ def _extract_apex_consistency(df, valid_laps, braking_zones):
 
         apex_speeds = []
         per_lap = []
+        best_lap_min = None
         for lap_num in valid_laps:
             lap_data = df[df['Lap'] == lap_num]
             if lap_data.empty:
@@ -1234,20 +1340,37 @@ def _extract_apex_consistency(df, valid_laps, braking_zones):
             ]
             if zone_data.empty:
                 continue
-            min_speed_mph = zone_data['Speed'].min() * 2.237
-            apex_speeds.append(min_speed_mph)
+            min_speed_mph = float(zone_data['Speed'].min()) * 2.237
             per_lap.append({'lap': int(lap_num), 'apex_speed_mph': round(min_speed_mph, 1)})
+            if lap_num in clean_laps:
+                apex_speeds.append(min_speed_mph)
+            if best_lap is not None and lap_num == best_lap:
+                best_lap_min = min_speed_mph
 
         if len(apex_speeds) >= 2:
             avg = float(np.mean(apex_speeds))
             std = float(np.std(apex_speeds))
-            results.append({
+            slowest_min = float(min(apex_speeds))
+
+            # Representative band — rejects single-lap outliers (spins/offs)
+            band_low, band_high = _outlier_trimmed_band(apex_speeds)
+
+            result = {
                 'avg_apex_mph': round(avg, 1),
                 'std_apex_mph': round(std, 1),
                 'per_lap_apex': per_lap,
-            })
+                'min_speed_best_mph': round(best_lap_min, 1) if best_lap_min is not None else None,
+                'min_speed_worst_mph': round(slowest_min, 1),
+                'min_speed_typical_low_mph': round(band_low, 1),
+                'min_speed_typical_high_mph': round(band_high, 1),
+                'min_speed_spread_mph': round(band_high - band_low, 1),
+                'over_braking_mph': round(best_lap_min - avg, 1) if best_lap_min is not None else None,
+            }
+            results.append(result)
         else:
-            results.append({'avg_apex_mph': None, 'std_apex_mph': None, 'per_lap_apex': per_lap})
+            result = _empty_apex_result()
+            result['per_lap_apex'] = per_lap
+            results.append(result)
 
     return results
 

@@ -73,13 +73,25 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
             zone_copy['brake_linearity'] = None
             zone_copy['brake_release_curve'] = []
             zone_copy['brake_duration_s'] = None
-        # Merge apex consistency
+        # Merge apex consistency + Min Speed Spread
         if i < len(apex_consistency):
             zone_copy['apex_std_mph'] = apex_consistency[i].get('std_apex_mph')
             zone_copy['apex_avg_mph'] = apex_consistency[i].get('avg_apex_mph')
+            zone_copy['min_speed_best_mph'] = apex_consistency[i].get('min_speed_best_mph')
+            zone_copy['min_speed_worst_mph'] = apex_consistency[i].get('min_speed_worst_mph')
+            zone_copy['min_speed_typical_low_mph'] = apex_consistency[i].get('min_speed_typical_low_mph')
+            zone_copy['min_speed_typical_high_mph'] = apex_consistency[i].get('min_speed_typical_high_mph')
+            zone_copy['min_speed_spread_mph'] = apex_consistency[i].get('min_speed_spread_mph')
+            zone_copy['over_braking_mph'] = apex_consistency[i].get('over_braking_mph')
         else:
             zone_copy['apex_std_mph'] = None
             zone_copy['apex_avg_mph'] = None
+            zone_copy['min_speed_best_mph'] = None
+            zone_copy['min_speed_worst_mph'] = None
+            zone_copy['min_speed_typical_low_mph'] = None
+            zone_copy['min_speed_typical_high_mph'] = None
+            zone_copy['min_speed_spread_mph'] = None
+            zone_copy['over_braking_mph'] = None
         braking_zones_js.append(zone_copy)
 
     # Corner variance with turn names
@@ -886,6 +898,11 @@ tr:hover td {
     background: var(--bg-surface-raised);
 }
 .num { text-align: right; }
+.min-speed-avg {
+    font-size: 9px;
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+}
 .good { color: var(--accent-green); }
 .bad { color: var(--accent-red); }
 .warn { color: var(--accent-amber); }
@@ -1169,11 +1186,17 @@ function renderBrakingTable() {
         const thrLagClass = z.thr_lag != null && z.thr_lag > 0.5 ? 'warn' : '';
         const apexStd = z.apex_std_mph != null ? '±' + z.apex_std_mph.toFixed(1) : '—';
         const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
+        // Min Speed Spread — flag when the average lap gives up speed vs the best lap
+        const overBrk = z.over_braking_mph;
+        const minClass = overBrk != null && overBrk > 8 ? 'bad' : (overBrk != null && overBrk > 4 ? 'warn' : '');
+        const minAvg = z.apex_avg_mph != null
+            ? `<div class="min-speed-avg">avg ${Math.round(z.apex_avg_mph)}</div>`
+            : '';
         return `<tr>
             <td>${z.pct.toFixed(1)}%</td>
             <td>${escHtml(z.turn_name)}</td>
             <td class="num">${Math.round(z.entry_mph)} mph</td>
-            <td class="num">${Math.round(z.min_mph)} mph</td>
+            <td class="num ${minClass}">${Math.round(z.min_mph)} mph${minAvg}</td>
             <td class="num ${apexStdClass}">${apexStd}</td>
             <td class="num ${absClass}">${z.abs}</td>
             <td class="num ${t2pClass}">${t2p}</td>
@@ -2340,6 +2363,30 @@ def _get_summary_js():
     window.switchToDetailed = function() { switchView('detailed'); };
 
 // ─── Coaching Data Builder ───────────────────────────────────────────────────
+    // Single source of truth for a coaching corner object. Used by the focus
+    // cards and by Next Race Focus so diagnoses can never drift apart.
+    function buildCorner(c, bz, bp) {
+        const zone = (bz || []).find(z => z.turn_name === c.turn_name);
+        const brakePoint = (bp || []).find(p => p.turn_name === c.turn_name);
+        return {
+            turn_name: c.turn_name || 'Unknown',
+            loss: c.loss,
+            pct: c.pct || 0,
+            brake_linearity: zone?.brake_linearity ?? null,
+            apex_std_mph: zone?.apex_std_mph ?? null,
+            thr_lag: zone?.thr_lag ?? null,
+            spread_meters: brakePoint?.spread_meters ?? null,
+            min_speed_spread_mph: zone?.min_speed_spread_mph ?? null,
+            over_braking_mph: zone?.over_braking_mph ?? null,
+            min_speed_best_mph: zone?.min_speed_best_mph ?? null,
+            min_speed_worst_mph: zone?.min_speed_worst_mph ?? null,
+            min_speed_typical_low_mph: zone?.min_speed_typical_low_mph ?? null,
+            min_speed_typical_high_mph: zone?.min_speed_typical_high_mph ?? null,
+            entry_mph: zone?.entry_mph ?? null,
+            min_mph: zone?.min_mph ?? null,
+        };
+    }
+
     function buildCoachingData() {
         const cv = DATA.corner_variance || [];
         const bz = DATA.braking_zones || [];
@@ -2350,21 +2397,7 @@ def _get_summary_js():
             .sort((a, b) => b.loss - a.loss)
             .slice(0, 3);
 
-        return qualifying.map(c => {
-            const zone = bz.find(z => z.turn_name === c.turn_name);
-            const brakePoint = bp.find(p => p.turn_name === c.turn_name);
-            return {
-                turn_name: c.turn_name || 'Unknown',
-                loss: c.loss,
-                pct: c.pct || 0,
-                brake_linearity: zone?.brake_linearity ?? null,
-                apex_std_mph: zone?.apex_std_mph ?? null,
-                thr_lag: zone?.thr_lag ?? null,
-                spread_meters: brakePoint?.spread_meters ?? null,
-                entry_mph: zone?.entry_mph ?? null,
-                min_mph: zone?.min_mph ?? null,
-            };
-        });
+        return qualifying.map(c => buildCorner(c, bz, bp));
     }
 
 // ─── Coaching Sentence Generator ─────────────────────────────────────────────
@@ -2372,7 +2405,23 @@ def _get_summary_js():
         const turn = corner.turn_name;
         const loss = corner.loss.toFixed(3);
 
-        // Priority order: brake linearity, apex consistency, throttle lag, brake spread
+        // Priority order: over-braking, min speed spread, brake linearity,
+        // apex consistency, throttle lag, brake spread.
+        // Over-slowing outranks release shape — carrying too little speed is a
+        // more fundamental error than how the brake is released.
+        if (corner.over_braking_mph !== null && corner.over_braking_mph > 8) {
+            const delta = Math.round(corner.over_braking_mph);
+            return truncate(`${turn}: Over-slowing ~${delta}mph vs your best lap — brake lighter and carry more speed`);
+        }
+        if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > 10) {
+            const spreadMph = Math.round(corner.min_speed_spread_mph);
+            if (corner.min_speed_typical_low_mph !== null && corner.min_speed_typical_high_mph !== null) {
+                const lo = Math.round(corner.min_speed_typical_low_mph);
+                const hi = Math.round(corner.min_speed_typical_high_mph);
+                return truncate(`${turn}: Min speed varies ${lo}-${hi}mph — commit to the higher speed you already proved`);
+            }
+            return truncate(`${turn}: Min speed varies ${spreadMph}mph lap to lap — commit to a consistent apex speed`);
+        }
         if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) {
             return truncate(`${turn}: Release brake progressively — losing ${loss}s to stepped release`);
         }
@@ -2393,6 +2442,8 @@ def _get_summary_js():
     }
 
     function getDiagnosisType(corner) {
+        if (corner.over_braking_mph !== null && corner.over_braking_mph > 8) return 'over_braking';
+        if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > 10) return 'min_speed_spread';
         if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) return 'brake_linearity';
         if (corner.apex_std_mph !== null && corner.apex_std_mph > 4) return 'apex_consistency';
         if (corner.thr_lag !== null && corner.thr_lag > 0.5) return 'throttle_lag';
@@ -2488,19 +2539,7 @@ def _get_summary_js():
 
         for (const c of allByLoss) {
             if (c.loss <= 0) continue;
-            const zone = bz.find(z => z.turn_name === c.turn_name);
-            const brakePoint = bp.find(p => p.turn_name === c.turn_name);
-            const corner = {
-                turn_name: c.turn_name || 'Unknown',
-                loss: c.loss,
-                pct: c.pct || 0,
-                brake_linearity: zone?.brake_linearity ?? null,
-                apex_std_mph: zone?.apex_std_mph ?? null,
-                thr_lag: zone?.thr_lag ?? null,
-                spread_meters: brakePoint?.spread_meters ?? null,
-                entry_mph: zone?.entry_mph ?? null,
-                min_mph: zone?.min_mph ?? null,
-            };
+            const corner = buildCorner(c, bz, bp);
             const diag = getDiagnosisType(corner);
             if (diag !== 'generic') {
                 focus = corner;
@@ -2510,20 +2549,7 @@ def _get_summary_js():
 
         // Fallback: highest loss corner overall
         if (!focus && allByLoss.length > 0 && allByLoss[0].loss > 0) {
-            const c = allByLoss[0];
-            const zone = bz.find(z => z.turn_name === c.turn_name);
-            const brakePoint = bp.find(p => p.turn_name === c.turn_name);
-            focus = {
-                turn_name: c.turn_name || 'Unknown',
-                loss: c.loss,
-                pct: c.pct || 0,
-                brake_linearity: zone?.brake_linearity ?? null,
-                apex_std_mph: zone?.apex_std_mph ?? null,
-                thr_lag: zone?.thr_lag ?? null,
-                spread_meters: brakePoint?.spread_meters ?? null,
-                entry_mph: zone?.entry_mph ?? null,
-                min_mph: zone?.min_mph ?? null,
-            };
+            focus = buildCorner(allByLoss[0], bz, bp);
         }
 
         // All corners with zero/negative loss

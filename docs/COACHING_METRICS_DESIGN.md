@@ -15,7 +15,8 @@ Tenths turns professional coaching principles into automated, measurable telemet
 | Hard initial brake, then controlled release | **T2Peak** + **Brake Linearity** | Time to reach peak pressure + smoothness of release curve | Brake%, LapDistPct, 60Hz | Brake Release Shape panel (SVG curves) | ✅ Built |
 | Consistent braking reference points | **Brake Point Spread** (±m) | Lap-to-lap consistency of where braking begins | Per-lap Brake entry LapDistPct + GPS | Brake Points overlay dots + ±Xm label | ✅ Built |
 | Corner-by-corner analysis | **Corner Variance** | Time loss per corner vs theoretical best | Per-lap sector times | Corner Variance table + priority flags | ✅ Built |
-| Minimum-speed rotation / apex discipline | **Apex Speed Consistency** | Std dev of min speed at each corner across laps | Per-lap min speed per zone | NEW — number in braking zones table | ❌ New |
+| Minimum-speed rotation / apex discipline | **Apex Speed Consistency** | Std dev of min speed at each corner across laps | Per-lap min speed per zone | Number in braking zones table | ✅ Built |
+| Carrying too little speed (over-slowing) | **Min Speed Spread** | Outlier-trimmed min-speed band per corner + average vs best-lap deficit | Per-lap min speed per zone | Coaching sentence + avg under Min column | ✅ Built |
 | Decisive throttle on exit | **Thr On** + **Thr Lag** | Time from apex to WOT + time spent feathering | Throttle%, Speed, 60Hz | Columns in Braking Zones table | ✅ Built |
 | Smooth inputs (no oscillation) | **Input Stability** | Frequency of direction changes in brake/throttle during steady phases | Brake%, Throttle%, diff() | NEW — flag in Notes: "[Oscillating]" | ❌ New |
 | Looking ahead / connecting corners | **Inter-Corner Speed** | Speed maintenance between turn exit and next braking point | Speed trace between zones | NEW — shown in speed trace as highlighted sections | ❌ New |
@@ -56,7 +57,7 @@ Tenths turns professional coaching principles into automated, measurable telemet
 - **Visualization:** Replace or augment `Brk2Shft` column with `Brk Dur` for context
 - **Coaching sentence:** "T3: Your braking lasts only 0.8s at 95% peak — try braking 0.3s earlier at 75% peak for a smoother entry and better rotation."
 
-### Min Speed Spread (NEXT — High Priority)
+### Min Speed Spread (✅ BUILT — 2026-07-28)
 - **Definition:** Per-corner comparison of minimum speed on each lap vs the best lap's minimum speed at the same corner
 - **Problem it solves:** Driver sees "0.33s variance at T5" but doesn't know WHY. The current report shows entry/min speed for the best lap only — it can't show that on average laps, you're braking 20mph deeper than necessary.
 - **Calculation:**
@@ -72,9 +73,19 @@ Tenths turns professional coaching principles into automated, measurable telemet
   - "T5: Over-braking by ~20mph on average — your best lap proves you can carry more speed. Pick a fixed brake marker and commit."
 - **Data required:** Per-lap min speed per braking zone (already computed in analyzer, just not exposed per-lap in the report DATA blob)
 - **Why this matters:** This is the #1 insight gap found in real racing (Road Atlanta Jul 22). The driver was consistent (low corner variance in time) but 1s off pace because they were over-slowing every corner by a small amount. The current system can't diagnose "you're braking too much" — only "you're inconsistent."
-- **Implementation notes:**
-  - `analyzer.py` already computes per-lap braking zones — need to expose per-lap min_speed array in the DATA blob
-  - Summary View coaching sentence generator needs a new threshold: `min_speed_spread > 10mph`
+- **As-built behavior (deviations from the original sketch above):**
+  - Implemented inside `analyzer._extract_apex_consistency()`, which already collected per-lap min speeds — no second pass over the telemetry.
+  - **Sign convention:** `over_braking_mph` is stored as a POSITIVE magnitude (`best_lap_min - average_min`). Positive means the average lap gives up that many mph versus the best lap. Negative means the best lap was the slowest through the corner, so over-slowing is not indicated. The original note described the inverse sign.
+  - **Incident laps excluded.** Aggregates use the same clean-lap rule as corner variance (laps within 110% of best lap time) via `_clean_lap_numbers()`, so the metric agrees with the time-loss figures shown beside it. `per_lap_apex` still lists every valid lap.
+  - **Outlier-trimmed band.** A raw max-minus-min range proved unusable on real data: one off-track moment reported ~30mph spread for repeatable corners, firing 6 of 7 zones at Mid-Ohio. The band now removes Tukey-fence (1.5 × IQR) outliers once at least 5 clean laps exist, which reduced that session to 2 genuine zones. Below 5 laps it falls back to the true range.
+  - **Fields:** `min_speed_best_mph`, `min_speed_worst_mph` (true slowest clean lap, kept for context), `min_speed_typical_low_mph` / `min_speed_typical_high_mph` (the band), `min_speed_spread_mph` (band width), `over_braking_mph`.
+  - The Summary View sentence renders the band bounds, so the displayed range can never disagree with the reported spread.
+  - Exposed in the report DATA blob and in `session_summary.json` as additive fields (schema stays `1.0.0`; missing in older files reads as `null`).
+  - Focus cards and Next Race Focus now share one `buildCorner()` helper, so diagnoses cannot drift between them.
+- **Thresholds in production:** `over_braking_mph > 8` and `min_speed_spread_mph > 10`.
+- **Open tuning question:** thresholds are unvalidated across tracks and car classes. Review alongside the unresolved Focus Card threshold decision (RR-016 in `RELEASE_REMEDIATION_PLAN.md`).
+- **Original implementation notes:**
+  - Summary View coaching sentence threshold: `min_speed_spread > 10mph`
   - Priority: should rank ABOVE brake linearity in the coaching priority order when triggered, because over-braking is a more fundamental issue than release shape
 
 ### Exit Priority Score (NEW)
@@ -117,7 +128,7 @@ Tenths turns professional coaching principles into automated, measurable telemet
 | 13 | Brake-shape similarity score | Compare your release curve to a "textbook" progressive release |
 | 14 | Corner-connection scoring | Measure how smoothly you link successive corners |
 | 15 | Coaching sentence generator | ✅ Built — auto-generates plain-English per corner in Summary View |
-| 16 | **Min Speed Spread diagnosis** | **Detect over-braking by comparing per-lap min speed to best-lap min speed** |
+| 16 | Min Speed Spread diagnosis | ✅ Built — detects over-slowing by comparing per-lap min speed to best-lap min speed |
 
 ---
 

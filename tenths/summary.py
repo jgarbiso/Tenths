@@ -106,6 +106,7 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
     # Braking zones with turn names
     braking_zones = []
     exit_metrics_data = data.get('exit_metrics', [])
+    apex_data = data.get('apex_consistency', [])
     for i, z in enumerate(data.get('braking_zones', [])):
         zone = {
             'turn_name': get_turn_name(track_map, z['pct']),
@@ -136,6 +137,25 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
             zone['thr_on_s'] = None
             zone['thr_lag_s'] = None
             zone['brake_linearity'] = None
+        # Merge apex consistency + Min Speed Spread (additive schema fields)
+        if i < len(apex_data):
+            zone['apex_avg_mph'] = apex_data[i].get('avg_apex_mph')
+            zone['apex_std_mph'] = apex_data[i].get('std_apex_mph')
+            zone['min_speed_best_mph'] = apex_data[i].get('min_speed_best_mph')
+            zone['min_speed_worst_mph'] = apex_data[i].get('min_speed_worst_mph')
+            zone['min_speed_typical_low_mph'] = apex_data[i].get('min_speed_typical_low_mph')
+            zone['min_speed_typical_high_mph'] = apex_data[i].get('min_speed_typical_high_mph')
+            zone['min_speed_spread_mph'] = apex_data[i].get('min_speed_spread_mph')
+            zone['over_braking_mph'] = apex_data[i].get('over_braking_mph')
+        else:
+            zone['apex_avg_mph'] = None
+            zone['apex_std_mph'] = None
+            zone['min_speed_best_mph'] = None
+            zone['min_speed_worst_mph'] = None
+            zone['min_speed_typical_low_mph'] = None
+            zone['min_speed_typical_high_mph'] = None
+            zone['min_speed_spread_mph'] = None
+            zone['over_braking_mph'] = None
         braking_zones.append(zone)
 
     # Corner variance with turn names

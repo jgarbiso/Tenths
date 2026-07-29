@@ -1,6 +1,8 @@
 # Tenths Development Handoff — Context for Next Session
 
-## Current State (as of 2026-07-22)
+> **Historical handoff:** Feature statuses, test counts, landmark integration steps, and prior license assumptions in this document may be stale. Before implementing anything, read [`RELEASE_REMEDIATION_PLAN.md`](RELEASE_REMEDIATION_PLAN.md), which is the canonical 2026-07-28 release plan. Do not infer the landmark dataset license from historical notes, and do not reimplement landmark integration—it is already wired into `track_map.py`.
+
+## Historical State (as of 2026-07-22)
 
 ### What Tenths Is
 An iRacing telemetry analysis tool that auto-processes .ibt files and generates interactive HTML coaching reports with a VR-readable Summary View. Runs as a Windows system tray app — zero-friction background service.
@@ -82,7 +84,7 @@ The report now opens to a **Summary tab** by default:
 
 ## Track Map Library
 
-**Bundled database:** `tenths/data/trackLandmarksData.json` — 457 iRacing tracks with corner names and positions (meters from S/F). Source: CrewChief community (GPL-3.0). NOT YET WIRED UP — integration is next session's #1 priority.
+**Bundled database:** `tenths/data/trackLandmarksData.json` — integrated as the primary turn-name source in `track_map.py`. Its exact source revision and dataset-specific redistribution terms remain unresolved; see RR-001 in `RELEASE_REMEDIATION_PLAN.md`. CrewChief is not required at runtime.
 
 **Hand-built configs** (30+ track map .md files) — used until landmark integration is complete:
 - Okayama (Full)
@@ -110,7 +112,7 @@ The report now opens to a **Summary tab** by default:
 | TM1-4 | Track map system bugs (slug matching, percentage ambiguity) | **Solution found** — bundled trackLandmarksData.json, implementation next session |
 | P2 | CLI path with spaces fails | **FIXED** |
 | P3 | No standalone race results processing | Documented, high priority future |
-| NEW | Min Speed Spread metric not implemented | Documented in COACHING_METRICS_DESIGN.md |
+| NEW | Min Speed Spread metric | **BUILT (2026-07-28)** — over-slowing detection; thresholds still need cross-track tuning |
 | NEW | Coaching threshold at 0.1s may show noise on some tracks | Monitor — may need per-track or adaptive threshold |
 
 See `docs/TECH_DEBT.md` for full list and implementation plans.
@@ -119,19 +121,21 @@ See `docs/TECH_DEBT.md` for full list and implementation plans.
 
 ## NEXT STEPS (in priority order)
 
-### 1. Integrate trackLandmarksData into track_map.py (HIGH — next session)
-**Goal:** Replace manual percentage-based track mapping with data-driven corner lookup.
-- Data already bundled at `tenths/data/trackLandmarksData.json` (457 tracks)
-- New function `load_track_from_landmarks(ir_track_slug)` converts distance→percentage
-- Lookup order: bundled data → hand-tuned .md files → CrewChief install → auto-generate
-- Eliminates TM1-TM4 bugs entirely
-- See `docs/TECH_DEBT.md` for full implementation plan
+### 1. Release remediation (CURRENT)
+**Goal:** Close the public-distribution gates in priority order.
+- Follow `docs/RELEASE_REMEDIATION_PLAN.md` as the canonical issue list.
+- Do not repeat the already completed landmark integration.
+- Resolve RR-001 provenance before distributing the bundled dataset.
+- Address correctness and durability blockers before feature enhancements.
+- Run the mandatory full test suite after every code change.
 
-### 2. Min Speed Spread coaching metric (HIGH — next session)
-**Goal:** Detect over-braking by comparing per-lap min speed to best-lap min speed.
-- Exposes why a driver is slow even when they're "consistent" (low variance)
-- "T5: Min speed varies 77-106mph — you carried 106 on your best lap, trust the car"
-- See `docs/COACHING_METRICS_DESIGN.md` for full spec
+### 2. Min Speed Spread coaching metric (✅ BUILT — 2026-07-28)
+Detects over-slowing by comparing per-lap min speed to the best lap's min speed.
+- Exposes why a driver is slow even when they are "consistent" (low time variance)
+- Ranks above brake linearity in the Summary View coaching priority
+- Excludes incident laps and rejects single-lap outliers from the reported band
+- Thresholds (`over_braking_mph > 8`, `min_speed_spread_mph > 10`) still need cross-track tuning
+- See `docs/COACHING_METRICS_DESIGN.md` for as-built behavior
 
 ### 3. Standalone Race Results Processing (P3)
 **Goal:** `tenths results "path/to/eventresult.json"` for races without telemetry.
