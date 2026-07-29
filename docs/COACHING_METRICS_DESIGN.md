@@ -27,13 +27,14 @@ Tenths turns professional coaching principles into automated, measurable telemet
 
 ## 2. Detailed Metric Definitions
 
-### Apex Speed Consistency (NEW)
-- **Definition:** Standard deviation of minimum speed (mph) at each braking zone across all valid laps
-- **Calculation:** For each zone, collect `min_speed` from every lap → `std(min_speeds)`
+### Apex Speed Consistency (✅ Built)
+- **Definition:** Standard deviation of minimum speed (mph) at each corner across clean laps
+- **Calculation:** For each corner, collect `min_speed` from every clean lap → `std(min_speeds)` over the outlier-trimmed set
 - **Good:** < 2 mph std dev (hitting the same apex speed every lap)
 - **Bad:** > 5 mph std dev (inconsistent commitment or line)
-- **Visualization:** Small number in the braking zones table: "±1.2 mph" or color-coded dot
+- **Visualization:** Small number in the braking zones table: "±1.2 mph"
 - **Coaching sentence:** "T5: Your apex speed varies by ±6 mph — find a consistent visual reference for turn-in commitment."
+- **Apex location (corrected 2026-07-28):** The search window is centred on the corner's **apex**, located on the best lap, not on the braking zone. Measured on a real 5.4km lap the apex sits 55–273m (mean 119m) *after* the braking-zone centre. See "Corner attribution" below — this metric was materially wrong before that fix.
 
 ### Input Stability (NEW)
 - **Definition:** Count of sign-changes in `diff(Brake)` or `diff(Throttle)` during a steady phase (mid-corner for brake, exit for throttle)
@@ -83,7 +84,8 @@ Tenths turns professional coaching principles into automated, measurable telemet
   - Exposed in the report DATA blob and in `session_summary.json` as additive fields (schema stays `1.0.0`; missing in older files reads as `null`).
   - Focus cards and Next Race Focus now share one `buildCorner()` helper, so diagnoses cannot drift between them.
 - **Thresholds in production:** `over_braking_mph > 8` and `min_speed_spread_mph > 10`.
-- **Open tuning question:** thresholds are unvalidated across tracks and car classes. Review alongside the unresolved Focus Card threshold decision (RR-016 in `RELEASE_REMEDIATION_PLAN.md`).
+- **Open tuning question:** thresholds are unvalidated across tracks and car classes. The absolute mph spread threshold is a known weakness on fast corners — see "Corner attribution and time-loss accuracy" above. Review alongside the unresolved Focus Card threshold decision (RR-016 in `RELEASE_REMEDIATION_PLAN.md`).
+- **Correction applied 2026-07-28:** the first implementation centred the apex search on the braking zone and trimmed the band but not the mean. Both produced a false over-slowing diagnosis on real data. Fixed the same night; see section 2a.
 - **Original implementation notes:**
   - Summary View coaching sentence threshold: `min_speed_spread > 10mph`
   - Priority: should rank ABOVE brake linearity in the coaching priority order when triggered, because over-braking is a more fundamental issue than release shape
@@ -94,6 +96,47 @@ Tenths turns professional coaching principles into automated, measurable telemet
 - **Purpose:** Answers "which corner should I focus on?" — slow corners before long straights matter most
 - **Visualization:** Corner Variance table sorted by exit priority instead of raw time loss
 - **Coaching sentence:** "T14 feeds the longest straight — gaining 2 mph at exit here is worth 0.3s on the lap."
+
+---
+
+## 2a. Corner attribution and time-loss accuracy
+
+Audited 2026-07-28 against the Ferrari 296 GT3 race at Qualcomm Circuit (5409m, 9 valid laps) after a reported figure did not survive scrutiny. Read this before changing any speed-based metric.
+
+### Time loss is validated
+
+| Check | Result |
+|---|---|
+| Tenths best lap vs official iRacing result CSV | 2:08.326 vs 2:08.325 — **1 ms** |
+| Sector time by sample-count vs by interpolating `LapCurrentLapTime` | max error **0.011s** |
+
+`corner_variance` loss is `mean(sector_time) - min(sector_time)` across clean laps: recoverable time versus the driver's own best pass through that sector. Time loss was never the defect — **attribution** was.
+
+### Corner windows
+
+- **Sector windows** (`_corner_sectors`): `centre-3%` to `centre+8%`, clamped to the midpoint between adjacent corner centres. Before clamping, 4 of 8 sectors overlapped on this circuit, so summed per-corner losses double-counted track.
+- **Apex windows** (`_apex_reference_pcts` + `_apex_window`): the apex is located on the best lap by searching from 60m before to 300m after the braking-zone centre (never past the next corner), then all laps are sampled ±100m around that fixed apex position, clamped to neighbour midpoints.
+- **Why the apex must be located, not assumed:** a window centred on the braking zone catches the car at entry speed on some laps and at the apex on others. That manufactures variance which is not driver error. It produced a false "8.5 mph over-slowing at T6" where the flagged lap was actually the *fastest* through that corner.
+- **Why percentage-only windows fail:** the original `centre-5%/+8%` spans ~703m on a 5.4km lap. Windows must be bounded in metres and converted using track length.
+
+### Outlier handling
+
+Aggregates use clean laps only (within 110% of best lap time, matching corner variance) and then a Tukey 1.5×IQR trim. **Average, std and band must all use the same trimmed set** — the original implementation trimmed the band but not the mean, so a value already rejected as an outlier still inflated the reported deficit.
+
+`min_speed_worst_mph` deliberately reports the true slowest clean lap so trimming never hides data.
+
+### Known remaining weakness
+
+Spread on fast corners is still noisy: T13 reported 14.9 mph spread at an 85.9 mph average, and 5 of 8 corners tripped the 10 mph threshold. A fixed mph threshold does not scale with corner speed and is probably wrong for fast corners. **Open question:** make the spread threshold proportional to corner speed (e.g. a percentage of apex speed) rather than absolute. Not yet validated across tracks or car classes — treat spread-based coaching with caution until this is resolved.
+
+### Rules for future speed-based metrics
+
+1. Bound windows in metres, converted via track length — never raw percentages.
+2. Centre on the phenomenon being measured (apex for min speed), not a proxy.
+3. Clamp to neighbouring corners so two corners never share samples.
+4. Apply identical lap filtering and outlier trimming to every statistic in the same result.
+5. Validate against an independent source (official result CSV, or a second timing method) before trusting a number.
+6. Sanity-check on a real multi-lap session: if most corners trigger, the threshold or the window is wrong.
 
 ---
 

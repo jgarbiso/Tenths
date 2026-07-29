@@ -21,6 +21,10 @@ Items identified during development that are acceptable for current use but shou
 |---|-------|--------|----------|
 | A1 | Braking zone detection only catches >50% brake pressure | Misses light-braking corners (e.g., 11 of 16 turns at Barber) | When iRacing API provides official turn positions (Phase 5) |
 | A2 | Schema downgrade not prevented in migration system | If a newer Tenths version's JSON is opened by older version, it stamps the older schema | Before multi-user distribution |
+| A3 | Duplicate/near-identical braking zones are still emitted | The same corner can appear twice (e.g. 19.4% and 19.1%), producing repeated rows and near-identical coaching. Apex windows fall back to the unclamped window in this case. | Add zone de-duplication in `_extract_braking_zones` |
+| A4 | Corner sectors cover ~88% of the lap, not 100% | "Total recoverable" is the sum of corner sectors, not a true lap total. Honest but easy to misread as a full-lap figure. | Either label it explicitly in the UI or move to full Voronoi coverage |
+| A5 | Lap numbering differs from official iRacing results by one | Tenths called the fastest lap #3; the result CSV called it #2. Times match exactly, only the label differs. | Align numbering, or note the offset where laps are displayed |
+| A6 | Spread/std thresholds are absolute mph | Misfires on fast corners — see RR-021 in `RELEASE_REMEDIATION_PLAN.md` | Before trusting spread-based coaching |
 
 ## Report (`tenths/report.py`)
 

@@ -112,7 +112,8 @@ The report now opens to a **Summary tab** by default:
 | TM1-4 | Track map system bugs (slug matching, percentage ambiguity) | **Solution found** — bundled trackLandmarksData.json, implementation next session |
 | P2 | CLI path with spaces fails | **FIXED** |
 | P3 | No standalone race results processing | Documented, high priority future |
-| NEW | Min Speed Spread metric | **BUILT (2026-07-28)** — over-slowing detection; thresholds still need cross-track tuning |
+| NEW | Min Speed Spread metric | **BUILT (2026-07-28)** — over-slowing detection, corner attribution corrected same night |
+| RR-021 | Spread threshold is absolute mph, misfires on fast corners | **OPEN — high** — needs to be speed-relative |
 | NEW | Coaching threshold at 0.1s may show noise on some tracks | Monitor — may need per-track or adaptive threshold |
 
 See `docs/TECH_DEBT.md` for full list and implementation plans.
@@ -133,9 +134,21 @@ See `docs/TECH_DEBT.md` for full list and implementation plans.
 Detects over-slowing by comparing per-lap min speed to the best lap's min speed.
 - Exposes why a driver is slow even when they are "consistent" (low time variance)
 - Ranks above brake linearity in the Summary View coaching priority
-- Excludes incident laps and rejects single-lap outliers from the reported band
-- Thresholds (`over_braking_mph > 8`, `min_speed_spread_mph > 10`) still need cross-track tuning
-- See `docs/COACHING_METRICS_DESIGN.md` for as-built behavior
+- Excludes incident laps and rejects single-lap outliers from the band, mean and std
+- Apex search window is centred on the located apex, bounded in metres, clamped to neighbours
+- See `docs/COACHING_METRICS_DESIGN.md` section 2a for as-built behavior and the audit
+
+### 2a. Corner attribution audit (2026-07-28 — READ BEFORE TOUCHING SPEED METRICS)
+The first Min Speed Spread build reported "8.5 mph over-slowing at T6" on the Qualcomm race. The flagged lap was actually the **fastest** through that corner. Root causes, all fixed the same night:
+- Apex window was centred on the braking zone; the apex is 55–273m downstream
+- Window was `centre-5%/+8%` — ~703m on a 5.4km lap, so it sampled unrelated track
+- The band trimmed outliers but the mean did not, so a rejected value still skewed the result
+- 4 of 8 corner sectors overlapped, double-counting summed recoverable time
+- Sector sample rate was hardcoded to 60Hz instead of the rate derived from the file
+
+**Time loss itself was validated as correct**: best lap matches the official iRacing result to 1 ms, and sector times match an independent interpolation method to within 0.011s.
+
+**Still open (RR-021):** the `min_speed_spread_mph > 10` threshold is absolute mph and misfires on fast corners — 5 of 8 corners tripped it, including T13 at 14.9 mph spread on an 85.9 mph apex. Needs to become speed-relative. Treat spread-based coaching as unvalidated until then.
 
 ### 3. Standalone Race Results Processing (P3)
 **Goal:** `tenths results "path/to/eventresult.json"` for races without telemetry.

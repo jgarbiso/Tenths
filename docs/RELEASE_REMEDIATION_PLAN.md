@@ -86,6 +86,7 @@ Remediation must not regress the following behavior:
 | RR-018 | Medium | Uninstall retention and process-kill policy is undocumented | Product decision |
 | RR-019 | Low | Bundle size and hidden imports need profiling | Functional blockers first |
 | RR-020 | Low | Frozen startup command has unnecessary CLI arguments | None; not a startup blocker |
+| RR-021 | High | Min-speed spread threshold is absolute mph and misfires on fast corners | Product decision; RR-016 |
 
 Recommended batches:
 
@@ -94,7 +95,7 @@ Recommended batches:
 2. **Canonical paths:** RR-006 stage A introduces the shared output-path helper and command-specific artifact contract.
 3. **Data correctness:** RR-002 and RR-003.
 4. **Pipeline durability:** finish RR-006, then RR-004, RR-005, RR-007, RR-012, and RR-013.
-5. **Analysis/report correctness:** RR-008 through RR-010 and RR-016.
+5. **Analysis/report correctness:** RR-008 through RR-010, RR-016, and RR-021.
 6. **Documentation and overrides:** RR-015 and RR-017.
 7. **Distribution polish:** RR-011 and RR-018 through RR-020.
 
@@ -493,6 +494,26 @@ The in-app command currently writes `"Tenths.exe" -m tenths.cli tray`. A frozen 
 
 **Acceptance criteria:** Frozen and source startup commands are minimal, correctly quoted, and covered by isolated tests.
 
+### RR-021 — Make the min-speed spread threshold speed-relative
+
+**Files:** `tenths/report.py` (Summary View thresholds), `tenths/analyzer.py` constants, `tests/test_min_speed_spread.py`, `docs/COACHING_METRICS_DESIGN.md`.
+
+**Status:** open. The corner-attribution defects found on 2026-07-28 were fixed the same night (apex-centred windows, consistent outlier trimming, non-overlapping sectors, derived sample rate). The threshold itself was not resolved.
+
+**Evidence:** On the Qualcomm race, 5 of 8 corners exceeded `min_speed_spread_mph > 10`. T13 reported a 14.9 mph spread at an 85.9 mph average apex speed. A fixed 10 mph band is a small fraction of a fast corner's speed but a large fraction of a slow one, so the threshold is far more sensitive on fast corners and produces low-value coaching.
+
+**Required work:**
+
+1. Decide whether spread qualifies on an absolute mph value, a percentage of apex speed, or a hybrid with a floor.
+2. Apply the same decision to `apex_std_mph`, which has the identical scaling problem.
+3. Validate on at least three sessions spanning slow street circuits and fast road courses, plus more than one car class.
+4. Confirm that no more than a small minority of corners trigger on a clean, representative session.
+5. Synchronize constants, Summary View thresholds, tests, and the coaching design document.
+
+**Acceptance criteria:** On a representative clean session, spread-based diagnoses fire only where a driver would agree the corner is genuinely inconsistent, and the rule is documented with the sessions used to validate it.
+
+**Do not** raise the threshold arbitrarily to reduce noise. Establish the scaling rule first.
+
 ## 6. Validation matrix
 
 Run the smallest relevant tests while iterating, then the mandatory full suite after every code change.
@@ -544,6 +565,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [ ] RR-018 uninstall/data retention is defined and tested.
 - [ ] RR-019 bundle and runtime resource use are measured.
 - [ ] RR-020 startup command is cleaned up or explicitly deferred as low risk.
+- [ ] RR-021 spread threshold scales with corner speed and is validated on multiple tracks and car classes.
 - [ ] Full clean-machine validation and installer matrix pass.
 
 ## 8. Evidence map
