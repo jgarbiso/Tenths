@@ -161,6 +161,8 @@ Rules:
 
 **Root cause:** `json.dump/json.dumps(..., default=str)` converts unsupported NumPy scalars such as `numpy.bool_(False)` to the string `"False"`. JavaScript treats that nonempty string as true.
 
+**Reconfirmed live 2026-07-29:** both Qualcomm race summaries were written with `"is_new_pb": "True"` as a JSON string. Both were genuine PBs so the badge was coincidentally correct — this defect stays invisible until a non-PB session, which is exactly when it misleads.
+
 **Required implementation:**
 
 1. Add one shared JSON-normalization function used by summaries and reports.
@@ -185,6 +187,12 @@ Rules:
 **Files:** `tenths/summary.py`, `tenths/process.py` baseline lookup, `tests/test_progression.py`.
 
 **Root cause:** `compute_progression()` assumes `session_dir` is the date folder and scans only direct sibling directories. Watcher output passes a time folder, causing the function to scan only sibling times under the current date and miss prior dates.
+
+**Confirmed symptoms observed 2026-07-29** (Ferrari at Qualcomm, two races plus the previous night):
+
+- **Self-comparison on reprocess.** The current session is skipped only when the directory name equals the session date. A time-level folder never matches, so reprocessing a session reads its own previous `session_summary.json` as the "previous session": the 2026-07-28 20-57-02 summary reports `previous_session.date = 2026-07-28`, `delta_vs_previous = +0.000s` and `session_count = 2` while comparing against itself. Exclusion must be by normalized absolute path.
+- **Missing cross-date history.** The first race of 2026-07-29 reported `progression: None` despite three prior sessions at the same car/track, so it showed "First Session" and no PB check.
+- **Correct only by accident.** The second race of 2026-07-29 did find the first race, because both are siblings under the same date and progression is computed before the current summary is written. Ordering, not correctness.
 
 **Required implementation:**
 
