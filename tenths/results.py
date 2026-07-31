@@ -65,30 +65,33 @@ def parse_csv_result(filepath, my_cust_id=None):
     }
 
     for r in results:
+        # Every numeric field goes through _safe_int. A single blank or malformed
+        # value used to raise and discard the entire result file, losing the
+        # finishing position and iRating for a race that was otherwise fine.
         entry = {
-            'finish_pos': int(r.get('Fin Pos', 0)),
+            'finish_pos': _safe_int(r.get('Fin Pos')),
             'name': r.get('Name', ''),
             'car': r.get('Car', ''),
             'car_class': r.get('Car Class', ''),
-            'start_pos': int(r.get('Start Pos', 0)),
-            'laps_completed': int(r.get('Laps Comp', 0)),
-            'incidents': int(r.get('Inc', 0)),
+            'start_pos': _safe_int(r.get('Start Pos')),
+            'laps_completed': _safe_int(r.get('Laps Comp')),
+            'incidents': _safe_int(r.get('Inc')),
             'interval': r.get('Interval', ''),
             'avg_lap_time': r.get('Average Lap Time', ''),
             'fastest_lap_time': r.get('Fastest Lap Time', ''),
             'fastest_lap_num': r.get('Fast Lap#', ''),
-            'cust_id': int(r.get('Cust ID', 0)),
-            'old_irating': int(r.get('Old iRating', 0)) if r.get('Old iRating') else 0,
-            'new_irating': int(r.get('New iRating', 0)) if r.get('New iRating') else 0,
-            'old_license_level': int(r.get('Old License Level', 0)) if r.get('Old License Level') else 0,
-            'old_license_sub': int(r.get('Old License Sub-Level', 0)) if r.get('Old License Sub-Level') else 0,
-            'new_license_level': int(r.get('New License Level', 0)) if r.get('New License Level') else 0,
-            'new_license_sub': int(r.get('New License Sub-Level', 0)) if r.get('New License Sub-Level') else 0,
+            'cust_id': _safe_int(r.get('Cust ID')),
+            'old_irating': _safe_int(r.get('Old iRating')),
+            'new_irating': _safe_int(r.get('New iRating')),
+            'old_license_level': _safe_int(r.get('Old License Level')),
+            'old_license_sub': _safe_int(r.get('Old License Sub-Level')),
+            'new_license_level': _safe_int(r.get('New License Level')),
+            'new_license_sub': _safe_int(r.get('New License Sub-Level')),
             'reason_out': r.get('Out', ''),
         }
         race_data['results'].append(entry)
 
-        if my_cust_id is not None and entry['cust_id'] == my_cust_id:
+        if _same_customer(entry['cust_id'], my_cust_id):
             race_data['my_result'] = entry
 
     return race_data
@@ -117,7 +120,10 @@ def parse_json_result(filepath, my_cust_id=None):
     if not race_session:
         return None
 
-    results_raw = sorted(race_session.get('results', []), key=lambda x: x.get('finish_position', 99))
+    # Discard structurally unusable rows before sorting, otherwise a single
+    # non-object entry raises while building the sort key and the whole file is lost.
+    usable_rows = [r for r in (race_session.get('results') or []) if isinstance(r, dict)]
+    results_raw = sorted(usable_rows, key=lambda x: _safe_int(x.get('finish_position'), 99))
 
     race_data = {
         'source': 'json',
@@ -136,35 +142,57 @@ def parse_json_result(filepath, my_cust_id=None):
     }
 
     for r in results_raw:
-        avg_lap = r.get('average_lap', 0)
-        best_lap = r.get('best_lap_time', 0)
+        if not isinstance(r, dict):
+            continue   # structurally unusable row
+        # Same defensive conversion as the CSV path: one odd value in one row
+        # must not cost the whole race result.
+        avg_lap = _safe_int(r.get('average_lap'))
+        best_lap = _safe_int(r.get('best_lap_time'))
         entry = {
-            'finish_pos': r.get('finish_position', 0) + 1,  # JSON is 0-indexed
+            # JSON positions are 0-indexed
+            'finish_pos': _safe_int(r.get('finish_position')) + 1,
             'name': r.get('display_name', ''),
             'car': r.get('car_name', '') if 'car_name' in r else '',
             'car_class': r.get('car_class_short_name', ''),
-            'start_pos': r.get('starting_position', 0) + 1,
-            'laps_completed': r.get('laps_complete', 0),
-            'incidents': r.get('incidents', 0),
+            'start_pos': _safe_int(r.get('starting_position')) + 1,
+            'laps_completed': _safe_int(r.get('laps_complete')),
+            'incidents': _safe_int(r.get('incidents')),
             'interval': str(r.get('interval', '')),
             'avg_lap_time': f"{avg_lap/10000:.3f}" if avg_lap > 0 else '',
             'fastest_lap_time': f"{best_lap/10000:.3f}" if best_lap > 0 else '',
             'fastest_lap_num': str(r.get('best_lap_num', '')),
-            'cust_id': r.get('cust_id', 0),
-            'old_irating': r.get('oldi_rating', 0),
-            'new_irating': r.get('newi_rating', 0),
-            'old_license_level': r.get('old_license_level', 0),
-            'old_license_sub': r.get('old_sub_level', 0),
-            'new_license_level': r.get('new_license_level', 0),
-            'new_license_sub': r.get('new_sub_level', 0),
+            'cust_id': _safe_int(r.get('cust_id')),
+            'old_irating': _safe_int(r.get('oldi_rating')),
+            'new_irating': _safe_int(r.get('newi_rating')),
+            'old_license_level': _safe_int(r.get('old_license_level')),
+            'old_license_sub': _safe_int(r.get('old_sub_level')),
+            'new_license_level': _safe_int(r.get('new_license_level')),
+            'new_license_sub': _safe_int(r.get('new_sub_level')),
             'reason_out': r.get('reason_out', ''),
         }
         race_data['results'].append(entry)
 
-        if my_cust_id is not None and entry['cust_id'] == my_cust_id:
+        if _same_customer(entry['cust_id'], my_cust_id):
             race_data['my_result'] = entry
 
     return race_data
+
+
+def _same_customer(row_cust_id, my_cust_id):
+    """Compare customer IDs without caring about their type.
+
+    The .ibt header and the result file do not always agree on type: one may
+    give an int and the other the same value as a string. A strict `==` then
+    silently fails to find the driver's own row, so the report loses its
+    finishing position and iRating for no visible reason.
+    """
+    if my_cust_id is None or row_cust_id is None:
+        return False
+    mine = _safe_int(my_cust_id, default=None)
+    theirs = _safe_int(row_cust_id, default=None)
+    if mine is None or theirs is None:
+        return str(my_cust_id).strip() == str(row_cust_id).strip()
+    return mine == theirs
 
 
 def _safe_int(value, default=0):

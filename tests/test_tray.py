@@ -191,3 +191,81 @@ class TestTrayPause:
         tray._watcher = MagicMock()
         tray._toggle_pause()
         assert "Paused" in tray._icon.title
+
+
+class TestFrozenEntryPointDispatch:
+    """The packaged build ships one exe, so tray.main() is also the CLI entry.
+
+    BETA_TESTING.md tells testers to run `Tenths.exe config`. Before this
+    dispatch existed the exe ignored its arguments and silently started the tray,
+    so the documented command was simply untrue.
+    """
+
+    def test_no_args_starts_tray_not_cli(self, monkeypatch):
+        import tenths.service.tray as tray_mod
+
+        started = []
+        monkeypatch.setattr(tray_mod, 'TenthsTray',
+                            lambda: MagicMock(run=lambda: started.append('tray')))
+        monkeypatch.setattr('sys.argv', ['Tenths.exe'])
+
+        tray_mod.main()
+
+        assert started == ['tray'], "bare invocation must start the tray"
+
+    def test_args_are_forwarded_to_cli(self, monkeypatch):
+        import tenths.service.tray as tray_mod
+        import tenths.cli as cli_mod
+
+        seen = []
+        monkeypatch.setattr(cli_mod, 'main', lambda argv=None: seen.append(argv))
+        monkeypatch.setattr(tray_mod, 'TenthsTray',
+                            lambda: pytest.fail("tray must not start when args are given"))
+
+        tray_mod.main(['config'])
+
+        assert seen == [['config']], "arguments must reach the CLI unchanged"
+
+    def test_args_read_from_sys_argv_when_not_passed(self, monkeypatch):
+        """This is the real frozen path: Windows supplies argv, nothing passes it."""
+        import tenths.service.tray as tray_mod
+        import tenths.cli as cli_mod
+
+        seen = []
+        monkeypatch.setattr(cli_mod, 'main', lambda argv=None: seen.append(argv))
+        monkeypatch.setattr(tray_mod, 'TenthsTray',
+                            lambda: pytest.fail("tray must not start when args are given"))
+        monkeypatch.setattr('sys.argv',
+                            ['Tenths.exe', 'config', '--telemetry-root', 'D:\\tel'])
+
+        tray_mod.main()
+
+        assert seen == [['config', '--telemetry-root', 'D:\\tel']]
+
+    def test_cli_tray_command_does_not_recurse(self, monkeypatch):
+        """`tenths tray` must reach the tray, not bounce back into the CLI.
+
+        tray.main() forwards arguments to cli.main(); if the CLI's own `tray`
+        branch forwarded its remaining argv, the two would call each other until
+        the stack ran out.
+        """
+        import tenths.cli as cli_mod
+        import tenths.service.tray as tray_mod
+
+        started = []
+        monkeypatch.setattr(tray_mod, 'TenthsTray',
+                            lambda: MagicMock(run=lambda: started.append('tray')))
+        monkeypatch.setattr('sys.argv', ['tenths', 'tray'])
+
+        cli_mod.main()
+
+        assert started == ['tray']
+
+    def test_attach_parent_console_is_safe_when_not_frozen(self, monkeypatch):
+        """Must never raise: it runs before any error handling is in place."""
+        from tenths.config import attach_parent_console
+
+        monkeypatch.delattr('sys.frozen', raising=False)
+        result = attach_parent_console()
+
+        assert isinstance(result, bool)

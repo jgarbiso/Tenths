@@ -1,0 +1,38 @@
+# PyInstaller Windows version resource for Tenths.exe
+#
+# Without this the executable has no product name, description, version or
+# company in its Windows properties, which makes it look unfinished and adds
+# avoidable SmartScreen friction. Keep the versions in step with
+# pyproject.toml and installer/tenths_setup.iss.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(0, 9, 0, 0),
+    prodvers=(0, 9, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '040904B0',
+          [
+            StringStruct('CompanyName', 'Justin Garbiso'),
+            StringStruct('FileDescription', 'Tenths - iRacing telemetry coaching'),
+            StringStruct('FileVersion', '0.9.0.0'),
+            StringStruct('InternalName', 'Tenths'),
+            StringStruct('LegalCopyright', 'Copyright (c) Justin Garbiso. MIT License.'),
+            StringStruct('OriginalFilename', 'Tenths.exe'),
+            StringStruct('ProductName', 'Tenths'),
+            StringStruct('ProductVersion', '0.9.0.0'),
+          ]
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)

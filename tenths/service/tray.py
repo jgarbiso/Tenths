@@ -142,14 +142,24 @@ class TenthsTray:
         except (FileNotFoundError, OSError):
             return False
 
+    def _startup_command(self):
+        """The command Windows should run at logon.
+
+        In a frozen build sys.executable is Tenths.exe, which already starts the
+        tray, so appending `-m tenths.cli tray` is meaningless. Running from
+        source needs pythonw so no console window appears.
+        """
+        if getattr(sys, 'frozen', False):
+            return f'"{sys.executable}"'
+        python_exe = sys.executable.replace('python.exe', 'pythonw.exe')
+        if not os.path.exists(python_exe):
+            python_exe = sys.executable
+        return f'"{python_exe}" -m tenths.cli tray'
+
     def _register_startup(self):
         """Add Tenths to Windows startup."""
         try:
-            # Use pythonw.exe to avoid console window
-            python_exe = sys.executable.replace('python.exe', 'pythonw.exe')
-            if not os.path.exists(python_exe):
-                python_exe = sys.executable
-            cmd = f'"{python_exe}" -m tenths.cli tray'
+            cmd = self._startup_command()
 
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_REG_PATH, 0, winreg.KEY_SET_VALUE)
             winreg.SetValueEx(key, STARTUP_REG_KEY, 0, winreg.REG_SZ, cmd)
@@ -173,8 +183,21 @@ class TenthsTray:
         self._icon.stop()
 
 
-def main():
-    """Entry point for the tray application."""
+def main(argv=None):
+    """Entry point for the tray application.
+
+    The packaged build ships one executable, so this is also the only entry point
+    a beta tester can reach. When arguments are present they are handed to the
+    CLI instead of being ignored, which is what makes the documented
+    `Tenths.exe config` work; with no arguments the tray starts as before.
+    """
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args:
+        from tenths.config import attach_parent_console
+        attach_parent_console()
+        from tenths.cli import main as cli_main
+        return cli_main(args)
+
     from tenths.config import configure_console
     from tenths.applog import configure_logging, get_logger
     configure_console()

@@ -18,8 +18,19 @@ import sys
 block_cipher = None
 
 # Paths
-SPEC_DIR = os.path.dirname(os.path.abspath(SPECPATH)) if 'SPECPATH' in dir() else os.path.dirname(os.path.abspath('installer/tenths.spec'))
+# PyInstaller sets SPECPATH to the *directory* containing this spec file, so it
+# must not be passed through dirname() again — doing so pointed SPEC_DIR at the
+# project root and made version_info.txt resolve one level too high.
+SPEC_DIR = os.path.abspath(SPECPATH) if 'SPECPATH' in dir() else os.path.abspath('installer')
 PROJECT_ROOT = os.path.dirname(SPEC_DIR) if os.path.basename(SPEC_DIR) == 'installer' else SPEC_DIR
+
+VERSION_FILE = os.path.join(SPEC_DIR, 'version_info.txt')
+if not os.path.isfile(VERSION_FILE):
+    raise SystemExit(
+        f"Version resource missing: {VERSION_FILE}\n"
+        "Without it the exe ships with no product name or version. Fix the path "
+        "rather than dropping the version= argument."
+    )
 
 a = Analysis(
     [os.path.join(PROJECT_ROOT, 'tenths', 'service', 'tray.py')],
@@ -97,6 +108,9 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=os.path.join(PROJECT_ROOT, 'assets', 'tenths.ico'),
+    # Windows product/version metadata. Without it the exe shows no product
+    # name or version in its properties.
+    version=VERSION_FILE,
 )
 
 coll = COLLECT(

@@ -101,9 +101,18 @@ def config_cli(args):
         print(f"\n  WARNING: {warning}")
 
 
-def main():
+def main(argv=None):
+    """Dispatch a subcommand.
+
+    `argv` is the argument list without the program name. It exists so the frozen
+    tray executable can forward its own arguments here. Subcommand handlers below
+    consume `sys.argv`, so an explicit argv is normalized into it rather than
+    threaded through every handler.
+    """
     from tenths.config import configure_console, CONFIG_WARNINGS
     from tenths.applog import configure_logging, get_logger
+    if argv is not None:
+        sys.argv = [sys.argv[0]] + list(argv)
     configure_console()
     # Console output plus a durable log file, so a failure is always recoverable
     configure_logging()
@@ -163,7 +172,9 @@ def main():
 
     elif command == "tray":
         from tenths.service.tray import main as tray_main
-        tray_main()
+        # Explicitly empty: tray.main() forwards any arguments back to this
+        # function, so passing the remaining argv would recurse.
+        tray_main([])
 
     elif command == "index":
         from tenths.index_generator import generate_master_index

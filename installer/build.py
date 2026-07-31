@@ -17,6 +17,17 @@ import sys
 import subprocess
 import shutil
 
+# Emoji in the status output crashes on a stock cp1252 console. That is tolerable
+# on the success path but not on the failure path, where the UnicodeEncodeError
+# replaced the actual build error and made the real cause invisible.
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        try:
+            _reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPEC_FILE = os.path.join(PROJECT_ROOT, "installer", "tenths.spec")
 DIST_DIR = os.path.join(PROJECT_ROOT, "dist")

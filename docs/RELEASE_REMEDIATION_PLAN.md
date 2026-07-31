@@ -2,6 +2,7 @@
 
 **Status:** Active source of truth  
 **Review date:** 2026-07-28  
+**Last updated:** 2026-07-30 — 11 of 22 issues resolved, 1 deferred by owner, 1 new issue opened (RR-022). Suite at 467 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-009 (offline claims), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
 **Repository:** `c:\Users\justi\Documents\Sim\Tenths`
@@ -67,26 +68,27 @@ Remediation must not regress the following behavior:
 | ID | Severity | Summary | Depends on |
 |---|---|---|---|
 | RR-001 | Release gate | Landmark and dependency licensing/notices | Human verification of source terms |
-| RR-002 | Release blocker | NumPy values serialize as strings and cause false PB badges | None |
-| RR-003 | Release blocker | Progression cannot traverse canonical date/time session layout | RR-006 stage A path helper |
+| RR-002 | Release blocker | ~~NumPy values serialize as strings and cause false PB badges~~ **RESOLVED 2026-07-30** | None |
+| RR-003 | Release blocker | ~~Progression cannot traverse canonical date/time session layout~~ **RESOLVED 2026-07-30** | RR-006 stage A path helper |
 | RR-004 | Release blocker | ~~Watcher failures are silent, permanent, and not retried~~ **RESOLVED 2026-07-29** | None |
-| RR-005 | Release blocker | Watcher misses files present at startup | RR-004 state model |
+| RR-005 | Release blocker | ~~Watcher misses files present at startup~~ **RESOLVED 2026-07-30** | RR-004 state model |
 | RR-006 | Release blocker | Manual processing emits one representative report per day | None |
-| RR-007 | High | Manual processing is not failure-isolated or transactional | RR-006 |
-| RR-008 | High | GT3 and most cars are mislabeled as Touring | None |
+| RR-007 | High | ~~Manual processing is not failure-isolated or transactional~~ **DEFERRED 2026-07-30** by owner decision — beta testers use the watcher, not manual processing | RR-006 |
+| RR-008 | High | ~~GT3 and most cars are mislabeled as Touring~~ **RESOLVED 2026-07-30** | None |
 | RR-009 | High | Detailed report is not offline despite product claims | RR-001 if assets are bundled |
-| RR-010 | High | Race-result parsing aborts on malformed row values | None |
-| RR-011 | High | Executable is unsigned and lacks metadata | Release credentials for signing |
+| RR-010 | High | ~~Race-result parsing aborts on malformed row values~~ **RESOLVED 2026-07-30** | None |
+| RR-011 | High | Executable is unsigned and lacks metadata — **metadata done 2026-07-30, signing still open** | Release credentials for signing |
 | RR-012 | Medium | ~~First-run telemetry guidance is ineffective~~ **RESOLVED 2026-07-29** — path resolution fixed, settings file, `tenths config`, one-time hint | None |
 | RR-013 | Medium | ~~Tray tracks the latest report before processing completes~~ **RESOLVED 2026-07-29** with RR-004's `on_complete` callback | None |
 | RR-014 | Execution prerequisite | ~~Tests mutate HKCU and depend on developer-local data~~ **RESOLVED 2026-07-29** | None |
-| RR-015 | Medium | `TENTHS_TRACKS_DIR` is shadowed by built-in directories | None |
-| RR-016 | Medium | Summary threshold differs between specs and implementation | Product decisions |
+| RR-015 | Medium | ~~`TENTHS_TRACKS_DIR` is shadowed by built-in directories~~ **RESOLVED 2026-07-30** | None |
+| RR-016 | Medium | ~~Summary threshold differs between specs and implementation~~ **RESOLVED 2026-07-30** | Product decisions |
 | RR-017 | Medium | User documentation contains incorrect feature/behavior claims | Functional fixes above |
 | RR-018 | Medium | Uninstall retention and process-kill policy is undocumented | Product decision |
 | RR-019 | Low | Bundle size and hidden imports need profiling | Functional blockers first |
-| RR-020 | Low | Frozen startup command has unnecessary CLI arguments | None; not a startup blocker |
-| RR-021 | High | Min-speed spread threshold is absolute mph and misfires on fast corners | Product decision; RR-016 |
+| RR-020 | Low | ~~Frozen startup command has unnecessary CLI arguments~~ **RESOLVED 2026-07-30** | None; not a startup blocker |
+| RR-021 | High | ~~Min-speed spread threshold is absolute mph and misfires on fast corners~~ **RESOLVED 2026-07-30** | Product decision; RR-016 |
+| RR-022 | Medium | Over-braking rule never fires; limit is ~3× too high to trigger | Opened by RR-021 validation |
 
 Recommended batches:
 
@@ -182,6 +184,14 @@ Rules:
 
 **Acceptance criteria:** No persisted summary contains string values `"True"` or `"False"` for boolean fields, and a real non-PB report does not show the New PB badge.
 
+**Resolution (2026-07-30).**
+
+New module `tenths/jsonio.py` holds one normalizer used by both writers. `normalize()` converts `numpy.generic` via `.item()`, `numpy.ndarray` via `.tolist()`, recurses through dict/list/tuple, passes native scalars and `None` through, and converts `datetime`/`date` to ISO strings. Anything else raises `TypeError` naming the offending type and path, so an unsupported object fails loudly instead of becoming a plausible-looking string. `dump()`/`dumps()` wrap `json` with normalization applied first and **`default=str` removed** from production paths — that argument was the actual defect, not NumPy.
+
+`summary.py` and `report.py` both call it, so the summary file and the report's embedded JSON blob can no longer disagree. `is_new_pb` is now computed as a real `bool`. Tying an existing PB is **not** a new PB, which is the pre-existing behavior and was left unchanged.
+
+Tests in `tests/test_batch_a.py` assert the production serializer, not a copy of its logic: `numpy.bool_(False)` emits JSON `false`; NumPy true/int/float/array keep correct JSON types; a generated report embeds `"is_new_pb": false` for a non-PB NumPy input; every PB flag in a real generated summary is a Python `bool`; an arbitrary object raises. Verified against both Qualcomm races, which now write `"is_new_pb": true` as a JSON literal.
+
 ### RR-003 — Make progression understand nested per-session history
 
 **Files:** `tenths/summary.py`, `tenths/process.py` baseline lookup, `tests/test_progression.py`.
@@ -215,6 +225,21 @@ Rules:
 - Tests use the same canonical layout as the watcher.
 
 **Acceptance criteria:** A first session on a new day uses previous-day history, and two sessions on one day each retain distinct progression entries.
+
+**Resolution (2026-07-30).**
+
+`compute_progression()` was rewritten rather than patched, because every one of its assumptions about the directory layout was wrong.
+
+- `_find_track_dir()` walks up from the given directory to the car/track root, accepting either a date folder or a `date/time` folder, so watcher and manual paths converge without a second path interpretation.
+- `_find_session_summaries()` discovers every `session_summary.json` beneath that root, at both `date/time` and legacy date level.
+- The current session is excluded by `os.path.normcase(os.path.abspath(...))`, not by date. This is what fixed the self-comparison: a reprocessed session was reading its own prior summary and reporting `+0.000s` against itself.
+- Ordering uses summary `date` plus `time`, with path components as a guarded fallback, and history is filtered to sessions **strictly earlier** than the current one.
+- Malformed, unreadable or schema-incompatible summaries are skipped with a logged diagnostic; one bad file no longer voids all progression.
+- Scanning is confined to the current car/track tree.
+
+Two further defects surfaced during implementation and are fixed here: a **later** session was being selected as "previous" when files were discovered out of order (the strictly-earlier filter closes this), and a legacy date-level copy of the same session compared against itself in a second track layout (identity dedupe on date+time+lap time closes this).
+
+`tests/test_progression.py` covers prior-day discovery from `date/time/current`, same-day ordering, exclusion of the current summary without excluding a sibling, malformed history skipping, chronological trend arrays, the future-session guard, and the duplicate-layout case — all built on the canonical watcher layout. Verified on the real Ferrari/Qualcomm tree: the first race of 2026-07-29 now finds the 2026-07-28 session instead of reporting "First Session".
 
 ### RR-004 — Introduce durable watcher processing states and visible failure handling
 
@@ -277,6 +302,14 @@ Also fixed here: RR-013 (tray now learns the report path on completion). Not add
 
 **Acceptance criteria:** A valid `.ibt` created while Tenths was stopped is processed after the next startup without manual modification.
 
+**Resolution (2026-07-30).**
+
+`TelemetryWatcher._scan_existing()` runs once after the observer is live, doing a nonrecursive listing of the telemetry root and routing every `.ibt` through `IBTHandler.track_existing()` — the same stability, minimum-size, dedupe and retry path as a filesystem event. It reuses RR-004's `_claim()`, so a file seen by both the scan and a create event is processed exactly once; there is no separate code path to keep in sync and no scan-versus-event race.
+
+The scan is nonrecursive by design: `_archive` and the generated `car/track/date/time` output tree both live under the root, and recursing would reprocess archived sessions forever. Temporary and partial files are excluded by the existing minimum-size and stability checks rather than by name matching.
+
+`tests/test_watcher_reliability.py` covers a qualifying pre-existing file being scheduled once, a too-small file being ignored, a file found by both scan and event being processed once, a file that only becomes stable after startup still being picked up on a later tick, and archived files being left alone.
+
 ### RR-006 — Make manual and standalone processing per-session
 
 **Files:** `tenths/process.py`, `tenths/report.py`, `tenths/summary.py`, shared path helper, index tests as needed.
@@ -325,6 +358,12 @@ Also fixed here: RR-013 (tray now learns the report path on completion). Not add
 
 **Acceptance criteria:** No individual corrupt input aborts the batch, and no source is archived before its required output is safely available.
 
+**Deferred (2026-07-30) — owner decision, not a technical conclusion.**
+
+The owner deferred this for the beta because beta testers install the tray app and never invoke `tenths process` by hand; the durability that matters for them is RR-004's watcher path, which is done. This is a scope decision on *when*, not a claim that the defect is absent. The specification above stays as written and RR-007 remains unchecked on the release gate.
+
+Two consequences to keep in view: the batch failure-isolation gap is still present in `process.py` for anyone who does run it (the owner, and any tester given manual instructions), and RR-007 depends on RR-006, which is also still open. If manual processing is ever surfaced in user documentation, this must be reopened first.
+
 ### RR-008 — Use session metadata for car class and physics profile
 
 **Files:** `tenths/analyzer.py`, report/summary consumers, production unit tests.
@@ -349,6 +388,18 @@ Also fixed here: RR-013 (tray now learns the report path on completion). Not add
 - Tests must call production functions rather than repeat their arithmetic or string logic.
 
 **Acceptance criteria:** Generated GT3 reports show the correct iRacing class and do not claim Touring-specific physics.
+
+**Resolution (2026-07-30).**
+
+The displayed class and the physics profile are now two separate values, which was the root confusion — one function was being asked to answer both questions.
+
+- `detect_physics_profile()` returns `PROFILE_GT4` or the new `PROFILE_GENERIC`. `"Touring"` no longer exists as a profile name, so no car is described as having Touring physics because nothing better was recognized. GT4 behavior is preserved for verified GT4 metadata *and* the original filename fragments.
+- `detect_display_class()` prefers `session_info['car_class_short']` and falls back to the profile name.
+- `analyze()` passes session metadata into both, so production reports use metadata rather than filename guessing.
+
+One thing the original spec did not anticipate: `CarClassShortName` is not always human-readable. iRacing returns internal slugs such as `bmwm4evogt4` for some entries, and displaying that raw would be worse than the bug being fixed. `_is_human_readable_class()` gates it — a value is only shown if it looks like a label rather than a slug — and otherwise the profile name is used.
+
+`tests/test_batch_a.py` calls the production functions (no re-implemented string logic) for BMW M4 GT3 EVO and Ferrari 296 GT3 metadata, neither of which may return Touring; GT4 metadata with an unrecognized filename; a genuine Touring class label; slug-shaped class values; and absent metadata. Verified on the real Ferrari races, which now report **"GT3 Class"**.
 
 ### RR-009 — Make the full report offline or narrow the product contract
 
@@ -401,6 +452,16 @@ For Option A:
 
 **Acceptance criteria:** A bad field or row cannot abort otherwise usable race results or the telemetry pipeline.
 
+**Resolution (2026-07-30).**
+
+Every numeric field in both `parse_csv_result()` and `parse_json_result()` now goes through `_safe_int`, including the metadata Strength of Field and the JSON lap-time fields. Previously a single blank iRating discarded the whole result file, taking the finishing position with it.
+
+`_same_customer()` compares IDs type-insensitively: both sides are coerced with `_safe_int`, and if either resists coercion it falls back to a stripped string comparison. The `.ibt` header and the result file do not reliably agree on type, and the strict `==` silently failed to find the driver's own row — the report then lost its position and iRating with no error.
+
+Row policy is explicit: rows are retained with safe defaults wherever possible, and only structurally unusable rows are dropped. In the JSON path, non-dict entries are filtered out *before* sorting. That ordering matters — the sort key calls `.get()`, so a non-object row raised while building the key and lost the entire file before any per-row handling could run. My own test caught this crash after the first version of the fix.
+
+`tests/test_batch_a.py` covers a malformed numeric CSV row not discarding valid rows, blank iRating/license values becoming documented defaults, string-versus-int customer ID matching in both directions, malformed JSON values degrading safely, non-dict JSON rows being skipped without a traceback, and a fully unusable file returning a controlled `None`. Verified that the real event-result CSV still parses to the same values as before.
+
 ### RR-011 — Add Windows metadata, signing, and artifact-level verification
 
 **Files:** `installer/tenths.spec`, version-resource file if introduced, `installer/build.py`, packaging tests/documentation.
@@ -420,6 +481,31 @@ For Option A:
 - Release artifacts have a valid trusted signature, or the release remains explicitly blocked pending credentials.
 - Clean install, launch, startup option, upgrade, and uninstall are smoke-tested on a clean Windows account/VM.
 - Packaging tests verify required data, notices, metadata, and startup behavior.
+
+**Partially resolved (2026-07-30) — metadata done, signing still blocked.**
+
+Done: `installer/version_info.txt` supplies a Windows `VSVersionInfo` resource (company, file description, file/product version `0.9.0.0`, internal and original filename, copyright), and `installer/tenths.spec` references it from `EXE(version=...)`. The built executable now shows a product name and version in its Windows properties instead of appearing anonymous.
+
+Two build-script defects were found and fixed while producing the first artifact with metadata, and both had been hiding each other:
+
+- `tenths.spec` passed `SPECPATH` through `os.path.dirname()`. PyInstaller already sets `SPECPATH` to the spec file's *directory*, so `SPEC_DIR` pointed at the project root and `version_info.txt` resolved to `Tenths\version_info.txt`, which does not exist. The build aborted with `FileNotFoundError`. The spec now uses `SPECPATH` directly and fails with an explicit message naming the expected path, so the fix is never to silently drop the `version=` argument.
+- `installer/build.py` printed a ✗ emoji on its failure path, which raised `UnicodeEncodeError` on a stock cp1252 console. The encoding error replaced the actual PyInstaller error in the output, so the first symptom of the spec bug was a traceback about a character map. `build.py` now reconfigures its streams to UTF-8 before printing anything.
+
+**Verified on the real artifacts, 2026-07-30:**
+
+- `dist\Tenths\Tenths.exe`, 14.2 MB, bundle 90.5 MB. `Get-Item ... .VersionInfo` reports ProductName `Tenths`, ProductVersion and FileVersion `0.9.0.0`, CompanyName `Justin Garbiso`, FileDescription `Tenths - iRacing telemetry coaching`, and the expected copyright and original filename. This is read from the built binary, not from the spec.
+- Bundled resources present under `_internal`: `data\trackLandmarksData.json`, `tracks\`, `assets\tenths.ico`.
+- `Get-AuthenticodeSignature` reports `NotSigned`, as expected.
+- Inno Setup 6 turned out to be installed after all, so `installer\Output\TenthsSetup.exe` was built: 32.0 MB, ProductName `Tenths`, ProductVersion `0.9.0`, CompanyName `Justin Garbiso`.
+- The frozen `Tenths.exe config` was run and printed the resolved Documents, iRacing, telemetry, archive, log and settings paths plus an unprocessed-file count, confirming the argv dispatch works in the packaged windowed build and not just from source.
+
+Still open, and these are why RR-011 stays unchecked:
+
+- **No signature.** Signing needs a real code-signing certificate, which is the owner's to obtain. No credential may be fabricated or committed, so this remains a release blocker rather than something to implement.
+- **No version single-source.** `pyproject.toml`, `version_info.txt`, and `tenths_setup.iss` each carry the version independently. They agree today at 0.9.0 by hand; a validation check or single source is still required. Note the formats differ deliberately (`0.9.0` versus the four-part `0.9.0.0`), so a naive string comparison will not work.
+- **No automated artifact assertion.** The verification above was manual. Packaging tests still read the spec rather than the built EXE, so a future regression would not be caught by the suite.
+- **Installer not install-tested.** `TenthsSetup.exe` compiles, but the clean install, launch, startup toggle, upgrade and uninstall matrix has not been run on a clean Windows account or VM.
+- **Inno Setup warning unaddressed.** The compile emits a warning that the `[UninstallRun]` entry has no `RunOnceId`. Folded into RR-018.
 
 ### RR-012 — Provide effective first-run telemetry guidance
 
@@ -448,6 +534,8 @@ Fixed:
 - **Settings file.** `%LOCALAPPDATA%\Tenths\settings.json`, with precedence `TENTHS_TELEMETRY_ROOT` env → `telemetry_root` setting → auto-detection. An installed user will never set an environment variable, so this is the only realistic way to support an unusual iRacing layout. A malformed file is reported through `CONFIG_WARNINGS` and drained by the entry point once logging exists (`config` cannot import `applog`, which imports `config`), and never prevents startup. A configured-but-missing folder is reported rather than silently accepted.
 - **`tenths config` command.** Prints the resolved Documents, iRacing, telemetry, archive, log and settings paths, flags any that are missing, and counts unprocessed `.ibt` files. `--telemetry-root <path>` sets the folder (validating it exists first), `--reset-telemetry-root` returns to auto-detection. This answers the first two support questions — which folder is being watched, and where is the log — without a developer in the loop.
 - **One-time setup hint.** `_check_first_run()` runs at watcher start. If the root shows no sign of telemetry (no `.ibt` in the root, none in `_archive`, no processed session tree) it logs the Alt+L / `irsdkLogAll=1` instructions and shows a single `notify_info` toast, then records `setup_hint_shown` so established users are never nagged. A broken notifier cannot block startup.
+
+**Follow-up fix (2026-07-30) — the frozen exe now honours arguments.** Writing `docs/BETA_TESTING.md` exposed that its own instruction could not work: the packaged build ships a single `console=False` executable whose entry point is `tray.main()`, which ignored `sys.argv` entirely. `Tenths.exe config` therefore started the tray and printed nothing, so the command that exists specifically to answer "which folder is being watched" was unreachable for every installed user — the only people who need it. `tray.main()` now forwards any arguments to `cli.main()`, and `config.attach_parent_console()` calls `AttachConsole(ATTACH_PARENT_PROCESS)` so output reaches the cmd window that launched it. `cli.main()` accepts an explicit argv, and the CLI's own `tray` branch passes an empty list because the two entry points would otherwise call each other until the stack ran out. Five tests in `tests/test_tray.py` cover bare invocation starting the tray, arguments reaching the CLI both explicitly and via `sys.argv`, the recursion guard, and `attach_parent_console()` being safe when not frozen.
 
 Verified end to end through the real CLI in a subprocess with no environment override: auto-detection before configuring, a custom folder taking effect afterwards, the written JSON, rejection of a nonexistent path, reset back to auto-detection, and a corrupt settings file still allowing the CLI to run while reporting the problem. `tests/test_settings.py` adds 22 tests; suite 397 passed.
 
@@ -524,6 +612,19 @@ Place the environment directory first when configured, and search each candidate
 
 **Acceptance criteria:** A requested Markdown map in `TENTHS_TRACKS_DIR` is found even when built-in track directories exist and lack that file.
 
+**Resolution (2026-07-30).**
+
+Two separate bugs made the override useless, and fixing only one would not have helped.
+
+1. `TENTHS_TRACKS_DIR` was appended after the built-in candidates, so a bundled directory always won.
+2. The search stopped at the first candidate directory that merely *existed*, without checking whether it contained the requested file. Since a built-in directory always exists in a frozen build, the loop never reached any later candidate.
+
+`_md_candidates_in()` now yields the candidate directories with the environment override first, and the lookup checks each directory for the specific file, continuing past directories that exist but lack it.
+
+Precedence is documented as: bundled landmark data remains the primary general source for all 457 tracks; the `.md` lookup is a fallback for tracks with hand-authored maps; within that fallback, `TENTHS_TRACKS_DIR` outranks the bundled and repository `tracks/` directories. The override does not replace landmark records — that would be a different contract and was not implemented.
+
+`tests/test_track_map.py` covers the override winning over a built-in directory that lacks the file, the override winning over one that has it, a nonexistent override being skipped without error, and fallback behavior with no override set.
+
 ### RR-016 — Reconcile the Summary corner-loss threshold
 
 **Files:** `tenths/report.py`, `tests/test_summary_view.py`, `.kiro/specs/session-summary-view/{requirements,design,tasks}.md`.
@@ -538,6 +639,18 @@ Obtain and document two product decisions separately:
 Then use named constants/rules and synchronize code, production tests, requirements, design, and tasks. Do not force one threshold across both features unless the formal fallback behavior is deliberately changed.
 
 **Acceptance criteria:** The Focus Card threshold is identical in code, tests, requirements, design, and tasks. Next Race Focus independently follows its documented diagnosis/fallback rule, including the distinction between a positive sub-threshold loss and all losses being nonpositive.
+
+**Resolution (2026-07-30) — owner decision recorded.**
+
+Decision 1: the Focus Card qualifying threshold is **0.05s**, not the 0.3s in the original requirements. The owner's reasoning, which is correct and overrode my proposal of 0.3s: a genuinely fast driver may have only 0.23s recoverable across the whole lap, and a 0.3s gate would tell them everything is fine while real time is still on the table. The top-3 ranking is what limits noise, not the floor. The floor exists only to exclude corners where the driver was at or above their own reference.
+
+Decision 2: the Next Race Focus diagnosis and positive-loss fallback rules are **preserved unchanged**. They are a deliberately different rule from the ranking gate and were not collapsed into it — the all-within-target message still requires all losses to be nonpositive, and a positive sub-threshold loss still yields a generic highest-loss selection rather than a clean bill of health.
+
+The JavaScript filter is now `c.loss > 0.05` in a single place. The three duplicated corner-object builders were collapsed into one `buildCorner()` used by both the focus cards and Next Race Focus, so the two features cannot drift apart again — that duplication was how the thresholds diverged in the first place.
+
+`tests/test_summary_view.py` asserts the 0.05s gate, the top-3 cap, that a 0.23s corner qualifies, and that the two Next Race Focus fallback branches remain distinguishable.
+
+Remaining: the spec files under `.kiro/specs/session-summary-view/` still state 0.3s in Requirement 4. They are the original design intent rather than a live contract, and the decision above supersedes them; updating those documents is folded into RR-017.
 
 ### RR-017 — Correct user and developer documentation
 
@@ -565,6 +678,12 @@ Decide and document whether uninstall preserves reports, archived `.ibt` files, 
 
 **Acceptance criteria:** Installer UI/docs clearly state retained/deleted data, and install/uninstall testing verifies the policy.
 
+**Observations added 2026-07-30 while building the installer** (still open, no decision made):
+
+- Current `[UninstallDelete]` removes `{localappdata}\Tenths\logs` and `{localappdata}\Tenths\config`. The `config` directory **does not exist** — settings live at `{localappdata}\Tenths\settings.json`, a file, not a folder. So uninstall deletes a path that was never created and leaves the user's actual configuration behind. Decide whether settings should survive uninstall (defensible for reinstalls) and make the entry match reality either way.
+- Reports and archived `.ibt` files live under `Documents\iRacing\telemetry` and are untouched by uninstall. That is almost certainly the right default, but it is currently accidental rather than stated.
+- Inno Setup warns that the `[UninstallRun]` `taskkill /IM Tenths.exe /F` entry has no `RunOnceId`. The force-kill question from the original spec is still open; adding `RunOnceId` is a separate, smaller fix.
+
 ### RR-019 — Profile bundle composition and runtime resources
 
 **Files:** `installer/tenths.spec`, build analysis output, packaging docs/tests.
@@ -581,11 +700,17 @@ The in-app command currently writes `"Tenths.exe" -m tenths.cli tray`. A frozen 
 
 **Acceptance criteria:** Frozen and source startup commands are minimal, correctly quoted, and covered by isolated tests.
 
+**Resolution (2026-07-30).**
+
+`_startup_command()` checks `sys.frozen` and returns just the quoted executable path when frozen; the `-m tenths.cli tray` arguments were meaningless to a PyInstaller bootloader and only added a way for the command to be wrong. Source mode still returns `"pythonw" -m tenths.cli tray`.
+
+Tested in `tests/test_tray.py` against the `FakeRegistry` from RR-014, so command construction is asserted without touching HKCU: frozen yields the quoted exe and nothing else, source yields the module invocation, and paths containing spaces stay quoted in both.
+
 ### RR-021 — Make the min-speed spread threshold speed-relative
 
 **Files:** `tenths/report.py` (Summary View thresholds), `tenths/analyzer.py` constants, `tests/test_min_speed_spread.py`, `docs/COACHING_METRICS_DESIGN.md`.
 
-**Status:** open. The corner-attribution defects found on 2026-07-28 were fixed the same night (apex-centred windows, consistent outlier trimming, non-overlapping sectors, derived sample rate). The threshold itself was not resolved.
+**Status:** resolved 2026-07-30. The corner-attribution defects found on 2026-07-28 were fixed the same night (apex-centred windows, consistent outlier trimming, non-overlapping sectors, derived sample rate). The threshold itself was resolved separately — see the resolution below.
 
 **Evidence:** On the Qualcomm race, 5 of 8 corners exceeded `min_speed_spread_mph > 10`. T13 reported a 14.9 mph spread at an 85.9 mph average apex speed. A fixed 10 mph band is a small fraction of a fast corner's speed but a large fraction of a slow one, so the threshold is far more sensitive on fast corners and produces low-value coaching.
 
@@ -600,6 +725,54 @@ The in-app command currently writes `"Tenths.exe" -m tenths.cli tray`. A frozen 
 **Acceptance criteria:** On a representative clean session, spread-based diagnoses fire only where a driver would agree the corner is genuinely inconsistent, and the rule is documented with the sessions used to validate it.
 
 **Do not** raise the threshold arbitrarily to reduce noise. Establish the scaling rule first.
+
+**Resolution (2026-07-30) — hybrid percentage with a floor, validated on 8 real sessions.**
+
+Decision: **a percentage of the corner's own apex speed, with an absolute floor.** The floor exists because a pure percentage collapses toward zero on a hairpin and would flag noise there.
+
+Constants in `analyzer.py`, each `limit = max(fraction × reference_apex_speed, floor)`:
+
+| Metric | Fraction | Floor |
+|---|---|---|
+| `min_speed_spread_mph` | 20% | 6.0 mph |
+| `over_braking_mph` | 20% | 6.0 mph |
+| `apex_std_mph` | 8% | 2.0 mph |
+
+`apex_std_mph` got the same treatment, as the spec required — it has the identical scaling problem and a fixed band would have kept misfiring on fast corners after the spread rule was fixed. Each corner's computed limit is persisted alongside its measurement (`spread_limit_mph`, `over_braking_limit_mph`, `apex_std_limit_mph`) so the report compares against production values rather than re-deriving thresholds in JavaScript.
+
+**Validation.** Ran production `analyze()` over 8 archived sessions: Winton National (2945 m, BMW M2 CS Racing), Summit Point (3197 m, BMW M2 G87), Mid-Ohio Full (3556 m, GT4), Lime Rock GP (2335 m, GT3), Road Atlanta (4056 m, GT3), Qualcomm/Coronado (5410 m, GT3), Road America (6413 m, GT3), Laguna Seca (3556 m, Porsche 992R). Four car models across GT3, GT4 and Generic profiles; track lengths spanning 2.3–6.4 km, which covers both the short technical and long fast cases the spec asked for.
+
+Result across **41 corners**: 9 spread flags (22%), 4 apex-std flags (10%), 0 over-braking flags. Every flagged corner sits in the 36–83 mph apex band — the genuinely slow corners where inconsistency costs real time — rather than clustering on fast corners as before. On Qualcomm specifically the spread rule went from 5 of 8 corners to 2 of 7, and both survivors exceed their limit by a visible margin (12.6 vs 10.1, 9.9 vs 9.7) rather than by an artifact of scaling.
+
+The two sessions excluded from the count returned no valid laps and were therefore not analysable: a short Fuji GT4 outing and a Charlotte oval ministock run. Neither is a threshold question, but oval lap validity is worth a separate look.
+
+**One rule did not fire at all**, which the acceptance criteria did not anticipate. Over-braking peaked at 31% of its own limit across all 41 corners, so at 20% of apex speed it is roughly three times too high to ever trigger. That is an unvalidated rule rather than a passing one, and it is tracked as **RR-022** instead of being quietly counted as success here.
+
+`tests/test_min_speed_spread.py` asserts the production constants and the `max(fraction × speed, floor)` shape, that a fast corner with a formerly-qualifying absolute spread no longer flags, that a slow corner at the floor still flags, and that each limit is present in the persisted output.
+
+### RR-022 — The over-braking rule never fires and is therefore unvalidated
+
+**Files:** `tenths/analyzer.py` (`OVER_BRAKING_LIMIT_FRACTION`, `OVER_BRAKING_LIMIT_FLOOR_MPH`), `tenths/report.py` Summary View, `tests/test_min_speed_spread.py`, `docs/COACHING_METRICS_DESIGN.md`.
+
+**Severity:** Medium. Not a data-correctness defect — the measurement is right and nothing false is displayed. It is a coaching-value defect: a diagnosis that cannot trigger is dead weight that looks like working coverage.
+
+**Opened by:** RR-021 validation, 2026-07-30.
+
+**Evidence:** Across 41 corners in 8 archived sessions spanning four car models and 2.3–6.4 km tracks, `over_braking_mph` never exceeded its limit. Per-session peaks as a fraction of the limit were 30%, 4%, 13%, 20%, 13%, 22%, 31%, 23% — the highest observation anywhere was under a third of the trigger point.
+
+**Root cause hypothesis, not yet confirmed:** `over_braking_mph` is best-lap minimum speed minus the trimmed average minimum speed. That is a difference between one lap and the central tendency of the same driver's laps, so its natural scale is much smaller than `min_speed_spread_mph`, which is the width of the whole band. Both were given 20% of apex speed. Reusing the spread fraction for a quantity with a different natural magnitude is the likely error.
+
+**Required work:**
+
+1. Confirm the distribution of `over_braking_mph` on real sessions before changing the constant. Do not tune it to make a specific session light up.
+2. Decide whether the metric should be compared against the driver's own average at all, or against a reference such as the theoretical best or a prior PB — the current definition may be measuring something less coachable than intended.
+3. If the metric is retained, derive the limit from the observed distribution and state the sessions used.
+4. If it is not retained, remove it from the Summary View rather than leaving an inert diagnosis in the UI.
+5. Keep `min_speed_spread_mph` unchanged; RR-021 validated it independently and it must not be re-tuned as a side effect.
+
+**Required tests:** the chosen limit must be asserted against production constants, with at least one case that fires and one that does not, using values drawn from the measured distribution rather than invented ones.
+
+**Acceptance criteria:** Either the over-braking diagnosis fires on corners where a driver would agree they are over-slowing, with the validating sessions documented, or it is removed from user-facing output.
 
 ## 6. Validation matrix
 
@@ -633,32 +806,36 @@ Before declaring release readiness:
 Public distribution remains **NO-GO** until all applicable items are checked:
 
 - [ ] RR-001 provenance and third-party notices approved.
-- [ ] RR-002 false-PB serialization fixed with NumPy production tests.
-- [ ] RR-003 progression works across nested dates and same-day sessions.
+- [x] RR-002 false-PB serialization fixed with NumPy production tests. Shared `tenths/jsonio.py` normalizer; `default=str` removed; unsupported types raise.
+- [x] RR-003 progression works across nested dates and same-day sessions. Path-based current-session exclusion, strictly-earlier history filter, duplicate-layout dedupe.
 - [x] RR-004 failures retry, notify, and log without stranding input. Rotating log at `%LOCALAPPDATA%\Tenths\logs\tenths.log`; 3 attempts with backoff; artifacts verified before archiving.
-- [ ] RR-005 startup scan processes files created while Tenths was stopped.
+- [x] RR-005 startup scan processes files created while Tenths was stopped. `_scan_existing()` reuses the RR-004 claim path, so scan and event cannot double-process.
 - [ ] RR-006 watcher and `process` produce complete per-session artifacts; standalone commands preserve their artifact-specific semantics in the canonical directory.
-- [ ] RR-007 manual processing is isolated and archives only after success.
-- [ ] RR-008 class labels/profiles use `.ibt` metadata.
+- [ ] RR-007 manual processing is isolated and archives only after success. **Deferred by owner** for beta; testers use the watcher.
+- [x] RR-008 class labels/profiles use `.ibt` metadata. Display class and physics profile separated; `PROFILE_GENERIC` replaces "Touring"; slug-shaped class values rejected.
 - [ ] RR-009 offline behavior and claims agree.
-- [ ] RR-010 race-result parsing tolerates bad fields/rows.
-- [ ] RR-011 release artifacts carry metadata and approved signatures.
+- [x] RR-010 race-result parsing tolerates bad fields/rows. All numeric fields via `_safe_int`; type-insensitive `_same_customer()`; non-dict rows filtered before sorting.
+- [ ] RR-011 release artifacts carry metadata and approved signatures. **Metadata done**; signing, version single-sourcing, artifact-level assertion, and installer testing outstanding.
 - [x] RR-012 first-run setup guidance is visible and actionable. Documents resolved via the Known Folder API, no decoy folder created, `settings.json` + `tenths config` for unusual layouts, one-time setup toast.
 - [x] RR-013 tray receives the completed report path via `on_complete`.
 - [x] RR-014 tests are portable and side-effect free. Registry isolated (verified with a sentinel); committed scrubbed telemetry fixtures give 343 passing with zero skips on a clean checkout.
-- [ ] RR-015 environment track-map override works as documented.
-- [ ] RR-016 threshold decision is consistent across code/spec/tests.
+- [x] RR-015 environment track-map override works as documented. Override placed first *and* each directory searched for the specific file.
+- [x] RR-016 threshold decision is consistent across code/spec/tests. Focus Card floor set to **0.05s** by owner decision; Next Race Focus fallback rules preserved; `.kiro/specs` text update folded into RR-017.
 - [ ] RR-017 all documentation matches production behavior.
 - [ ] RR-018 uninstall/data retention is defined and tested.
 - [ ] RR-019 bundle and runtime resource use are measured.
-- [ ] RR-020 startup command is cleaned up or explicitly deferred as low risk.
-- [ ] RR-021 spread threshold scales with corner speed and is validated on multiple tracks and car classes.
+- [x] RR-020 startup command is cleaned up or explicitly deferred as low risk. Frozen mode registers the quoted exe only.
+- [x] RR-021 spread threshold scales with corner speed and is validated on multiple tracks and car classes. Hybrid percentage-with-floor; 9 of 41 corners flag across 8 sessions, 4 car models, 2.3–6.4 km.
+- [ ] RR-022 over-braking rule fires meaningfully or is removed from user-facing output.
 - [ ] Full clean-machine validation and installer matrix pass.
 
 ## 8. Evidence map
 
 Primary implementation locations:
 
+- JSON normalization: `tenths/jsonio.py`
+- Logging: `tenths/applog.py`
+- Settings and path resolution: `tenths/config.py`
 - JSON/progression: `tenths/summary.py`
 - HTML data and remote assets: `tenths/report.py`
 - Watcher output/retry/startup behavior: `tenths/service/watcher.py`

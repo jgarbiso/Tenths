@@ -45,7 +45,7 @@ Corner names come from a built-in database covering **450+ iRacing tracks** — 
 - **Low-friction** — while Tenths is running, it watches for completed sessions and processes them automatically; startup recovery and retry handling are tracked release blockers
 - **Coaching-first** — translates raw telemetry into "release the brake more progressively at T5," not just line charts
 - **Progression tracking** — a master index of processed sessions; compare against your past self, session over session
-- **Physics profiles in development** — GT4-specific diagnostics exist; broader metadata-driven class handling is required before public release
+- **Physics profiles in development** — braking diagnostics are validated for GT4; other classes use a generic profile, and your report shows your real iRacing class
 - **Local analysis** — track data and Summary coaching are bundled; the current Detailed view still loads CDN assets
 - **Resource-conscious design** — event-driven watcher and low processing priority; formal CPU/RAM measurements remain pending
 
@@ -150,6 +150,7 @@ See `installer/` — `tenths.spec` (PyInstaller) and `tenths_setup.iss` (Inno Se
 
 ### Documentation
 - `docs/GETTING_STARTED.md` — user onboarding
+- `docs/BETA_TESTING.md` — beta known limitations and how to report issues
 - `docs/ARCHITECTURE_VISION.md` — product vision & roadmap
 - `docs/HTML_REPORT_DESIGN.md` — report design & theme
 - `docs/COACHING_METRICS_DESIGN.md` — metrics → coaching mapping

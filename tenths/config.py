@@ -33,6 +33,42 @@ def configure_console():
                 pass
 
 
+def attach_parent_console():
+    """Attach the invoking console so a windowed build can print.
+
+    The packaged exe is built with `console=False`, so `sys.stdout` is None and
+    anything printed is discarded. That silently breaks the documented
+    `Tenths.exe config` command: a tester runs it from cmd, sees nothing, and has
+    no way to tell whether it worked. AttachConsole(ATTACH_PARENT_PROCESS) hands
+    us the console that launched us so output lands where the user is looking.
+
+    Returns True when output is usable afterwards. Never raises; if there is no
+    parent console (a double-clicked exe) the caller still runs, it just cannot
+    print, which is why callers should also log.
+    """
+    if not getattr(sys, 'frozen', False):
+        return sys.stdout is not None
+
+    try:
+        import ctypes
+        ATTACH_PARENT_PROCESS = -1
+        if not ctypes.windll.kernel32.AttachConsole(ATTACH_PARENT_PROCESS):
+            return sys.stdout is not None
+    except (ImportError, AttributeError, OSError):
+        return sys.stdout is not None
+
+    attached = False
+    for name, stream_name in (("stdout", "CONOUT$"), ("stderr", "CONOUT$")):
+        try:
+            stream = open(stream_name, "w", encoding="utf-8", errors="replace",
+                          buffering=1)
+        except OSError:
+            continue
+        setattr(sys, name, stream)
+        attached = True
+    return attached
+
+
 def _documents_dir():
     """Resolve the user's Documents folder the way iRacing itself does.
 

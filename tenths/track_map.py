@@ -36,10 +36,13 @@ _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _RESOURCE_BASE = _resource_base()
 
 # Track map .md files — check both frozen (bundled at root/tracks) and source layouts
+# An override must take precedence, so it comes first. Previously it was last
+# and the loader stopped at the first directory that merely existed, so a
+# bundled `tracks` folder shadowed it entirely.
 TRACK_MAPS_DIRS = [
+    os.environ.get('TENTHS_TRACKS_DIR', ''),        # user override wins
     os.path.join(_RESOURCE_BASE, "tracks"),         # frozen: <MEIPASS>/tracks
     os.path.join(os.path.dirname(_SCRIPT_DIR), "tracks"),  # source: <root>/tracks
-    os.environ.get('TENTHS_TRACKS_DIR', ''),        # env override
 ]
 
 # Bundled landmark data — check frozen (bundled) and source layouts
@@ -199,32 +202,38 @@ def load_track_map(venue_name):
     return _load_from_md_file(venue_name)
 
 
-def _load_from_md_file(venue_name):
-    """Load track map from a tracks/*.md file (legacy fallback)."""
-    # Find the tracks directory
-    tracks_dir = None
-    for d in TRACK_MAPS_DIRS:
-        if os.path.isdir(d):
-            tracks_dir = d
-            break
-    if not tracks_dir:
-        return []
-
-    # Try exact match first, then fuzzy
+def _md_candidates_in(tracks_dir, venue_name):
+    """Candidate .md paths for a venue within one directory, best match first."""
     candidates = [
         os.path.join(tracks_dir, f"{venue_name}.md"),
         os.path.join(tracks_dir, f"{venue_name.replace(' ', '_')}.md"),
     ]
+    needle = venue_name.lower().replace(' ', '')
+    try:
+        for name in sorted(os.listdir(tracks_dir)):
+            if needle in name.lower().replace('_', '').replace(' ', ''):
+                candidates.append(os.path.join(tracks_dir, name))
+    except OSError:
+        pass
+    return candidates
 
-    # Also try partial matches
-    for f in os.listdir(tracks_dir):
-        if venue_name.lower().replace(' ', '') in f.lower().replace('_', '').replace(' ', ''):
-            candidates.append(os.path.join(tracks_dir, f))
 
+def _load_from_md_file(venue_name):
+    """Load track map from a tracks/*.md file (legacy fallback).
+
+    Every configured directory is searched in order. Stopping at the first
+    directory that merely existed meant a bundled `tracks` folder shadowed an
+    override even when it did not contain the requested map.
+    """
     filepath = None
-    for c in candidates:
-        if os.path.exists(c):
-            filepath = c
+    for tracks_dir in TRACK_MAPS_DIRS:
+        if not tracks_dir or not os.path.isdir(tracks_dir):
+            continue
+        for candidate in _md_candidates_in(tracks_dir, venue_name):
+            if os.path.exists(candidate):
+                filepath = candidate
+                break
+        if filepath:
             break
 
     if not filepath:

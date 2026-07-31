@@ -378,3 +378,158 @@ class TestSpeedRelativeThresholds:
         assert "spread_limit_mph" in html
         assert "over_braking_limit_mph" in html
         assert "apex_std_limit_mph" in html
+
+
+class TestResultParsingRobustness:
+    """RR-010: one bad field must not cost the whole race result."""
+
+    def _csv(self, tmp_path, rows):
+        header = ("Series,Season Year,Season Quarter,Race Week,Track,"
+                  "Strength of Field,Start Time\n")
+        meta = "Test Series,2026,3,1,Test Track,1500,2026-07-29 20:00\n"
+        cols = ("Fin Pos,Name,Car,Car Class,Start Pos,Laps Comp,Inc,Interval,"
+                "Average Lap Time,Fastest Lap Time,Fast Lap#,Cust ID,"
+                "Old iRating,New iRating,Old License Level,Old License Sub-Level,"
+                "New License Level,New License Sub-Level,Out\n")
+        path = tmp_path / "eventresult_1_0.csv"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(header + meta + "\n" + cols + "".join(rows))
+        return str(path)
+
+    def _row(self, fin="1", cust="1000", ir_old="1500", ir_new="1520", inc="0"):
+        return (f"{fin},Driver {cust},Car,GT3,{fin},10,{inc},-,1:30.000,1:29.500,3,"
+                f"{cust},{ir_old},{ir_new},12,300,12,310,Running\n")
+
+    def test_malformed_numeric_field_does_not_lose_the_file(self, tmp_path):
+        from tenths.results import parse_result
+        path = self._csv(tmp_path, [
+            self._row(fin="1", cust="1000"),
+            self._row(fin="NA", cust="2000", ir_old="", inc="x"),   # junk values
+            self._row(fin="3", cust="1434150"),
+        ])
+        data = parse_result(path, my_cust_id=1434150)
+        assert data is not None, "a single malformed row discarded the whole file"
+        assert len(data["results"]) == 3
+        assert data["my_result"] is not None
+        assert data["my_result"]["finish_pos"] == 3
+
+    def test_blank_irating_becomes_zero(self, tmp_path):
+        from tenths.results import parse_result
+        path = self._csv(tmp_path, [self._row(cust="1434150", ir_old="", ir_new="")])
+        data = parse_result(path, my_cust_id=1434150)
+        assert data["my_result"]["old_irating"] == 0
+        assert data["my_result"]["new_irating"] == 0
+
+    def test_string_customer_id_matches_int(self, tmp_path):
+        from tenths.results import parse_result
+        path = self._csv(tmp_path, [self._row(cust="1434150")])
+        assert parse_result(path, my_cust_id="1434150")["my_result"] is not None
+        assert parse_result(path, my_cust_id=1434150)["my_result"] is not None
+
+    def test_same_customer_helper(self):
+        from tenths.results import _same_customer
+        assert _same_customer(1434150, "1434150") is True
+        assert _same_customer("1434150", 1434150) is True
+        assert _same_customer(1434150, 1434150) is True
+        assert _same_customer(1434150, 999) is False
+        assert _same_customer(1434150, None) is False
+        assert _same_customer(None, 1434150) is False
+
+    def test_json_numeric_junk_tolerated(self, tmp_path):
+        import json as _json
+        from tenths.results import parse_result
+        payload = {"session_results": [{"simsession_name": "RACE", "results": [
+            {"finish_position": 0, "display_name": "A", "cust_id": 1434150,
+             "laps_complete": "bad", "incidents": None, "oldi_rating": "",
+             "newi_rating": 1520, "average_lap": "x", "best_lap_time": 895000},
+            "not a dict",
+        ]}]}
+        path = tmp_path / "eventresult-1.json"
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump(payload, f)
+        data = parse_result(str(path), my_cust_id="1434150")
+        assert data is not None
+        assert len(data["results"]) == 1, "unusable row should be skipped, valid kept"
+        assert data["my_result"]["laps_completed"] == 0
+        assert data["my_result"]["new_irating"] == 1520
+
+
+class TestStartupCommandAndTrackOverride:
+    """RR-020 and RR-015."""
+
+    def test_source_startup_command_launches_the_tray(self, fake_registry):
+        from tenths.service.tray import TenthsTray
+        cmd = TenthsTray()._startup_command()
+        assert cmd.startswith('"')
+        assert "tenths.cli" in cmd and "tray" in cmd
+
+    def test_frozen_startup_command_is_just_the_exe(self, fake_registry, monkeypatch):
+        import sys as _sys
+        from tenths.service.tray import TenthsTray
+        monkeypatch.setattr(_sys, "frozen", True, raising=False)
+        monkeypatch.setattr(_sys, "executable", r"C:\Program Files\Tenths\Tenths.exe")
+        cmd = TenthsTray()._startup_command()
+        assert cmd == r'"C:\Program Files\Tenths\Tenths.exe"'
+        assert "-m" not in cmd
+
+    def test_tracks_override_takes_precedence(self):
+        import tenths.track_map as tm
+        assert tm.TRACK_MAPS_DIRS[0] == os.environ.get('TENTHS_TRACKS_DIR', ''), \
+            "the override must be searched first, not last"
+
+    def test_override_dir_is_searched_even_if_bundled_exists(self, tmp_path, monkeypatch):
+        """The bundled folder must not shadow an override that has the map."""
+        import tenths.track_map as tm
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "unrelated.md").write_text("## Turn Map\n", encoding="utf-8")
+        override = tmp_path / "override"
+        override.mkdir()
+        (override / "mytrack.md").write_text(
+            "## Turn Map\n\n| Pct | Turn | Name |\n|---|---|---|\n| ~10% | **T1** | Alpha |\n",
+            encoding="utf-8")
+
+        monkeypatch.setattr(tm, "TRACK_MAPS_DIRS", [str(override), str(bundled)])
+        zones = tm._load_from_md_file("mytrack")
+        assert zones, "override directory was not searched"
+        assert zones[0]["turn"] == "T1"
+
+    def test_falls_through_to_later_dir_when_first_lacks_the_map(self, tmp_path, monkeypatch):
+        import tenths.track_map as tm
+        first = tmp_path / "first"
+        first.mkdir()
+        second = tmp_path / "second"
+        second.mkdir()
+        (second / "mytrack.md").write_text(
+            "## Turn Map\n\n| Pct | Turn | Name |\n|---|---|---|\n| ~20% | **T2** | Beta |\n",
+            encoding="utf-8")
+
+        monkeypatch.setattr(tm, "TRACK_MAPS_DIRS", [str(first), str(second)])
+        zones = tm._load_from_md_file("mytrack")
+        assert zones, "search stopped at the first existing directory"
+        assert zones[0]["turn"] == "T2"
+
+
+class TestPackagingMetadata:
+    """RR-011 (metadata only; signing needs a certificate)."""
+
+    def test_version_resource_exists(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "installer", "version_info.txt")
+        assert os.path.isfile(path)
+        content = open(path, encoding="utf-8").read()
+        for field in ("ProductName", "FileDescription", "FileVersion",
+                      "ProductVersion", "CompanyName"):
+            assert field in content
+
+    def test_spec_references_the_version_resource(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "installer", "tenths.spec")
+        assert "version_info.txt" in open(path, encoding="utf-8").read()
+
+    def test_version_matches_config(self):
+        from tenths.config import VERSION
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "installer", "version_info.txt")
+        content = open(path, encoding="utf-8").read()
+        assert VERSION in content, f"version resource does not mention {VERSION}"
