@@ -76,6 +76,22 @@ ICON_PATH = os.path.join(ASSETS_DIR, "tenths.ico")
 # Downloads folder — for race result CSV auto-matching
 DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
 
+
+def _default_app_data_dir():
+    """Per-user application data directory (%LOCALAPPDATA%\\Tenths)."""
+    base = os.environ.get('LOCALAPPDATA')
+    if not base:
+        base = os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    return os.path.join(base, "Tenths")
+
+
+# Application data — logs live here. The installer removes this on uninstall.
+APP_DATA_DIR = os.environ.get('TENTHS_APP_DATA', _default_app_data_dir())
+
+# Log directory. The packaged app runs without a console, so the log file is the
+# only way a user (or a beta tester filing a report) can see what went wrong.
+LOG_DIR = os.environ.get('TENTHS_LOG_DIR', os.path.join(APP_DATA_DIR, "logs"))
+
 # ── Processing Settings ───────────────────────────────────────────────────────
 
 # Minimum file size to process (below this is a false start)

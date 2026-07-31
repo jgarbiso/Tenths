@@ -13,7 +13,7 @@ Items identified during development that are acceptable for current use but shou
 | W1 | `_set_low_priority()` lowers entire process priority, not per-thread | Main loop also runs at below-normal during processing | Before adding tray UI in same process (Tier 3) |
 | W2 | `_can_open_exclusive()` uses shared read, not true exclusive lock | Could theoretically trigger if iRacing allows read while still writing | If false triggers observed in production |
 | W3 | No processing of pre-existing .ibt files on startup | Files present before watcher starts are missed | Tier 2 — add startup scan |
-| W4 | `_processed` set grows unbounded | Negligible for typical sessions (1-5 per evening) | If watcher runs continuously for weeks |
+| W4 | `_states` dict grows unbounded (was `_processed`) | One small record per .ibt seen since start. Negligible for typical use; replaced the old set in RR-004 and now also carries attempt counts and errors. | If the watcher runs for weeks; evict DONE records by age |
 
 ## Analyzer (`tenths/analyzer.py`)
 

@@ -69,7 +69,7 @@ Remediation must not regress the following behavior:
 | RR-001 | Release gate | Landmark and dependency licensing/notices | Human verification of source terms |
 | RR-002 | Release blocker | NumPy values serialize as strings and cause false PB badges | None |
 | RR-003 | Release blocker | Progression cannot traverse canonical date/time session layout | RR-006 stage A path helper |
-| RR-004 | Release blocker | Watcher failures are silent, permanent, and not retried | RR-006 artifact transaction contract |
+| RR-004 | Release blocker | ~~Watcher failures are silent, permanent, and not retried~~ **RESOLVED 2026-07-29** | None |
 | RR-005 | Release blocker | Watcher misses files present at startup | RR-004 state model |
 | RR-006 | Release blocker | Manual processing emits one representative report per day | None |
 | RR-007 | High | Manual processing is not failure-isolated or transactional | RR-006 |
@@ -78,7 +78,7 @@ Remediation must not regress the following behavior:
 | RR-010 | High | Race-result parsing aborts on malformed row values | None |
 | RR-011 | High | Executable is unsigned and lacks metadata | Release credentials for signing |
 | RR-012 | Medium | First-run telemetry guidance is ineffective | RR-004/RR-005 |
-| RR-013 | Medium | Tray tracks the latest report before processing completes | RR-004 completion signal |
+| RR-013 | Medium | ~~Tray tracks the latest report before processing completes~~ **RESOLVED 2026-07-29** with RR-004's `on_complete` callback | None |
 | RR-014 | Execution prerequisite | ~~Tests mutate HKCU and depend on developer-local data~~ **RESOLVED 2026-07-29** | None |
 | RR-015 | Medium | `TENTHS_TRACKS_DIR` is shadowed by built-in directories | None |
 | RR-016 | Medium | Summary threshold differs between specs and implementation | Product decisions |
@@ -242,6 +242,20 @@ Rules:
 - Tests mock notifier and filesystem state rather than displaying real notifications.
 
 **Acceptance criteria:** No processing exception can become invisible in the packaged `console=False` application, and a retryable file is not permanently stranded in memory state.
+
+**Resolution (2026-07-29).**
+
+- **Durable logging.** New `tenths/applog.py` writes a rotating UTF-8 log to `%LOCALAPPDATA%\Tenths\logs\tenths.log` (2 MB × 3, the path the installer already removes on uninstall). A console handler is added only when stdout exists, so `tenths watch` still prints while the frozen tray logs silently to file. Setup never raises: an unwritable log directory degrades to no file logging rather than killing the app. `cli.main` and `tray.main` both configure it, and the tray logs unhandled exceptions via `log.exception`.
+- **Explicit state model.** `_processed` is replaced by `_states` under an `RLock`, with `FileState.PENDING / IN_PROGRESS / DONE / FAILED`. `_claim()` dedupes duplicate filesystem events and concurrent workers but still permits a retry, which the old set could not.
+- **Bounded retries.** `MAX_ATTEMPTS = 3` with `RETRY_BACKOFF_SECONDS = (10, 45)`. Retries are dispatched from the existing 2-second stability tick, so there is no busy loop and no extra thread.
+- **Failures surface.** Retryable failures log a warning; exhausting attempts logs an error with traceback, calls `notify_error()`, and leaves the `.ibt` in place. A broken notifier is itself logged rather than masking the original error. On shutdown the watcher lists every session that could not be processed.
+- **Success is earned.** `REQUIRED_ARTIFACTS` (report, notes, summary) must all exist before the source is archived; a missing artifact raises and triggers the retry path. Notification, index regeneration, browser opening and archiving are individually nonfatal but logged — a failed archive no longer discards a session whose outputs succeeded.
+- **Permanent conditions are not retried.** An unparseable filename or an `.ibt` with no valid laps is logged and closed out, since a retry cannot change either.
+- **No duplicate observers.** `start()` refuses to run twice; the tray no longer monkey-patches `_on_file_ready` and instead receives an `on_complete(report_path)` callback, which also fixes RR-013.
+
+Verified end to end: a stub failing twice then succeeding produced 3 attempts, state `done`, and no user-facing alarm; a permanently failing stub produced 3 attempts, state `failed`, an error notification reading `processing: disk full`, and the source retained. A real fixture processed cleanly, writing all three artifacts, archiving afterwards, and firing `on_complete` with the report path. `tests/test_watcher_reliability.py` adds 26 tests; suite 369 passed.
+
+Also fixed here: RR-013 (tray now learns the report path on completion). Not addressed: the watcher's `telemetry_root` argument controls what it watches, but `_run_pipeline` writes to the global `config.TELEMETRY_ROOT`. Those differ only when the argument is used, which today is tests. Fold into RR-006's canonical path work.
 
 ### RR-005 — Process existing telemetry when the watcher starts
 
@@ -423,6 +437,8 @@ Replace the current monkey-patch timing with an explicit processing-complete cal
 
 **Acceptance criteria:** After a new session completes, Open Last Report opens that session; while processing, it never records a nonexistent or previous path as the new result.
 
+**Resolution (2026-07-29), with RR-004.** `TelemetryWatcher` accepts `on_complete(report_path)` and calls it only after every required artifact exists. The tray supplies `_on_session_complete` and no longer monkey-patches `_on_file_ready`, so `_last_report` can no longer be set to a path that does not exist yet. `_start_watcher` also refuses to start a second watcher thread if one is alive. Verified end to end: the callback fired once, with the real report path.
+
 ### RR-014 — Remove machine state and local-data dependence from tests
 
 **Files:** `tests/test_tray.py`, `tests/conftest.py`, related integration tests.
@@ -597,7 +613,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [ ] RR-001 provenance and third-party notices approved.
 - [ ] RR-002 false-PB serialization fixed with NumPy production tests.
 - [ ] RR-003 progression works across nested dates and same-day sessions.
-- [ ] RR-004 failures retry, notify, and log without stranding input.
+- [x] RR-004 failures retry, notify, and log without stranding input. Rotating log at `%LOCALAPPDATA%\Tenths\logs\tenths.log`; 3 attempts with backoff; artifacts verified before archiving.
 - [ ] RR-005 startup scan processes files created while Tenths was stopped.
 - [ ] RR-006 watcher and `process` produce complete per-session artifacts; standalone commands preserve their artifact-specific semantics in the canonical directory.
 - [ ] RR-007 manual processing is isolated and archives only after success.
@@ -606,7 +622,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [ ] RR-010 race-result parsing tolerates bad fields/rows.
 - [ ] RR-011 release artifacts carry metadata and approved signatures.
 - [ ] RR-012 first-run setup guidance is visible and actionable.
-- [ ] RR-013 tray receives the completed report path.
+- [x] RR-013 tray receives the completed report path via `on_complete`.
 - [x] RR-014 tests are portable and side-effect free. Registry isolated (verified with a sentinel); committed scrubbed telemetry fixtures give 343 passing with zero skips on a clean checkout.
 - [ ] RR-015 environment track-map override works as documented.
 - [ ] RR-016 threshold decision is consistent across code/spec/tests.

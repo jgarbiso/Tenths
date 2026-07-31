@@ -37,6 +37,8 @@ a = Analysis(
         'tenths',
         'tenths.cli',
         'tenths.config',
+        'tenths.applog',
+        'logging.handlers',
         'tenths.analyzer',
         'tenths.process',
         'tenths.report',

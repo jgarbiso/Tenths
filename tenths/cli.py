@@ -15,7 +15,10 @@ import os
 
 def main():
     from tenths.config import configure_console
+    from tenths.applog import configure_logging
     configure_console()
+    # Console output plus a durable log file, so a failure is always recoverable
+    configure_logging()
 
     if len(sys.argv) < 2:
         print_help()

@@ -133,6 +133,16 @@ To show your finishing position and iRating change on race reports, export the r
 **No report appeared after my session.**
 Telemetry logging probably wasn't on. Confirm Step 2 — press Alt+L in-sim, or set `irsdkLogAll=1` in `app.ini`. Check that new `.ibt` files are appearing in `Documents\iRacing\telemetry\`.
 
+If the `.ibt` file is there but no report appeared, check the log (below) — Tenths records why.
+
+**Where is the log file?**
+
+```
+%LOCALAPPDATA%\Tenths\logs\tenths.log
+```
+
+Paste that path into Explorer's address bar to open the folder. The log records every session Tenths processes, and the reason for any failure. Tenths retries a failed session a few times before giving up, and shows a notification if it does; the `.ibt` is left in place so nothing is lost. **If you are reporting a problem, please include this file** — it is the difference between a fixable report and a guess.
+
 **Tenths showed a "Telemetry folder not found" notification.**
 Tenths couldn't find `Documents\iRacing\telemetry\`. Enable telemetry in iRacing (Step 2) so the folder gets created, then restart Tenths from the Start Menu.
 

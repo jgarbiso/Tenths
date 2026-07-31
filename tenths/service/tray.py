@@ -81,19 +81,19 @@ class TenthsTray:
 
     def _start_watcher(self):
         """Start the file watcher in a background thread."""
-        self._watcher = TelemetryWatcher(auto_open=False)
-        # Monkey-patch the on_file_ready to track last report
-        original_on_ready = self._watcher._on_file_ready
+        if self._watcher_thread is not None and self._watcher_thread.is_alive():
+            return  # already running; never start a second observer
 
-        def patched_on_ready(filepath):
-            original_on_ready(filepath)
-            # After processing, find the most recent report
-            self._last_report = self._find_latest_report()
-
-        self._watcher._on_file_ready = patched_on_ready
-
+        # The watcher reports the finished report path once processing actually
+        # completes, rather than the tray guessing immediately after dispatch.
+        self._watcher = TelemetryWatcher(auto_open=False,
+                                        on_complete=self._on_session_complete)
         self._watcher_thread = threading.Thread(target=self._watcher.start, daemon=True)
         self._watcher_thread.start()
+
+    def _on_session_complete(self, report_path):
+        """Called by the watcher once a session's report exists on disk."""
+        self._last_report = report_path
 
     def _open_last_report(self, icon=None, item=None):
         """Open the most recent session report in the browser."""
@@ -176,9 +176,20 @@ class TenthsTray:
 def main():
     """Entry point for the tray application."""
     from tenths.config import configure_console
+    from tenths.applog import configure_logging, get_logger
     configure_console()
-    app = TenthsTray()
-    app.run()
+    # The frozen tray has no console, so the log file is the only record.
+    log_file = configure_logging()
+    log = get_logger(__name__)
+    log.info("Tenths tray starting (log: %s)", log_file)
+    try:
+        app = TenthsTray()
+        app.run()
+    except Exception:
+        log.exception("Tray application terminated with an unhandled error")
+        raise
+    finally:
+        log.info("Tenths tray stopped")
 
 
 if __name__ == "__main__":
