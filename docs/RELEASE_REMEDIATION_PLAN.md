@@ -79,7 +79,7 @@ Remediation must not regress the following behavior:
 | RR-011 | High | Executable is unsigned and lacks metadata | Release credentials for signing |
 | RR-012 | Medium | First-run telemetry guidance is ineffective | RR-004/RR-005 |
 | RR-013 | Medium | Tray tracks the latest report before processing completes | RR-004 completion signal |
-| RR-014 | Execution prerequisite | Tests mutate HKCU and depend on developer-local data | None; resolve before other code work |
+| RR-014 | Execution prerequisite | ~~Tests mutate HKCU~~ **RESOLVED 2026-07-29**; portable `.ibt` fixtures still outstanding | None |
 | RR-015 | Medium | `TENTHS_TRACKS_DIR` is shadowed by built-in directories | None |
 | RR-016 | Medium | Summary threshold differs between specs and implementation | Product decisions |
 | RR-017 | Medium | User documentation contains incorrect feature/behavior claims | Functional fixes above |
@@ -437,6 +437,23 @@ Required changes:
 
 **Acceptance criteria:** The full suite produces no persistent machine changes and exercises the same behavior on a clean machine or CI runner.
 
+**Resolution (2026-07-29) — machine safety done, portable .ibt fixtures still outstanding.**
+
+Done:
+
+- `tests/conftest.py` adds a `FakeRegistry` in-memory stand-in for the `winreg` subset `tray.py` uses, plus an **autouse** `_never_touch_real_registry` fixture that substitutes it for every test. No test can reach `HKCU`, including tests added later.
+- `tests/test_tray.py` rewritten: registry behaviour is now asserted against the fake (value written, quoted command, round trip, absent-value delete, denied write, handle closing, Run-key path). The previously destructive `test_register_unregister_cycle` is gone.
+- The vacuous report-lookup tests are replaced with temporary trees using controlled mtimes, covering newest-wins, nested `car/track/date/time` discovery, empty tree, and non-report files.
+- `TELEMETRY_ARCHIVE` no longer hardcodes a developer path. It derives from the user profile and honours a `TENTHS_TEST_ARCHIVE` override.
+- Tray tests grew from 8 to 22. Suite total 284.
+
+Verified by planting a sentinel value under the real Run key, running the tray tests, and confirming it survived unchanged — the old test would have deleted it. Sentinel removed afterwards; the key is absent, as it was before.
+
+Still outstanding (does not block beta, does block CI):
+
+- With `TENTHS_TEST_ARCHIVE` pointed at a nonexistent directory, **33 tests skip** because they need real `.ibt` files. The `.ibt` parsing and analysis pipeline is therefore unverified on any machine without the developer's archive.
+- Fixing this needs either a committed sample `.ibt` or a synthetic `.ibt` builder. A real race `.ibt` contains other drivers' names and customer IDs, so committing one is a data-rights decision, not just a technical one. A synthetic builder is the safer route.
+
 ### RR-015 — Make `TENTHS_TRACKS_DIR` a real override
 
 **Files:** `tenths/track_map.py`, `tests/test_track_map.py`.
@@ -566,7 +583,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [ ] RR-011 release artifacts carry metadata and approved signatures.
 - [ ] RR-012 first-run setup guidance is visible and actionable.
 - [ ] RR-013 tray receives the completed report path.
-- [ ] RR-014 tests are portable and side-effect free.
+- [x] RR-014 tests are side-effect free (registry isolated, verified with a sentinel). Portable `.ibt` fixtures still outstanding — 33 tests skip without local telemetry.
 - [ ] RR-015 environment track-map override works as documented.
 - [ ] RR-016 threshold decision is consistent across code/spec/tests.
 - [ ] RR-017 all documentation matches production behavior.
