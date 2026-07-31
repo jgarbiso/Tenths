@@ -37,6 +37,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+# Makes test helper modules (e.g. synthetic_ibt) importable regardless of the
+# import mode pytest defaults to.
+pythonpath = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -114,6 +114,7 @@ Audited 2026-07-28 against the Ferrari 296 GT3 race at Qualcomm Circuit (5409m, 
 
 ### Corner windows
 
+- **Zone splitting** (`_zone_ids` / `_zone_gap_pct`): consecutive braking samples become separate zones when the gap between them exceeds `ZONE_GAP_METERS` (120m), converted to a lap percentage and clamped to 1–10%. The original fixed 5% is 270m on a 5409m lap, which **merged T2 and T3 into one 384m "corner"** and reported their combined time as T2. Verified A/B on real sessions: Qualcomm went 6 zones to 7 with T2 and T3 correctly separated, and Winton (2945m) was unchanged at 5 zones. This also removed the duplicate turn labels previously seen (A3).
 - **Sector windows** (`_corner_sectors`): `centre-3%` to `centre+8%`, clamped to the midpoint between adjacent corner centres. Before clamping, 4 of 8 sectors overlapped on this circuit, so summed per-corner losses double-counted track.
 - **Apex windows** (`_apex_reference_pcts` + `_apex_window`): the apex is located on the best lap by searching from 60m before to 300m after the braking-zone centre (never past the next corner), then all laps are sampled ±100m around that fixed apex position, clamped to neighbour midpoints.
 - **Why the apex must be located, not assumed:** a window centred on the braking zone catches the car at entry speed on some laps and at the apex on others. That manufactures variance which is not driver error. It produced a false "8.5 mph over-slowing at T6" where the flagged lap was actually the *fastest* through that corner.
@@ -131,6 +132,7 @@ Spread on fast corners is still noisy: T13 reported 14.9 mph spread at an 85.9 m
 
 ### Rules for future speed-based metrics
 
+0. **Any threshold describing a distance must be expressed in metres** and converted using track length. Three separate defects (apex window, sector overlap, zone splitting) were all the same root cause: a percentage constant tuned on a medium-length circuit behaving completely differently on a 5.4km lap.
 1. Bound windows in metres, converted via track length — never raw percentages.
 2. Centre on the phenomenon being measured (apex for min speed), not a proxy.
 3. Clamp to neighbouring corners so two corners never share samples.

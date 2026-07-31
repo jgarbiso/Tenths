@@ -214,3 +214,54 @@ class TestSampleRateNotHardcoded:
         # Same physical laps, so a correct implementation reports half the time
         # at double the rate — proving the rate is actually applied.
         assert at60[0]['avg'] == pytest.approx(at120[0]['avg'] * 2, rel=1e-6)
+
+
+class TestZoneSplitIsDistanceBased:
+    """Braking zones must split on a real distance gap, not a fixed percentage.
+
+    On the 5409m Qualcomm lap the old fixed 5% threshold (270m) merged T2 and T3
+    into a single 384m "corner" and reported their combined time as T2.
+    """
+
+    def test_threshold_shrinks_on_longer_tracks(self):
+        from tenths.analyzer import _zone_gap_pct
+        assert _zone_gap_pct(5409) < _zone_gap_pct(2945)
+
+    def test_threshold_is_the_configured_distance(self):
+        from tenths.analyzer import _zone_gap_pct, ZONE_GAP_METERS
+        track = 5409.0
+        assert _zone_gap_pct(track) == pytest.approx(ZONE_GAP_METERS / track * 100, abs=0.01)
+
+    def test_threshold_clamped_for_extreme_tracks(self):
+        from tenths.analyzer import (_zone_gap_pct, ZONE_GAP_MIN_PCT, ZONE_GAP_MAX_PCT)
+        assert _zone_gap_pct(50000) == pytest.approx(ZONE_GAP_MIN_PCT)
+        assert _zone_gap_pct(500) == pytest.approx(ZONE_GAP_MAX_PCT)
+
+    def test_falls_back_without_track_length(self):
+        from tenths.analyzer import _zone_gap_pct, DEFAULT_ZONE_GAP_PCT
+        assert _zone_gap_pct(None) == DEFAULT_ZONE_GAP_PCT
+        assert _zone_gap_pct(0) == DEFAULT_ZONE_GAP_PCT
+
+    def test_corners_206m_apart_stay_separate_on_a_long_lap(self):
+        """The T2/T3 case: a 206m gap must be two zones on a 5409m lap."""
+        from tenths.analyzer import _zone_ids
+        track = 5409.0
+        # Braking samples for two corners separated by 206m (3.8% of the lap)
+        first = np.arange(9.1, 11.8, 0.05)
+        second = np.arange(15.5, 18.2, 0.05)
+        pct = pd.Series(np.concatenate([first, second]))
+        ids = _zone_ids(pct, track)
+        assert ids.nunique() == 2, "corners 206m apart were merged into one zone"
+
+    def test_same_gap_merges_when_it_is_genuinely_short(self):
+        """The same 3.8% gap on a 1200m lap is only 46m — one braking event."""
+        from tenths.analyzer import _zone_ids
+        first = np.arange(9.1, 11.8, 0.05)
+        second = np.arange(15.5, 18.2, 0.05)
+        pct = pd.Series(np.concatenate([first, second]))
+        assert _zone_ids(pct, 1200.0).nunique() == 1
+
+    def test_continuous_braking_is_one_zone(self):
+        from tenths.analyzer import _zone_ids
+        pct = pd.Series(np.arange(20.0, 24.0, 0.05))
+        assert _zone_ids(pct, 5409.0).nunique() == 1

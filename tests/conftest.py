@@ -174,3 +174,33 @@ def _never_touch_real_registry(monkeypatch, request):
     except Exception:
         return  # tray deps unavailable; nothing to guard
     monkeypatch.setattr(tray, "winreg", FakeRegistry())
+
+
+# ─── Synthetic telemetry (machine independent) ────────────────────────────────
+
+@pytest.fixture(scope="session")
+def synthetic_session(tmp_path_factory):
+    """Build a synthetic .ibt once per test session and return its ground truth.
+
+    Unlike the real-.ibt fixtures this runs anywhere, and every apex speed and
+    lap time is known exactly rather than merely plausible.
+    """
+    from synthetic_ibt import build_ibt, default_test_corners
+
+    path = tmp_path_factory.mktemp("synthetic") / "testcar_testcircuit 2026-07-29 20-00-00.ibt"
+    return build_ibt(str(path), default_test_corners(), laps=6, track_length_m=2000.0)
+
+
+@pytest.fixture(scope="session")
+def synthetic_data(synthetic_session):
+    """analyze() output for the synthetic session."""
+    from tenths.analyzer import analyze
+    data = analyze(synthetic_session["path"])
+    assert data is not None, "analyze() failed on the synthetic .ibt"
+    return data
+
+
+@pytest.fixture(scope="session")
+def synthetic_file_info(synthetic_session):
+    from tenths.process import parse_filename
+    return parse_filename(synthetic_session["path"])

@@ -725,14 +725,19 @@ def analyze(filepath):
     early_avg = np.mean([int(df[df['Lap']==l]['BrakeABSactive'].sum()) for l in early])
     late_avg = np.mean([int(df[df['Lap']==l]['BrakeABSactive'].sum()) for l in late])
 
+    # Track length first — every zone and window threshold is derived from a real
+    # distance rather than a percentage of an unknown-length lap
+    track_length = _track_length_from(df, best_lap)
+
     # Braking zones (best lap)
-    braking_zones = _extract_braking_zones(df, best_lap, vehicle, sample_rate)
+    braking_zones = _extract_braking_zones(df, best_lap, vehicle, sample_rate, track_length)
 
     # Trail braking (best lap)
-    trail_braking = _extract_trail_braking(df, best_lap)
+    trail_braking = _extract_trail_braking(df, best_lap, track_length)
 
     # Corner variance (uses the rate derived from the file, not a fixed 60Hz)
-    corner_variance = _extract_corner_variance(df, valid_laps, best_lap, sample_rate)
+    corner_variance = _extract_corner_variance(
+        df, valid_laps, best_lap, sample_rate, track_length)
 
     # Tire temps
     tire_temps = _extract_tire_temps(df, best_lap)
@@ -749,12 +754,6 @@ def analyze(filepath):
 
     # Per-lap brake points (for consistency overlay)
     per_lap_brake_points = _extract_per_lap_brake_points(df, valid_laps, braking_zones)
-
-    # Track length — needed before apex analysis so the apex search window can be
-    # a real distance rather than a percentage of an unknown-length lap
-    track_length = 0
-    if 'LapDist' in df.columns:
-        track_length = float(df[df['Lap'] == best_lap]['LapDist'].max())
 
     # Apex speed consistency + Min Speed Spread (per-zone, across laps)
     apex_consistency = _extract_apex_consistency(
@@ -799,7 +798,7 @@ def analyze(filepath):
     }
 
 
-def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60):
+def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60, track_length_m=None):
     """Extract braking zone data as list of dicts."""
     car_class = detect_car_class(vehicle)
     lap = df[df['Lap'] == lap_num].copy().reset_index(drop=True)
@@ -807,7 +806,7 @@ def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60):
     braking = lap[lap['Brake'] > 50][['LapDistPct','Speed','Brake','BrakeABSactive']].copy()
     if braking.empty:
         return []
-    braking['zone'] = (braking['LapDistPct'].diff().abs() > 5).cumsum()
+    braking['zone'] = _zone_ids(braking['LapDistPct'], track_length_m)
 
     has_gear = 'Gear' in lap.columns and lap['Gear'].max() > 0
     has_gps = 'Lat' in lap.columns and 'Lon' in lap.columns
@@ -976,7 +975,7 @@ def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60):
     return zones
 
 
-def _extract_trail_braking(df, lap_num):
+def _extract_trail_braking(df, lap_num, track_length_m=None):
     """Extract trail braking data as list of dicts."""
     lap = df[df['Lap'] == lap_num].copy()
     trail = lap[
@@ -985,7 +984,7 @@ def _extract_trail_braking(df, lap_num):
     if trail.empty:
         return []
 
-    trail['zone'] = (trail['LapDistPct'].diff().abs() > 5).cumsum()
+    trail['zone'] = _zone_ids(trail['LapDistPct'], track_length_m)
     results = []
     for z, grp in trail.groupby('zone'):
         pos = grp['LapDistPct'].mean()
@@ -1025,7 +1024,7 @@ def _corner_sectors(zone_centers, lead_pct=3.0, trail_pct=8.0):
     return sectors
 
 
-def _extract_corner_variance(df, valid_laps, best_lap, sample_rate=60):
+def _extract_corner_variance(df, valid_laps, best_lap, sample_rate=60, track_length_m=None):
     """Extract corner variance data as list of dicts.
 
     Time in each sector is sample_count / sample_rate. Validated against
@@ -1054,7 +1053,7 @@ def _extract_corner_variance(df, valid_laps, best_lap, sample_rate=60):
     if braking.empty:
         return []
 
-    braking['zone'] = (braking['LapDistPct'].diff().abs() > 5).cumsum()
+    braking['zone'] = _zone_ids(braking['LapDistPct'], track_length_m)
     zone_centers = braking.groupby('zone')['LapDistPct'].mean().values
 
     sectors = _corner_sectors(zone_centers)
@@ -1230,6 +1229,39 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
         })
 
     return results
+
+
+# Gap between braking samples that marks a new braking zone. Expressed in metres
+# because a fixed percentage does not scale: the original 5% is 270m on a 5.4km
+# lap, which merges genuinely separate corners into one zone and then reports a
+# neighbouring corner's apex speed.
+ZONE_GAP_METERS = 120.0
+DEFAULT_ZONE_GAP_PCT = 5.0
+ZONE_GAP_MIN_PCT = 1.0
+ZONE_GAP_MAX_PCT = 10.0
+
+
+def _zone_gap_pct(track_length_m=None):
+    """Distance-based zone split threshold, as a percentage of the lap."""
+    if track_length_m and track_length_m > 0:
+        gap = (ZONE_GAP_METERS / float(track_length_m)) * 100.0
+        return min(max(gap, ZONE_GAP_MIN_PCT), ZONE_GAP_MAX_PCT)
+    return DEFAULT_ZONE_GAP_PCT
+
+
+def _zone_ids(pct_series, track_length_m=None):
+    """Group consecutive samples into zones, splitting on a real distance gap."""
+    return (pct_series.diff().abs() > _zone_gap_pct(track_length_m)).cumsum()
+
+
+def _track_length_from(df, lap_num):
+    """Lap length in metres from the LapDist channel, or 0 if unavailable."""
+    if 'LapDist' not in df.columns:
+        return 0.0
+    lap_data = df[df['Lap'] == lap_num]
+    if lap_data.empty:
+        return 0.0
+    return float(lap_data['LapDist'].max())
 
 
 def _clean_lap_numbers(df, valid_laps, slower_factor=1.10, min_laps=3, fallback_n=5):

@@ -449,10 +449,25 @@ Done:
 
 Verified by planting a sentinel value under the real Run key, running the tray tests, and confirming it survived unchanged — the old test would have deleted it. Sentinel removed afterwards; the key is absent, as it was before.
 
-Still outstanding (does not block beta, does block CI):
+**Synthetic telemetry (2026-07-29) — pipeline now verified on any machine.**
 
-- With `TENTHS_TEST_ARCHIVE` pointed at a nonexistent directory, **33 tests skip** because they need real `.ibt` files. The `.ibt` parsing and analysis pipeline is therefore unverified on any machine without the developer's archive.
-- Fixing this needs either a committed sample `.ibt` or a synthetic `.ibt` builder. A real race `.ibt` contains other drivers' names and customer IDs, so committing one is a data-rights decision, not just a technical one. A synthetic builder is the safer route.
+`tests/synthetic_ibt.py` writes a byte-valid `.ibt` that pyirsdk opens: header, `DiskSubHeader`, var headers, session-info YAML and sample rows, in native iRacing units. No real telemetry is committed, so no third-party names or customer IDs are exposed.
+
+Its advantage over real files is **exact ground truth**. Corner apex speeds and lap times are dialled in, so the analyser can be asserted precisely instead of against loose ranges:
+
+- Lap times recovered to the millisecond; valid laps, best lap and track length exact.
+- Out-lap and in-lap correctly rejected by lap validity.
+- Three corners driven identically report 0.000s loss and ~0 spread; the one inconsistent corner takes all the loss and a spread matching its configured speed range.
+- A 120Hz variant proves sector timing uses the derived sample rate.
+- `tests/test_pipeline_synthetic.py` — 35 tests covering parsing, lap detection, zone detection, min-speed metrics, loss attribution, summary JSON, HTML report and Markdown notes.
+
+Clean-machine coverage went from 251 to 286 passing. Suite total 326.
+
+**Regression value proven immediately.** A Qualcomm-like synthetic session (5409m, corners a few percent apart, every lap identical) failed on first run, exposing a genuine pre-existing defect: braking zones were split on a fixed 5% gap, which is 270m on that lap, so **T2 and T3 were merged into one 384m zone** and their combined time reported as T2. Fixed via `ZONE_GAP_METERS`; A/B confirmed Qualcomm 6 zones to 7 with T2/T3 separated and Winton unchanged.
+
+Still outstanding:
+
+- 33 real-`.ibt` tests still skip without the developer's archive. They now supplement the synthetic baseline rather than being the only coverage, so CI is viable; converting them is optional.
 
 ### RR-015 — Make `TENTHS_TRACKS_DIR` a real override
 
