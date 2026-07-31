@@ -17,6 +17,7 @@ import json
 import os
 from datetime import datetime, timezone
 
+from tenths.jsonio import dump_json
 from tenths.track_map import get_turn_name
 
 CURRENT_SCHEMA_VERSION = "1.0.0"
@@ -41,7 +42,10 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
         'name': si.get('car_screen_name') or file_info['car'].replace('_', ' '),
         'short_name': si.get('car_screen_name_short', ''),
         'path': si.get('car_path', file_info['car']),
-        'class': data.get('car_class', 'Touring'),
+        # iRacing's own class name, not the internal physics profile
+        'class': data.get('car_class_display') or si.get('car_class_short')
+                 or data.get('car_class', 'Generic'),
+        'physics_profile': data.get('physics_profile') or data.get('car_class', 'Generic'),
         'class_short': si.get('car_class_short', ''),
         'id': si.get('car_id', 0),
         'redline_rpm': si.get('driver_car_redline', 0),
@@ -229,6 +233,72 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
     return summary
 
 
+# Session output lives at car/track/date/time, but older output sits at
+# car/track/date. History discovery must handle both.
+_MAX_HISTORY_DEPTH = 3
+
+
+def _looks_like_date(name):
+    return len(name) == 10 and name[4] == '-' and name[7] == '-' and \
+        name[:4].isdigit() and name[5:7].isdigit() and name[8:].isdigit()
+
+
+def _find_track_dir(session_dir):
+    """Walk up from a session directory to the car/track directory.
+
+    Handles both layouts: car/track/date/time (watcher output) and the older
+    car/track/date. Previously this assumed the parent was always the track
+    directory, so for time-level folders it only ever searched the current date
+    and never found earlier sessions.
+    """
+    path = os.path.abspath(session_dir)
+    parent = os.path.dirname(path)
+    grandparent = os.path.dirname(parent)
+
+    # .../track/date/time -> parent is a date, so the track dir is above it
+    if _looks_like_date(os.path.basename(parent)) and os.path.isdir(grandparent):
+        return grandparent
+    # .../track/date
+    if _looks_like_date(os.path.basename(path)) and os.path.isdir(parent):
+        return parent
+    # Unrecognised shape: treat the parent as the track directory
+    return parent if os.path.isdir(parent) else None
+
+
+def _find_session_summaries(track_dir, max_depth=_MAX_HISTORY_DEPTH):
+    """Every session_summary.json beneath a car/track directory.
+
+    Bounded depth keeps this cheap — one car/track tree, not the whole telemetry
+    root.
+    """
+    found = []
+    base_depth = os.path.abspath(track_dir).rstrip(os.sep).count(os.sep)
+    for root, dirs, files in os.walk(track_dir):
+        if os.path.abspath(root).rstrip(os.sep).count(os.sep) - base_depth >= max_depth:
+            dirs[:] = []
+        if 'session_summary.json' in files:
+            found.append(os.path.join(root, 'session_summary.json'))
+    return found
+
+
+def _date_from_path(summary_file, track_dir):
+    """Recover a session date from the path when the summary omits it."""
+    relative = os.path.relpath(os.path.dirname(summary_file), track_dir)
+    for part in relative.split(os.sep):
+        if _looks_like_date(part):
+            return part
+    return relative.split(os.sep)[0] if relative != '.' else ''
+
+
+def _time_from_path(summary_file):
+    """Recover the session time label (HH-MM-SS) from the folder name."""
+    name = os.path.basename(os.path.dirname(summary_file))
+    parts = name.split('-')
+    if len(parts) == 3 and all(p.isdigit() for p in parts):
+        return name
+    return ''
+
+
 def compute_progression(summary, session_dir):
     """Compute session-over-session progression data.
 
@@ -267,46 +337,86 @@ def compute_progression(summary, session_dir):
     if not session_dir or not os.path.isdir(session_dir):
         return None
 
-    # Navigate up to car/track level (session_dir is .../car/track/date)
-    track_dir = os.path.dirname(session_dir)
-    if not os.path.isdir(track_dir):
+    track_dir = _find_track_dir(session_dir)
+    if not track_dir:
         return None
 
     current_date = summary.get('session', {}).get('date', '')
+    current_time_label = summary.get('session', {}).get('time', '')
+    current_path = os.path.normcase(os.path.abspath(
+        os.path.join(session_dir, 'session_summary.json')))
+    current_identity = (str(current_date), str(current_time_label or ''))
 
-    # Find all session_summary.json files in sibling date directories
     previous_sessions = []
-    for date_dir_name in sorted(os.listdir(track_dir)):
-        date_path = os.path.join(track_dir, date_dir_name)
-        if not os.path.isdir(date_path):
-            continue
-        summary_file = os.path.join(date_path, 'session_summary.json')
-        if not os.path.exists(summary_file):
-            continue
-        # Skip the current session
-        if date_dir_name == current_date:
+    seen_identities = set()
+    for summary_file in _find_session_summaries(track_dir):
+        # Exclude the current session by path. Comparing directory names against
+        # the session date failed for time-level folders, so reprocessing a
+        # session made it read its own stale summary as the previous session and
+        # report a delta of +0.000s against itself.
+        if os.path.normcase(os.path.abspath(summary_file)) == current_path:
             continue
 
         try:
             with open(summary_file, 'r', encoding='utf-8') as f:
                 prev = json.load(f)
-            prev_time = prev.get('best_lap', {}).get('time_seconds', 0)
-            if prev_time > 0:
-                previous_sessions.append({
-                    'date': prev.get('session', {}).get('date', date_dir_name),
-                    'best_lap_time_s': prev_time,
-                    'cleanest_abs': prev.get('abs', {}).get('cleanest_hits', 0),
-                    'total_recoverable_s': prev.get('total_recoverable_time_s', 0),
-                    'abs_avg': sum(prev.get('abs', {}).get('per_lap_totals', [])) / max(1, len(prev.get('abs', {}).get('per_lap_totals', []))),
-                })
-        except (json.JSONDecodeError, KeyError):
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            continue   # a corrupt summary must not discard all history
+        if not isinstance(prev, dict):
             continue
+
+        try:
+            prev_time = float(prev.get('best_lap', {}).get('time_seconds', 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if prev_time <= 0:
+            continue
+
+        session_block = prev.get('session', {}) or {}
+
+        # A session is identified by its date and start time, not its path. The
+        # same session can exist in two layouts (legacy car/track/date output
+        # alongside the current car/track/date/time output); counting it twice
+        # would compare a session against a copy of itself and inflate the
+        # session count.
+        identity = (
+            str(session_block.get('date') or _date_from_path(summary_file, track_dir)),
+            str(session_block.get('time') or _time_from_path(summary_file) or ''),
+        )
+        if identity[1] and identity == current_identity:
+            continue
+        if identity[1] and identity in seen_identities:
+            continue
+        seen_identities.add(identity)
+
+        abs_block = prev.get('abs', {}) or {}
+        per_lap = [t for t in (abs_block.get('per_lap_totals') or [])
+                   if isinstance(t, (int, float))]
+        previous_sessions.append({
+            'date': session_block.get('date') or _date_from_path(summary_file, track_dir),
+            'time': session_block.get('time') or _time_from_path(summary_file),
+            'best_lap_time_s': prev_time,
+            'cleanest_abs': abs_block.get('cleanest_hits', 0) or 0,
+            'total_recoverable_s': prev.get('total_recoverable_time_s', 0) or 0,
+            'abs_avg': (sum(per_lap) / len(per_lap)) if per_lap else 0,
+        })
 
     if not previous_sessions:
         return None
 
-    # Sort by date (oldest first)
-    previous_sessions.sort(key=lambda s: s['date'])
+    # Oldest first, by full timestamp so multiple sessions on one date order
+    # correctly rather than tying on date alone.
+    previous_sessions.sort(key=lambda s: (str(s['date']), str(s.get('time') or '')))
+
+    # Only sessions at or before this one count as history. Reprocessing an old
+    # session must not treat a later one as its "previous session" — that
+    # reported an improvement as a regression. If nothing precedes it, it
+    # genuinely is the first session.
+    current_sort_key = (str(current_date), str(current_time_label or ''))
+    previous_sessions = [s for s in previous_sessions
+                         if (str(s['date']), str(s.get('time') or '')) < current_sort_key]
+    if not previous_sessions:
+        return None
 
     # Current session stats
     current_time = summary.get('best_lap', {}).get('time_seconds', 0)
@@ -331,6 +441,8 @@ def compute_progression(summary, session_dir):
     progression = {
         'previous_session': {
             'date': most_recent['date'],
+            # Included so two sessions on the same date are distinguishable
+            'time': most_recent.get('time', ''),
             'best_lap_time_s': most_recent['best_lap_time_s'],
         },
         'delta_vs_previous': {
@@ -377,7 +489,9 @@ def write_session_summary(summary, output_dir):
 
     filepath = os.path.join(output_dir, "session_summary.json")
     with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=2, default=str)
+        # Normalised rather than default=str: a NumPy bool written as "False"
+        # is truthy in JavaScript and produced false "New PB" badges.
+        dump_json(summary, f, indent=2)
     return filepath
 
 
@@ -443,7 +557,7 @@ def migrate_summary(filepath):
 
     # Write back
     with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=2, default=str)
+        dump_json(summary, f, indent=2)
 
     return True, original_version, CURRENT_SCHEMA_VERSION
 

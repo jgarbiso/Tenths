@@ -16,6 +16,8 @@ Usage:
 """
 
 import json
+
+from tenths.jsonio import dumps_json
 from tenths.track_map import get_turn_name
 
 
@@ -83,6 +85,9 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
             zone_copy['min_speed_typical_high_mph'] = apex_consistency[i].get('min_speed_typical_high_mph')
             zone_copy['min_speed_spread_mph'] = apex_consistency[i].get('min_speed_spread_mph')
             zone_copy['over_braking_mph'] = apex_consistency[i].get('over_braking_mph')
+            zone_copy['spread_limit_mph'] = apex_consistency[i].get('spread_limit_mph')
+            zone_copy['over_braking_limit_mph'] = apex_consistency[i].get('over_braking_limit_mph')
+            zone_copy['apex_std_limit_mph'] = apex_consistency[i].get('apex_std_limit_mph')
         else:
             zone_copy['apex_std_mph'] = None
             zone_copy['apex_avg_mph'] = None
@@ -92,6 +97,9 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
             zone_copy['min_speed_typical_high_mph'] = None
             zone_copy['min_speed_spread_mph'] = None
             zone_copy['over_braking_mph'] = None
+            zone_copy['spread_limit_mph'] = None
+            zone_copy['over_braking_limit_mph'] = None
+            zone_copy['apex_std_limit_mph'] = None
         braking_zones_js.append(zone_copy)
 
     # Corner variance with turn names
@@ -136,7 +144,10 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
         'car': car_display,
         'track': track_display,
         'date': date,
-        'car_class': data.get('car_class', 'Touring'),
+        # Shown in the stats grid — iRacing's class, not the physics profile
+        'car_class': data.get('car_class_display') or si.get('car_class_short')
+                     or data.get('car_class', 'Generic'),
+        'physics_profile': data.get('physics_profile') or data.get('car_class', 'Generic'),
         'best_lap': data.get('best_lap', 0),
         'best_time': best_time_str,
         'best_time_seconds': best_time,
@@ -159,7 +170,9 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
         'progression': progression,
     }
 
-    data_json = json.dumps(report_data, default=str)
+    # Normalised rather than default=str, so NumPy bools reach the browser as
+    # real JSON booleans instead of truthy "False" strings.
+    data_json = dumps_json(report_data)
 
     html = _build_html(data_json, car_display, track_display, date, best_time_str, race_data)
     return html
@@ -2382,6 +2395,10 @@ def _get_summary_js():
             min_speed_worst_mph: zone?.min_speed_worst_mph ?? null,
             min_speed_typical_low_mph: zone?.min_speed_typical_low_mph ?? null,
             min_speed_typical_high_mph: zone?.min_speed_typical_high_mph ?? null,
+            // Speed-relative trigger levels computed per corner by the analyser
+            spread_limit_mph: zone?.spread_limit_mph ?? 10,
+            over_braking_limit_mph: zone?.over_braking_limit_mph ?? 8,
+            apex_std_limit_mph: zone?.apex_std_limit_mph ?? 4,
             entry_mph: zone?.entry_mph ?? null,
             min_mph: zone?.min_mph ?? null,
         };
@@ -2392,8 +2409,11 @@ def _get_summary_js():
         const bz = DATA.braking_zones || [];
         const bp = DATA.per_lap_brake_points || [];
 
+        // Floor only removes measurement noise; the top-3 ranking does the real
+        // filtering. A fixed 0.3s floor hid genuinely recoverable time from fast
+        // drivers, whose whole session might total under a second.
         const qualifying = cv
-            .filter(c => c.loss > 0.1)
+            .filter(c => c.loss > 0.05)
             .sort((a, b) => b.loss - a.loss)
             .slice(0, 3);
 
@@ -2409,11 +2429,11 @@ def _get_summary_js():
         // apex consistency, throttle lag, brake spread.
         // Over-slowing outranks release shape — carrying too little speed is a
         // more fundamental error than how the brake is released.
-        if (corner.over_braking_mph !== null && corner.over_braking_mph > 8) {
+        if (corner.over_braking_mph !== null && corner.over_braking_mph > corner.over_braking_limit_mph) {
             const delta = Math.round(corner.over_braking_mph);
             return truncate(`${turn}: Over-slowing ~${delta}mph vs your best lap — brake lighter and carry more speed`);
         }
-        if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > 10) {
+        if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > corner.spread_limit_mph) {
             const spreadMph = Math.round(corner.min_speed_spread_mph);
             if (corner.min_speed_typical_low_mph !== null && corner.min_speed_typical_high_mph !== null) {
                 const lo = Math.round(corner.min_speed_typical_low_mph);
@@ -2425,7 +2445,7 @@ def _get_summary_js():
         if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) {
             return truncate(`${turn}: Release brake progressively — losing ${loss}s to stepped release`);
         }
-        if (corner.apex_std_mph !== null && corner.apex_std_mph > 4) {
+        if (corner.apex_std_mph !== null && corner.apex_std_mph > corner.apex_std_limit_mph) {
             const std = Math.round(corner.apex_std_mph);
             return truncate(`${turn}: Apex speed varies \\u00b1${std}mph — find a consistent visual reference`);
         }
@@ -2442,10 +2462,10 @@ def _get_summary_js():
     }
 
     function getDiagnosisType(corner) {
-        if (corner.over_braking_mph !== null && corner.over_braking_mph > 8) return 'over_braking';
-        if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > 10) return 'min_speed_spread';
+        if (corner.over_braking_mph !== null && corner.over_braking_mph > corner.over_braking_limit_mph) return 'over_braking';
+        if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > corner.spread_limit_mph) return 'min_speed_spread';
         if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) return 'brake_linearity';
-        if (corner.apex_std_mph !== null && corner.apex_std_mph > 4) return 'apex_consistency';
+        if (corner.apex_std_mph !== null && corner.apex_std_mph > corner.apex_std_limit_mph) return 'apex_consistency';
         if (corner.thr_lag !== null && corner.thr_lag > 0.5) return 'throttle_lag';
         if (corner.spread_meters !== null && corner.spread_meters > 15) return 'brake_spread';
         return 'generic';

@@ -38,7 +38,11 @@ class TestSummarySchema:
         summary = generate_session_summary(winton_race_data, winton_file_info, winton_track_map)
         car = summary['car']
         assert car['name'] == 'BMW M2 CS Racing'
-        assert car['class'] == 'Touring'
+        # The displayed class comes from iRacing's CarClassShortName, not the
+        # internal physics profile. For a single-make series that is the car
+        # name; it must never be the old catch-all "Touring" for a non-Touring car.
+        assert car['class'] == 'BMW M2 CS Racing'
+        assert car['physics_profile'] in ('GT4', 'Generic')
         assert isinstance(car['id'], int)
         assert isinstance(car['fuel_max_liters'], (int, float))
 

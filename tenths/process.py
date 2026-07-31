@@ -259,7 +259,8 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
     lines.append("")
 
     # ── Braking Zones ─────────────────────────────────────────────────────────
-    lines.append(f"## Braking Zones (Best Lap {data['best_lap']}) [{data['car_class']} Physics]")
+    lines.append(f"## Braking Zones (Best Lap {data['best_lap']}) "
+                 f"[{data.get('physics_profile') or data['car_class']} Physics]")
     lines.append("")
 
     if data['car_class'] == "GT4":

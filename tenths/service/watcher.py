@@ -79,6 +79,20 @@ class IBTHandler(FileSystemEventHandler):
         with self._lock:
             self._pending[filepath] = time.time()
 
+    def track_existing(self, filepath):
+        """Queue a file that was already present when the watcher started.
+
+        Backdated so the stability wait is satisfied immediately if the file has
+        not been touched recently; a file iRacing is still writing will keep
+        being pushed forward by modify events.
+        """
+        with self._lock:
+            try:
+                last_modified = os.path.getmtime(filepath)
+            except OSError:
+                last_modified = time.time()
+            self._pending[filepath] = min(last_modified, time.time())
+
     def check_pending(self):
         """Check if any pending files are ready (stable + large enough).
         Called periodically from the stability checker thread.
@@ -291,6 +305,9 @@ class TelemetryWatcher:
         self._observer.start()
         self._running = True
 
+        # Pick up anything that arrived while Tenths was not running
+        self._scan_existing()
+
         # Stability checker — lightweight timer, not a busy loop
         try:
             while self._running:
@@ -371,6 +388,47 @@ class TelemetryWatcher:
             save_settings({'setup_hint_shown': True})
         except OSError as exc:
             log.warning("Could not record that the setup hint was shown: %s", exc)
+
+    def _scan_existing(self):
+        """Queue .ibt files already sitting in the telemetry root.
+
+        Filesystem events only fire while the watcher is running, so a session
+        recorded before Tenths started was previously ignored until something
+        happened to modify it again. In practice that meant a tester who forgot
+        to launch Tenths never got a report for that session.
+
+        Candidates go through the same stability, size and dedupe path as live
+        events, so a file iRacing is still writing is not grabbed early.
+        """
+        try:
+            entries = list(os.scandir(self._root))
+        except OSError as exc:
+            log.warning("Could not scan %s for existing sessions: %s", self._root, exc)
+            return 0
+
+        queued = 0
+        for entry in entries:
+            try:
+                if not entry.is_file() or not entry.name.lower().endswith('.ibt'):
+                    continue
+                if entry.stat().st_size < MIN_FILE_SIZE:
+                    log.info("Ignoring %s: %.1f MB is below the %.0f MB minimum "
+                             "(likely a false start).", entry.name,
+                             entry.stat().st_size / 1_000_000, MIN_FILE_SIZE / 1_000_000)
+                    continue
+                if self.state_of(entry.path) is not None:
+                    continue  # already known to this run
+                # Hand to the stability checker rather than processing straight
+                # away, in case iRacing is still writing to it.
+                self._handler.track_existing(entry.path)
+                queued += 1
+            except OSError:
+                continue
+
+        if queued:
+            log.info("Found %d session(s) already waiting in %s — these will be "
+                     "processed now.", queued, self._root)
+        return queued
 
     def _retry_due_files(self):
         """Re-dispatch files whose retry backoff has elapsed."""

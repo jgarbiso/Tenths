@@ -260,13 +260,71 @@ def lap_summary(df, valid_laps):
 
     return best_lap, worst_lap
 
-def detect_car_class(vehicle):
-    """Detect if the car is a GT4 class vehicle for physics-specific diagnostics."""
-    vehicle_lower = vehicle.lower().replace(' ', '').replace('-', '')
+# Physics profiles used for coaching diagnostics. These are NOT iRacing car
+# classes — they select which braking/shifting rules apply.
+#
+# GT4 has validated thresholds (spike the pedal while downforce is high, fast
+# downshifts, early brake release to rotate). Everything else uses GENERIC.
+#
+# Previously the fallback was called "Touring", which meant a Ferrari 296 GT3 was
+# both labelled Touring in the report and judged against Touring-specific
+# thresholds it was never validated for. Naming it GENERIC is honest: it says
+# "no class-specific rules yet" rather than asserting the wrong ones.
+PROFILE_GT4 = "GT4"
+PROFILE_GENERIC = "Generic"
+
+# iRacing CarClassShortName values known to use GT4 physics
+GT4_CLASS_NAMES = ("gt4",)
+
+
+def detect_car_class(vehicle, car_class_short=None):
+    """Select the physics profile for coaching diagnostics.
+
+    Args:
+        vehicle: car slug from the .ibt filename
+        car_class_short: iRacing's CarClassShortName from the session info,
+                        preferred when available
+
+    Returns PROFILE_GT4 or PROFILE_GENERIC.
+    """
+    if car_class_short:
+        normalized = str(car_class_short).lower().replace(' ', '')
+        if any(name in normalized for name in GT4_CLASS_NAMES):
+            return PROFILE_GT4
+        # A known class that is not GT4 gets generic rules, not Touring's.
+        return PROFILE_GENERIC
+
+    vehicle_lower = (vehicle or '').lower().replace(' ', '').replace('-', '')
     for gt4 in GT4_CARS:
         if gt4 in vehicle_lower:
-            return "GT4"
-    return "Touring"
+            return PROFILE_GT4
+    return PROFILE_GENERIC
+
+
+def _is_human_readable_class(value):
+    """True if a CarClassShortName looks like a label rather than a slug.
+
+    iRacing is inconsistent here. Some sessions report a proper class name
+    ("GT3 Class", "BMW M2 CS Racing"), others report an internal slug
+    ("bmwm4evogt4"). A slug must not be shown to the driver.
+    """
+    text = str(value).strip()
+    if not text:
+        return False
+    return ' ' in text or any(char.isupper() for char in text)
+
+
+def display_car_class(session_info, physics_profile=None):
+    """The car class to show the user.
+
+    iRacing's own CarClassShortName ("GT3 Class") is what a driver recognises,
+    but only when it is a real label — see _is_human_readable_class. Falls back
+    to the physics profile otherwise.
+    """
+    class_short = (session_info or {}).get('car_class_short')
+    if class_short and _is_human_readable_class(class_short):
+        return str(class_short).strip()
+    return physics_profile or PROFILE_GENERIC
 
 
 def braking_analysis(df, lap_num, vehicle="Unknown"):
@@ -696,7 +754,10 @@ def analyze(filepath):
     session_info = parse_session_info(filepath)
 
     df, sample_rate, vehicle, venue = parse_ibt(filepath)
-    car_class = detect_car_class(vehicle)
+    # Physics profile drives the coaching rules; the displayed class comes from
+    # iRacing's own metadata so a GT3 is never labelled Touring.
+    physics_profile = detect_car_class(vehicle, session_info.get('car_class_short'))
+    car_class = physics_profile
     valid_laps = get_valid_laps(df)
     if not valid_laps:
         return None
@@ -730,7 +791,8 @@ def analyze(filepath):
     track_length = _track_length_from(df, best_lap)
 
     # Braking zones (best lap)
-    braking_zones = _extract_braking_zones(df, best_lap, vehicle, sample_rate, track_length)
+    braking_zones = _extract_braking_zones(df, best_lap, vehicle, sample_rate,
+                                           track_length, physics_profile)
 
     # Trail braking (best lap)
     trail_braking = _extract_trail_braking(df, best_lap, track_length)
@@ -770,7 +832,9 @@ def analyze(filepath):
         'filepath': filepath,
         'vehicle': vehicle,
         'venue': venue,
-        'car_class': car_class,
+        'car_class': car_class,                 # physics profile (GT4 / Generic)
+        'physics_profile': physics_profile,
+        'car_class_display': display_car_class(session_info, physics_profile),
         'track_length_m': track_length,
         'sample_rate': sample_rate,
         'total_rows': len(df),
@@ -798,9 +862,11 @@ def analyze(filepath):
     }
 
 
-def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60, track_length_m=None):
+def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60, track_length_m=None,
+                          car_class=None):
     """Extract braking zone data as list of dicts."""
-    car_class = detect_car_class(vehicle)
+    if car_class is None:
+        car_class = detect_car_class(vehicle)
     lap = df[df['Lap'] == lap_num].copy().reset_index(drop=True)
 
     braking = lap[lap['Brake'] > 50][['LapDistPct','Speed','Brake','BrakeABSactive']].copy()
@@ -1412,11 +1478,26 @@ def _outlier_trimmed_band(values):
     return min(kept), max(kept)
 
 
+# Coaching trigger levels, expressed as a fraction of the corner's apex speed
+# with an absolute floor. A fixed mph threshold is far more sensitive on fast
+# corners than slow ones: 10mph is 25% of a 40mph hairpin but 11% of a 90mph
+# sweeper, which is why 5 of 8 corners fired on a real 5.4km lap.
+SPREAD_LIMIT_FRACTION = 0.20
+SPREAD_LIMIT_FLOOR_MPH = 6.0
+OVER_BRAKING_LIMIT_FRACTION = 0.20
+OVER_BRAKING_LIMIT_FLOOR_MPH = 6.0
+APEX_STD_LIMIT_FRACTION = 0.08
+APEX_STD_LIMIT_FLOOR_MPH = 2.0
+
+
 def _empty_apex_result():
     """Return an apex/min-speed result dict with all metrics unavailable."""
     return {
         'avg_apex_mph': None,
         'std_apex_mph': None,
+        'spread_limit_mph': None,
+        'over_braking_limit_mph': None,
+        'apex_std_limit_mph': None,
         'per_lap_apex': [],
         'min_speed_best_mph': None,
         'min_speed_worst_mph': None,
@@ -1508,9 +1589,23 @@ def _extract_apex_consistency(df, valid_laps, braking_zones, best_lap=None,
             avg = float(np.mean(trimmed))
             std = float(np.std(trimmed))
 
+            # Speed-relative trigger levels. A flat 10mph spread is 25% of a
+            # 40mph hairpin but only 11% of a 90mph sweeper, so a fixed figure
+            # fires constantly on fast corners where that variation is normal.
+            reference_speed = max(avg, 1.0)
+            spread_limit = max(SPREAD_LIMIT_FRACTION * reference_speed,
+                              SPREAD_LIMIT_FLOOR_MPH)
+            over_braking_limit = max(OVER_BRAKING_LIMIT_FRACTION * reference_speed,
+                                    OVER_BRAKING_LIMIT_FLOOR_MPH)
+            apex_std_limit = max(APEX_STD_LIMIT_FRACTION * reference_speed,
+                                APEX_STD_LIMIT_FLOOR_MPH)
+
             result = {
                 'avg_apex_mph': round(avg, 1),
                 'std_apex_mph': round(std, 1),
+                'spread_limit_mph': round(spread_limit, 1),
+                'over_braking_limit_mph': round(over_braking_limit, 1),
+                'apex_std_limit_mph': round(apex_std_limit, 1),
                 'per_lap_apex': per_lap,
                 'min_speed_best_mph': round(best_lap_min, 1) if best_lap_min is not None else None,
                 'min_speed_worst_mph': round(slowest_min, 1),

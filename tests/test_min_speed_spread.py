@@ -259,13 +259,21 @@ class TestCoachingPriority:
     """Over-slowing must outrank brake release shape in the Summary View."""
 
     def test_over_braking_threshold_present(self):
+        """Compared against a per-corner limit, not a fixed 8mph."""
         js = _get_summary_js()
         assert 'over_braking_mph' in js
-        assert 'corner.over_braking_mph > 8' in js
+        assert 'corner.over_braking_mph > corner.over_braking_limit_mph' in js
 
     def test_min_speed_spread_threshold_present(self):
         js = _get_summary_js()
-        assert 'corner.min_speed_spread_mph > 10' in js
+        assert 'corner.min_speed_spread_mph > corner.spread_limit_mph' in js
+
+    def test_thresholds_are_not_hardcoded_mph(self):
+        """Guards the regression: fixed mph values fired on 5 of 8 real corners."""
+        js = _get_summary_js()
+        assert 'corner.min_speed_spread_mph > 10' not in js
+        assert 'corner.over_braking_mph > 8' not in js
+        assert 'corner.apex_std_mph > 4' not in js
 
     def test_over_braking_ranked_above_brake_linearity(self):
         js = _get_summary_js()

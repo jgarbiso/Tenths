@@ -214,17 +214,26 @@ class TestSummaryJs:
         assert "document.title" in js
 
     def test_coaching_thresholds(self):
-        """Coaching sentence uses correct thresholds."""
+        """Coaching sentence uses correct thresholds.
+
+        Speed-dependent checks compare against per-corner limits supplied by the
+        analyser rather than fixed mph values, because a flat threshold is far
+        more sensitive on fast corners than slow ones.
+        """
         js = _get_summary_js()
-        assert 'brake_linearity < 0.6' in js or 'brake_linearity !== null && corner.brake_linearity < 0.6' in js
-        assert 'apex_std_mph > 4' in js or 'apex_std_mph !== null && corner.apex_std_mph > 4' in js
-        assert 'thr_lag > 0.5' in js or 'thr_lag !== null && corner.thr_lag > 0.5' in js
-        assert 'spread_meters > 15' in js or 'spread_meters !== null && corner.spread_meters > 15' in js
+        assert 'brake_linearity < 0.6' in js
+        assert 'corner.apex_std_mph > corner.apex_std_limit_mph' in js
+        assert 'thr_lag > 0.5' in js
+        assert 'spread_meters > 15' in js
 
     def test_corner_filter_threshold(self):
-        """Corners are filtered at 0.1s loss threshold."""
+        """Corners are filtered only for measurement noise; ranking does the rest.
+
+        A higher floor hid genuinely recoverable time from fast drivers whose
+        whole session might total under a second.
+        """
         js = _get_summary_js()
-        assert 'loss > 0.1' in js
+        assert 'loss > 0.05' in js
 
     def test_top_3_limit(self):
         """Only top 3 corners are shown."""
