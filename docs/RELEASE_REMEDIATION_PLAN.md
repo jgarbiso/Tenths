@@ -79,7 +79,7 @@ Remediation must not regress the following behavior:
 | RR-011 | High | Executable is unsigned and lacks metadata | Release credentials for signing |
 | RR-012 | Medium | First-run telemetry guidance is ineffective | RR-004/RR-005 |
 | RR-013 | Medium | Tray tracks the latest report before processing completes | RR-004 completion signal |
-| RR-014 | Execution prerequisite | ~~Tests mutate HKCU~~ **RESOLVED 2026-07-29**; portable `.ibt` fixtures still outstanding | None |
+| RR-014 | Execution prerequisite | ~~Tests mutate HKCU and depend on developer-local data~~ **RESOLVED 2026-07-29** | None |
 | RR-015 | Medium | `TENTHS_TRACKS_DIR` is shadowed by built-in directories | None |
 | RR-016 | Medium | Summary threshold differs between specs and implementation | Product decisions |
 | RR-017 | Medium | User documentation contains incorrect feature/behavior claims | Functional fixes above |
@@ -465,9 +465,18 @@ Clean-machine coverage went from 251 to 286 passing. Suite total 326.
 
 **Regression value proven immediately.** A Qualcomm-like synthetic session (5409m, corners a few percent apart, every lap identical) failed on first run, exposing a genuine pre-existing defect: braking zones were split on a fixed 5% gap, which is 270m on that lap, so **T2 and T3 were merged into one 384m zone** and their combined time reported as T2. Fixed via `ZONE_GAP_METERS`; A/B confirmed Qualcomm 6 zones to 7 with T2/T3 separated and Winton unchanged.
 
-Still outstanding:
+**Committed real-telemetry fixtures (2026-07-29) — zero skips, RR-014 fully closed.**
 
-- 33 real-`.ibt` tests still skip without the developer's archive. They now supplement the synthetic baseline rather than being the only coverage, so CI is viable; converting them is optional.
+The 33 archive-dependent tests now run everywhere. `tools/make_test_fixture.py` turns a real session into a committable fixture:
+
+- **Identities removed.** An `.ibt` embeds the whole driver list — real names, customer IDs, abbreviations, initials, team names. The Winton race listed 12 people; no session in the archive was solo, since iRacing open practice lists everyone on the server. All identities become `Test Driver` / `UserID 0`, including the owner's, and `QualifyResultsInfo`, `CameraInfo`, `RadioInfo`, `SplitTimeInfo` and `CarSetup` are dropped. The tool refuses to write if its own audit finds a surviving identity.
+- **Size reduced.** Only the ~52 channels the analyser reads are kept, plus 5 laps: 52 MB to 5.9 MB and 170 MB to 6.1 MB (12 MB committed in total).
+- **Samples unmodified.** Lap times from the fixtures are identical to the originals, so these are genuinely real data for the laps retained.
+- `.gitignore` needed an explicit `!tests/data/*.ibt` exception, since `*.ibt` is excluded.
+- `tests/test_fixture_privacy.py` enforces the scrubbing on every run, so an unscrubbed fixture fails the suite before it can be published.
+- `conftest.py` prefers the full archived session when present and falls back to the committed fixture, so the developer machine still exercises longer sessions.
+
+Result: **343 tests pass with zero skips on both a clean checkout and the dev machine.** Two `test_summary` assertions that hardcoded "7 valid laps" now assert the actual contract — one entry per timed lap — which is a stronger test and no longer tied to one file.
 
 ### RR-015 — Make `TENTHS_TRACKS_DIR` a real override
 
@@ -598,7 +607,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [ ] RR-011 release artifacts carry metadata and approved signatures.
 - [ ] RR-012 first-run setup guidance is visible and actionable.
 - [ ] RR-013 tray receives the completed report path.
-- [x] RR-014 tests are side-effect free (registry isolated, verified with a sentinel). Portable `.ibt` fixtures still outstanding — 33 tests skip without local telemetry.
+- [x] RR-014 tests are portable and side-effect free. Registry isolated (verified with a sentinel); committed scrubbed telemetry fixtures give 343 passing with zero skips on a clean checkout.
 - [ ] RR-015 environment track-map override works as documented.
 - [ ] RR-016 threshold decision is consistent across code/spec/tests.
 - [ ] RR-017 all documentation matches production behavior.

@@ -26,6 +26,9 @@ Thumbs.db
 *.csv
 *.ld
 *.ldx
+# ...except the committed test fixtures: real telemetry trimmed to a few laps
+# with every driver identity replaced. Built by tools/make_test_fixture.py.
+!tests/data/*.ibt
 
 # Test output
 test_output/

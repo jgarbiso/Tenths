@@ -61,7 +61,11 @@ class TestSummarySchema:
     def test_laps_array(self, winton_race_data, winton_file_info, winton_track_map):
         summary = generate_session_summary(winton_race_data, winton_file_info, winton_track_map)
         laps = summary['laps']
-        assert len(laps) == 7  # 7 valid laps in this race
+        # One entry per lap with a valid time — the contract, rather than a
+        # count tied to whichever version of the session is present.
+        timed_laps = [r for r in winton_race_data['lap_results'] if r['time'] > 0]
+        assert len(laps) == len(timed_laps)
+        assert len(laps) >= 3, "need at least 3 laps for the summary to be meaningful"
         assert all('number' in l for l in laps)
         assert all('time_seconds' in l for l in laps)
         assert all('abs_hits' in l for l in laps)
@@ -72,7 +76,7 @@ class TestSummarySchema:
         abs_data = summary['abs']
         assert abs_data['cleanest_hits'] >= 0
         assert isinstance(abs_data['per_lap_totals'], list)
-        assert len(abs_data['per_lap_totals']) == 7
+        assert len(abs_data['per_lap_totals']) == len(summary['laps'])
 
     def test_braking_zones(self, winton_race_data, winton_file_info, winton_track_map):
         summary = generate_session_summary(winton_race_data, winton_file_info, winton_track_map)

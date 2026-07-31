@@ -15,16 +15,31 @@ registration is a user setting — a test run must never disturb it.
 import os
 import pytest
 
-# Root of the archived telemetry used by integration tests.
-# Override with TENTHS_TEST_ARCHIVE to run on another machine or in CI.
+# Committed test fixtures: real telemetry, trimmed to a few laps and with every
+# driver identity replaced (see tools/make_test_fixture.py). These ship with the
+# repo so integration tests run anywhere.
+FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
+# The full sessions on the developer's machine. Preferred when present because
+# they carry more laps; the committed fixtures are used otherwise.
+# TENTHS_TEST_ARCHIVE overrides the location; set it to a nonexistent path to
+# force the committed fixtures and reproduce what CI sees.
 TELEMETRY_ARCHIVE = os.environ.get(
     "TENTHS_TEST_ARCHIVE",
     os.path.join(os.path.expanduser("~"), "Documents", "iRacing", "telemetry", "_archive"),
 )
 
+
+def _telemetry_file(filename):
+    """Full archived session if available, else the committed trimmed fixture."""
+    full = os.path.join(TELEMETRY_ARCHIVE, filename)
+    if os.path.exists(full):
+        return full
+    return os.path.join(FIXTURE_DIR, filename)
+
 # Known good test files
-WINTON_RACE_IBT = os.path.join(TELEMETRY_ARCHIVE, "bmwm2csr_winton national 2026-06-06 22-26-36.ibt")
-MIDOHIO_PRACTICE_IBT = os.path.join(TELEMETRY_ARCHIVE, "bmwm4evogt4_midohio full 2026-06-02 20-48-57.ibt")
+WINTON_RACE_IBT = _telemetry_file("bmwm2csr_winton national 2026-06-06 22-26-36.ibt")
+MIDOHIO_PRACTICE_IBT = _telemetry_file("bmwm4evogt4_midohio full 2026-06-02 20-48-57.ibt")
 
 # Skip markers for integration tests
 requires_winton = pytest.mark.skipif(

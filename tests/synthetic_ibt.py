@@ -84,11 +84,11 @@ for _corner in ("LF", "RF", "LR", "RR"):
     CHANNELS.append((f"{_corner}pressure", TYPE_FLOAT, "kPa"))
 
 
-def _layout():
+def _layout(channels=None):
     """Assign each channel an offset inside a sample row (naturally aligned)."""
     offset = 0
     layout = []
-    for name, vtype, unit in CHANNELS:
+    for name, vtype, unit in (channels if channels is not None else CHANNELS):
         size = _SIZE[vtype]
         if offset % size:
             offset += size - (offset % size)
@@ -96,6 +96,71 @@ def _layout():
         offset += size
     buf_len = offset + (8 - offset % 8) % 8
     return layout, buf_len
+
+
+def write_ibt(path, channels, rows, session_info, tick_rate=60, lap_count=0):
+    """Write a valid .ibt from explicit channel specs and sample rows.
+
+    Shared by the synthetic generator and by the fixture-scrubbing tool, so both
+    produce files with identical structure.
+
+    Args:
+        path: destination
+        channels: list of (name, type_code, unit)
+        rows: list of dicts keyed by channel name
+        session_info: dict serialised to the YAML header
+        tick_rate: samples per second
+        lap_count: value for DiskSubHeader.session_lap_count
+    """
+    layout, buf_len = _layout(channels)
+    dt = 1.0 / tick_rate
+
+    info_yaml = yaml.safe_dump(session_info, default_flow_style=False, sort_keys=False)
+    info_bytes = info_yaml.encode("latin-1", errors="replace") + b"\x00"
+
+    var_header_bytes = bytearray()
+    for item in layout:
+        vh = bytearray(VAR_HEADER_SIZE)
+        struct.pack_into("iii", vh, 0, item["type"], item["offset"], 1)
+        struct.pack_into("?", vh, 12, False)
+        struct.pack_into("32s", vh, 16, item["name"].encode("latin-1")[:31])
+        struct.pack_into("64s", vh, 48, b"tenths test fixture")
+        struct.pack_into("32s", vh, 112, str(item["unit"]).encode("latin-1", "replace")[:31])
+        var_header_bytes += vh
+
+    session_info_offset = VAR_HEADER_OFFSET + len(var_header_bytes)
+    data_offset = session_info_offset + len(info_bytes)
+    pad = (8 - data_offset % 8) % 8
+    data_offset += pad
+
+    header = bytearray(DISK_SUB_HEADER_OFFSET)
+    struct.pack_into("iiii", header, 0, 2, 1, tick_rate, 0)
+    struct.pack_into("ii", header, 16, len(info_bytes), session_info_offset)
+    struct.pack_into("ii", header, 24, len(layout), VAR_HEADER_OFFSET)
+    struct.pack_into("ii", header, 32, 1, buf_len)
+    struct.pack_into("ii", header, 48, len(rows), data_offset)
+
+    disk_sub = bytearray(32)
+    struct.pack_into("Q", disk_sub, 0, 0)
+    struct.pack_into("d", disk_sub, 8, 0.0)
+    struct.pack_into("d", disk_sub, 16, len(rows) * dt)
+    struct.pack_into("ii", disk_sub, 24, lap_count, len(rows))
+
+    packers = [(item["offset"], struct.Struct(_FMT[item["type"]]), item["name"])
+               for item in layout]
+
+    with open(path, "wb") as f:
+        f.write(header)
+        f.write(disk_sub)
+        f.write(var_header_bytes)
+        f.write(info_bytes)
+        f.write(b"\x00" * pad)
+        row_buf = bytearray(buf_len)
+        for row in rows:
+            for offset, packer, name in packers:
+                packer.pack_into(row_buf, offset, row[name])
+            f.write(row_buf)
+    return buf_len
 
 
 def default_session_info(car="Ferrari 296 GT3", track="Test Circuit",
