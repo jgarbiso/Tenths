@@ -283,6 +283,8 @@ class TelemetryWatcher:
         log.info("  Stability wait: %ds   Retries: %d", STABLE_SECONDS, MAX_ATTEMPTS)
         log.info("  Log file: %s", log_path())
 
+        self._check_first_run()
+
         self._handler = IBTHandler(self._on_file_ready)
         self._observer = Observer()
         self._observer.schedule(self._handler, self._root, recursive=False)
@@ -311,6 +313,64 @@ class TelemetryWatcher:
                 for path, error in outstanding.items():
                     log.warning("  %s — %s", os.path.basename(path), error)
             log.info("Watcher stopped.")
+
+    def _has_any_telemetry(self):
+        """True if this root shows any sign of iRacing telemetry, past or present."""
+        try:
+            for entry in os.scandir(self._root):
+                if entry.is_file() and entry.name.lower().endswith('.ibt'):
+                    return True
+                if entry.is_dir() and entry.name == "_archive":
+                    try:
+                        if any(f.lower().endswith('.ibt') for f in os.listdir(entry.path)):
+                            return True
+                    except OSError:
+                        pass
+                # A processed session tree means Tenths has worked here before
+                if entry.is_dir() and not entry.name.startswith('_'):
+                    return True
+        except OSError:
+            return False
+        return False
+
+    def _check_first_run(self):
+        """Explain how to produce telemetry, once, if none has ever appeared.
+
+        Without this a new user sees a healthy tray icon watching an empty folder
+        and has no idea that iRacing telemetry logging must be switched on.
+        The hint is shown once and then recorded, so established users are not
+        nagged every launch.
+        """
+        if self._has_any_telemetry():
+            return
+
+        from tenths.config import SETTINGS, save_settings
+
+        log.warning(
+            "No telemetry found in %s yet.\n"
+            "  iRacing only writes .ibt files when telemetry logging is on:\n"
+            "    press Alt+L in the sim each session, or set irsdkLogAll=1 in the\n"
+            "    [Telemetry] section of Documents\\iRacing\\app.ini for always-on.\n"
+            "  Tenths will process the first session automatically once one appears.",
+            self._root)
+
+        if SETTINGS.get('setup_hint_shown'):
+            return
+
+        try:
+            self._get_notifier().notify_info(
+                "Tenths is running — no telemetry yet",
+                "iRacing writes telemetry only when logging is enabled. "
+                "Press Alt+L in the sim, or set irsdkLogAll=1 in app.ini. "
+                "Your first session will be processed automatically.",
+            )
+        except Exception as exc:
+            log.warning("Could not show the setup notification: %s", exc)
+
+        try:
+            save_settings({'setup_hint_shown': True})
+        except OSError as exc:
+            log.warning("Could not record that the setup hint was shown: %s", exc)
 
     def _retry_due_files(self):
         """Re-dispatch files whose retry backoff has elapsed."""

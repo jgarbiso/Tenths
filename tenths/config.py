@@ -5,8 +5,14 @@ Centralized configuration with smart defaults.
 All paths are auto-detected for the current user, overridable via environment variables.
 """
 
+import json
 import os
 import sys
+
+# Problems encountered while loading configuration. This module cannot import
+# applog (applog imports config), so entry points drain this list once logging
+# is up. A bad settings file must never be silent.
+CONFIG_WARNINGS = []
 
 
 def configure_console():
@@ -112,8 +118,90 @@ def _find_package_root():
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
+def _settings_path():
+    """Location of the user settings file."""
+    override = os.environ.get('TENTHS_SETTINGS')
+    if override:
+        return override
+    base = os.environ.get('LOCALAPPDATA')
+    if not base:
+        base = os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    return os.path.join(base, "Tenths", "settings.json")
+
+
+SETTINGS_PATH = _settings_path()
+
+
+def load_settings(path=None):
+    """Read the settings file. Returns {} when absent or unreadable.
+
+    A malformed file must not stop Tenths from starting; the problem is recorded
+    in CONFIG_WARNINGS and logged by the entry point instead.
+    """
+    target = path or SETTINGS_PATH
+    if not os.path.isfile(target):
+        return {}
+    try:
+        with open(target, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            CONFIG_WARNINGS.append(
+                f"Settings file {target} does not contain a JSON object; ignoring it.")
+            return {}
+        return data
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        CONFIG_WARNINGS.append(
+            f"Could not read the settings file {target}: {exc}. Using defaults.")
+        return {}
+
+
+def save_settings(updates, path=None):
+    """Merge updates into the settings file and write it back.
+
+    Returns the path written. Raises OSError if it cannot be written, so a CLI
+    can tell the user rather than silently doing nothing.
+    """
+    target = path or SETTINGS_PATH
+    current = load_settings(target)
+    current.update(updates)
+    os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
+    with open(target, 'w', encoding='utf-8') as f:
+        json.dump(current, f, indent=2)
+    return target
+
+
+SETTINGS = load_settings()
+
+
+def _resolve_telemetry_root():
+    """Telemetry root, in precedence order.
+
+    1. TENTHS_TELEMETRY_ROOT environment variable (development and overrides)
+    2. `telemetry_root` in the settings file (what a user can actually set)
+    3. Auto-detection from the Documents known folder
+
+    An unusual install needs a way to point Tenths at its telemetry folder that
+    does not involve setting an environment variable, which no installed user
+    will do.
+    """
+    env = os.environ.get('TENTHS_TELEMETRY_ROOT')
+    if env:
+        return os.path.normpath(env)
+
+    configured = SETTINGS.get('telemetry_root')
+    if configured:
+        configured = os.path.normpath(str(configured))
+        if not os.path.isdir(configured):
+            CONFIG_WARNINGS.append(
+                f"The configured telemetry_root does not exist: {configured}. "
+                f"Fix it with `tenths config --telemetry-root <path>`.")
+        return configured
+
+    return _find_iracing_telemetry()
+
+
 # Telemetry root — where iRacing writes .ibt files
-TELEMETRY_ROOT = os.environ.get('TENTHS_TELEMETRY_ROOT', _find_iracing_telemetry())
+TELEMETRY_ROOT = _resolve_telemetry_root()
 
 # Archive directory — processed .ibt files go here
 ARCHIVE_DIR = os.path.join(TELEMETRY_ROOT, "_archive")

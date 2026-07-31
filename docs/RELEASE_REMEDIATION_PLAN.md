@@ -77,7 +77,7 @@ Remediation must not regress the following behavior:
 | RR-009 | High | Detailed report is not offline despite product claims | RR-001 if assets are bundled |
 | RR-010 | High | Race-result parsing aborts on malformed row values | None |
 | RR-011 | High | Executable is unsigned and lacks metadata | Release credentials for signing |
-| RR-012 | Medium | First-run telemetry guidance is ineffective | RR-004/RR-005 |
+| RR-012 | Medium | ~~First-run telemetry guidance is ineffective~~ **RESOLVED 2026-07-29** — path resolution fixed, settings file, `tenths config`, one-time hint | None |
 | RR-013 | Medium | ~~Tray tracks the latest report before processing completes~~ **RESOLVED 2026-07-29** with RR-004's `on_complete` callback | None |
 | RR-014 | Execution prerequisite | ~~Tests mutate HKCU and depend on developer-local data~~ **RESOLVED 2026-07-29** | None |
 | RR-015 | Medium | `TENTHS_TRACKS_DIR` is shadowed by built-in directories | None |
@@ -443,7 +443,13 @@ Fixed:
 - The resolved path is logged on every start, so the first question about any "no report appeared" report is already answered.
 - `TestD2_WatcherFolderGuard` updated: creating the folder is still correct when the location is verified, and now asserted to be refused when it is not.
 
-Still outstanding for RR-012: the first-run experience when the path is *correct* but telemetry has simply never been enabled. Tenths creates the folder and waits silently; there is no one-time prompt explaining Alt+L / `irsdkLogAll=1`. A settings file so a user can set the telemetry folder without an environment variable is also not done.
+**Completed (2026-07-29) — settings file and first-run guidance.**
+
+- **Settings file.** `%LOCALAPPDATA%\Tenths\settings.json`, with precedence `TENTHS_TELEMETRY_ROOT` env → `telemetry_root` setting → auto-detection. An installed user will never set an environment variable, so this is the only realistic way to support an unusual iRacing layout. A malformed file is reported through `CONFIG_WARNINGS` and drained by the entry point once logging exists (`config` cannot import `applog`, which imports `config`), and never prevents startup. A configured-but-missing folder is reported rather than silently accepted.
+- **`tenths config` command.** Prints the resolved Documents, iRacing, telemetry, archive, log and settings paths, flags any that are missing, and counts unprocessed `.ibt` files. `--telemetry-root <path>` sets the folder (validating it exists first), `--reset-telemetry-root` returns to auto-detection. This answers the first two support questions — which folder is being watched, and where is the log — without a developer in the loop.
+- **One-time setup hint.** `_check_first_run()` runs at watcher start. If the root shows no sign of telemetry (no `.ibt` in the root, none in `_archive`, no processed session tree) it logs the Alt+L / `irsdkLogAll=1` instructions and shows a single `notify_info` toast, then records `setup_hint_shown` so established users are never nagged. A broken notifier cannot block startup.
+
+Verified end to end through the real CLI in a subprocess with no environment override: auto-detection before configuring, a custom folder taking effect afterwards, the written JSON, rejection of a nonexistent path, reset back to auto-detection, and a corrupt settings file still allowing the CLI to run while reporting the problem. `tests/test_settings.py` adds 22 tests; suite 397 passed.
 
 ### RR-013 — Update “Open Last Report” only after completion
 
@@ -637,7 +643,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [ ] RR-009 offline behavior and claims agree.
 - [ ] RR-010 race-result parsing tolerates bad fields/rows.
 - [ ] RR-011 release artifacts carry metadata and approved signatures.
-- [ ] RR-012 first-run setup guidance is visible and actionable.
+- [x] RR-012 first-run setup guidance is visible and actionable. Documents resolved via the Known Folder API, no decoy folder created, `settings.json` + `tenths config` for unusual layouts, one-time setup toast.
 - [x] RR-013 tray receives the completed report path via `on_complete`.
 - [x] RR-014 tests are portable and side-effect free. Registry isolated (verified with a sentinel); committed scrubbed telemetry fixtures give 343 passing with zero skips on a clean checkout.
 - [ ] RR-015 environment track-map override works as documented.

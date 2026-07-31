@@ -150,7 +150,24 @@ Tenths could not find your iRacing folder. Two usual causes:
 2. **Your Documents folder has been moved.** OneDrive folder backup relocates Documents to `%USERPROFILE%\OneDrive\Documents`, and moving it to another drive has the same effect. Tenths resolves Documents the same way iRacing does, so this normally works — but if it doesn't, the log (below) shows exactly which folder was checked.
 
 **My telemetry is somewhere unusual.**
-Set the `TENTHS_TELEMETRY_ROOT` environment variable to the folder iRacing writes `.ibt` files to, then restart Tenths. To find that folder, open iRacing's own data folder — it is the `telemetry` subfolder inside it.
+Tell Tenths where to look. Open a Command Prompt and run:
+
+```cmd
+tenths config
+```
+
+That prints every path Tenths is using — telemetry folder, log file, settings file — and whether each exists. To change the telemetry folder:
+
+```cmd
+tenths config --telemetry-root "D:\iRacing\telemetry"
+```
+
+Then restart Tenths. Use `tenths config --reset-telemetry-root` to go back to auto-detection.
+
+> Running from the installed app rather than source? Use the full path to `Tenths.exe` in place of `tenths`.
+
+**Tenths says it's running but nothing happens.**
+Run `tenths config` and check two lines: **Telemetry folder** (is that really where iRacing writes your `.ibt` files?) and **Unprocessed .ibt** (are there any files waiting?). If the folder is wrong, set it as above. If it's right and empty, telemetry logging isn't on — see Step 2.
 
 **The report opened but corner names look like percentages (e.g. "83.0%").**
 Tenths has corner data for 450+ iRacing tracks built in. If a track shows percentages, it's one we don't have yet — the analysis is still fully accurate, just without the named turns.

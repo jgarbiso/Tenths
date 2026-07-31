@@ -73,6 +73,25 @@ class SessionNotifier:
         # Show the notification
         toast.show()
 
+    def notify_info(self, title, message, action_label=None, action_target=None):
+        """Send an informational toast (setup guidance, not a failure).
+
+        Args:
+            title: short heading
+            message: body text
+            action_label: optional button label
+            action_target: URL or file path the button opens
+        """
+        toast = Notification(
+            app_id=APP_ID,
+            title=title,
+            msg=message,
+            duration="long",
+        )
+        if action_label and action_target:
+            toast.add_actions(label=action_label, launch=action_target)
+        toast.show()
+
     def notify_error(self, filename, error_msg):
         """Send an error notification when processing fails.
 

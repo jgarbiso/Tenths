@@ -127,9 +127,23 @@ tenths/
     └── tray.py            # System tray app
 ```
 
-### Configuration (optional env vars)
-- `TENTHS_TELEMETRY_ROOT` — iRacing telemetry directory (auto-detected: `~/Documents/iRacing/telemetry`)
+### Configuration
+
+`tenths config` prints every resolved path (telemetry, archive, log, settings) and flags anything missing.
+
+Settings live in `%LOCALAPPDATA%\Tenths\settings.json`:
+
+```cmd
+tenths config --telemetry-root "D:\iRacing\telemetry"
+tenths config --reset-telemetry-root
+```
+
+The Documents folder is resolved via the Windows Known Folder API, the same way iRacing does, so OneDrive folder redirection is handled automatically.
+
+Environment overrides (mainly for development, these take precedence over the settings file):
+- `TENTHS_TELEMETRY_ROOT` — iRacing telemetry directory
 - `TENTHS_TRACKS_DIR` — override for track-map `.md` files
+- `TENTHS_LOG_DIR` / `TENTHS_SETTINGS` — relocate the log or settings file
 
 ### Building the installer
 See `installer/` — `tenths.spec` (PyInstaller) and `tenths_setup.iss` (Inno Setup). Run `python installer/build.py` (add `--full` to also build the installer, requires Inno Setup).
