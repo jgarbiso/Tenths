@@ -293,3 +293,77 @@ class TestRetryDispatch:
         watcher._retry_due_files()
         time.sleep(0.2)   # dispatch happens on a worker thread
         assert started == [str(path)]
+
+
+class TestTelemetryLocationResolution:
+    """Documents must be resolved the way iRacing resolves it.
+
+    iRacing uses the Windows Known Folder API, which follows redirection.
+    Joining %USERPROFILE% and "Documents" does not: with OneDrive folder backup
+    enabled, Documents moves to %USERPROFILE%\\OneDrive\\Documents and the naive
+    path points at a folder iRacing never writes to.
+    """
+
+    def test_documents_dir_matches_the_known_folder_api(self):
+        import ctypes
+        import ctypes.wintypes
+        from tenths.config import _documents_dir
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("Data1", ctypes.wintypes.DWORD),
+                        ("Data2", ctypes.wintypes.WORD),
+                        ("Data3", ctypes.wintypes.WORD),
+                        ("Data4", ctypes.c_byte * 8)]
+
+        guid = GUID()
+        ctypes.windll.ole32.CLSIDFromString(
+            ctypes.c_wchar_p("{FDD39AD0-238F-46AF-ADB4-6C85480369C7}"), ctypes.byref(guid))
+        buf = ctypes.c_wchar_p()
+        rc = ctypes.windll.shell32.SHGetKnownFolderPath(
+            ctypes.byref(guid), 0, None, ctypes.byref(buf))
+        if rc != 0:
+            pytest.skip("Known Folder API unavailable")
+        expected = buf.value
+        ctypes.windll.ole32.CoTaskMemFree(buf)
+
+        assert os.path.normcase(_documents_dir()) == os.path.normcase(
+            os.path.normpath(expected))
+
+    def test_documents_dir_is_not_naive_join(self):
+        """Guards the regression: must not be a bare expanduser join."""
+        from tenths.config import _documents_dir
+        resolved = _documents_dir()
+        # On a redirected profile these differ; on a normal one they match.
+        # Either way the resolved path must be a real directory with no mixed
+        # separators, which the old expanduser("~/Documents") produced.
+        assert os.path.isdir(resolved)
+        assert "/" not in resolved
+
+    def test_telemetry_root_sits_under_the_iracing_folder(self):
+        from tenths.config import iracing_dir, _find_iracing_telemetry
+        assert _find_iracing_telemetry() == os.path.join(iracing_dir(), "telemetry")
+
+    def test_finding_the_path_creates_nothing(self, monkeypatch, tmp_path):
+        """Resolution must be side-effect free."""
+        import tenths.config as cfg
+        monkeypatch.setattr(cfg, "_documents_dir", lambda: str(tmp_path))
+        resolved = cfg._find_iracing_telemetry()
+        assert not os.path.exists(resolved)
+
+    def test_resolved_root_is_logged_on_start(self, tmp_path, isolated_log):
+        """Bug reports need to show which folder was actually watched."""
+        w = TelemetryWatcher(telemetry_root=str(tmp_path), auto_open=False)
+        w._running = False
+
+        # Run start() just far enough to emit the banner, then stop immediately
+        import threading
+        thread = threading.Thread(target=w.start, daemon=True)
+        thread.start()
+        time.sleep(0.5)
+        w.stop()
+        thread.join(timeout=5)
+
+        with open(isolated_log, encoding="utf-8") as f:
+            content = f.read()
+        assert str(tmp_path) in content
+        assert "monitoring" in content.lower()

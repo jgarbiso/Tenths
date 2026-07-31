@@ -144,7 +144,13 @@ If the `.ibt` file is there but no report appeared, check the log (below) — Te
 Paste that path into Explorer's address bar to open the folder. The log records every session Tenths processes, and the reason for any failure. Tenths retries a failed session a few times before giving up, and shows a notification if it does; the `.ibt` is left in place so nothing is lost. **If you are reporting a problem, please include this file** — it is the difference between a fixable report and a guess.
 
 **Tenths showed a "Telemetry folder not found" notification.**
-Tenths couldn't find `Documents\iRacing\telemetry\`. Enable telemetry in iRacing (Step 2) so the folder gets created, then restart Tenths from the Start Menu.
+Tenths could not find your iRacing folder. Two usual causes:
+
+1. **Telemetry has never been recorded.** Enable it (Step 2), drive a lap, then restart Tenths from the Start Menu.
+2. **Your Documents folder has been moved.** OneDrive folder backup relocates Documents to `%USERPROFILE%\OneDrive\Documents`, and moving it to another drive has the same effect. Tenths resolves Documents the same way iRacing does, so this normally works — but if it doesn't, the log (below) shows exactly which folder was checked.
+
+**My telemetry is somewhere unusual.**
+Set the `TENTHS_TELEMETRY_ROOT` environment variable to the folder iRacing writes `.ibt` files to, then restart Tenths. To find that folder, open iRacing's own data folder — it is the `telemetry` subfolder inside it.
 
 **The report opened but corner names look like percentages (e.g. "83.0%").**
 Tenths has corner data for 450+ iRacing tracks built in. If a track shows percentages, it's one we don't have yet — the analysis is still fully accurate, just without the named turns.

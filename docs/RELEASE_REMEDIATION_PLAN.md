@@ -429,6 +429,22 @@ Creating a missing telemetry folder currently looks like success, even when iRac
 
 **Acceptance criteria:** A new user cannot sit indefinitely with a healthy-looking tray app and no explanation of how to produce telemetry.
 
+**Partially resolved (2026-07-29) — the misresolved-path cause is fixed.**
+
+Root cause found while reviewing how the telemetry location is chosen: `config` resolved Documents with `os.path.expanduser("~/Documents")`, which is `%USERPROFILE%\Documents` and does **not** follow redirection. iRacing resolves it with the Windows Known Folder API, which does. They diverge whenever Documents has been moved — most commonly by OneDrive folder backup, which iRacing documents as a known problem. The naive path then points at a folder iRacing never writes to.
+
+The damage was not the wrong path but what happened next: `_ensure_watch_root()` created that folder and returned success, so Tenths reported "monitoring", the tray looked healthy, and no report ever appeared — with no error, notification or log entry.
+
+Fixed:
+
+- `config._documents_dir()` resolves via `SHGetKnownFolderPath(FOLDERID_Documents)`, falling back to the `Shell Folders\Personal` registry value and only then to the naive join. Also removes a mixed-separator path (`C:\Users\x/Documents\...`) that would have appeared in bug reports.
+- `config._find_iracing_telemetry()` is now side-effect free; it never creates a directory.
+- `_ensure_watch_root()` uses `<Documents>/iRacing` as the signal. If that exists, only the `telemetry` subfolder is missing, which is safe to create. If it does not, Tenths refuses to watch and logs what to check, including the `TENTHS_TELEMETRY_ROOT` override, rather than inventing a decoy folder.
+- The resolved path is logged on every start, so the first question about any "no report appeared" report is already answered.
+- `TestD2_WatcherFolderGuard` updated: creating the folder is still correct when the location is verified, and now asserted to be refused when it is not.
+
+Still outstanding for RR-012: the first-run experience when the path is *correct* but telemetry has simply never been enabled. Tenths creates the folder and waits silently; there is no one-time prompt explaining Alt+L / `irsdkLogAll=1`. A settings file so a user can set the telemetry folder without an environment variable is also not done.
+
 ### RR-013 — Update “Open Last Report” only after completion
 
 **Files:** `tenths/service/tray.py`, watcher/tray interface, tray tests.

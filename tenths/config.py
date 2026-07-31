@@ -27,19 +27,76 @@ def configure_console():
                 pass
 
 
+def _documents_dir():
+    """Resolve the user's Documents folder the way iRacing itself does.
+
+    iRacing uses the Windows Known Folder API, which follows redirection. Simply
+    joining %USERPROFILE% and "Documents" does not: when OneDrive folder backup
+    is enabled, Documents moves to %USERPROFILE%\\OneDrive\\Documents, and the
+    naive path points at a directory iRacing never writes to. Moving Documents to
+    another drive has the same effect.
+
+    Order: Known Folder API, then the registry value it is backed by, then the
+    naive path as a last resort.
+    """
+    # 1. SHGetKnownFolderPath(FOLDERID_Documents)
+    try:
+        import ctypes
+        import ctypes.wintypes
+
+        class _GUID(ctypes.Structure):
+            _fields_ = [("Data1", ctypes.wintypes.DWORD),
+                        ("Data2", ctypes.wintypes.WORD),
+                        ("Data3", ctypes.wintypes.WORD),
+                        ("Data4", ctypes.c_byte * 8)]
+
+        guid = _GUID()
+        ctypes.windll.ole32.CLSIDFromString(
+            ctypes.c_wchar_p("{FDD39AD0-238F-46AF-ADB4-6C85480369C7}"), ctypes.byref(guid))
+        buf = ctypes.c_wchar_p()
+        if ctypes.windll.shell32.SHGetKnownFolderPath(
+                ctypes.byref(guid), 0, None, ctypes.byref(buf)) == 0:
+            path = buf.value
+            ctypes.windll.ole32.CoTaskMemFree(buf)
+            if path and os.path.isdir(path):
+                return os.path.normpath(path)
+    except (ImportError, AttributeError, OSError, ValueError):
+        pass
+
+    # 2. Registry (same source the API reads, useful if the call above fails)
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders",
+            0, winreg.KEY_READ)
+        try:
+            value, _ = winreg.QueryValueEx(key, "Personal")
+        finally:
+            winreg.CloseKey(key)
+        if value and os.path.isdir(value):
+            return os.path.normpath(value)
+    except (ImportError, OSError):
+        pass
+
+    # 3. Last resort
+    return os.path.normpath(os.path.join(os.path.expanduser("~"), "Documents"))
+
+
+def iracing_dir():
+    """The iRacing data folder (<Documents>/iRacing). May not exist."""
+    return os.path.join(_documents_dir(), "iRacing")
+
+
 def _find_iracing_telemetry():
-    """Auto-detect the iRacing telemetry directory for the current user."""
-    # Standard iRacing telemetry location
-    docs = os.path.expanduser("~/Documents")
-    default = os.path.join(docs, "iRacing", "telemetry")
-    if os.path.isdir(default):
-        return default
-    # Fallback to Documents root if iRacing folder exists without telemetry subfolder
-    iracing_dir = os.path.join(docs, "iRacing")
-    if os.path.isdir(iracing_dir):
-        os.makedirs(default, exist_ok=True)
-        return default
-    return default  # Return even if doesn't exist yet — iRacing will create it
+    """Best-known iRacing telemetry directory. Never creates anything.
+
+    Creating the directory here is what turned a wrong guess into a silent
+    permanent failure: the watcher reported that it was monitoring a folder
+    iRacing would never write to. Whether the path is usable is decided by the
+    caller, which can tell the user when it is not.
+    """
+    return os.path.join(iracing_dir(), "telemetry")
 
 
 def _find_package_root():

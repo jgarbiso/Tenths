@@ -217,19 +217,43 @@ class TelemetryWatcher:
         return self._notifier
 
     def _ensure_watch_root(self):
-        """Ensure the telemetry folder exists before watching.
+        """Decide whether the telemetry folder can be watched.
 
-        Returns True if the folder is ready, False if it couldn't be found/created.
-        On a fresh PC (or before iRacing telemetry is enabled) the folder may not
-        exist yet — watchdog would raise if we scheduled against a missing path.
+        Creating the folder unconditionally used to hide the most damaging
+        first-run failure: if the path was resolved wrongly (Documents redirected
+        to OneDrive, or moved to another drive) Tenths would create that wrong
+        folder, report that it was monitoring, and never see a file. The tray
+        looked healthy forever.
+
+        The iRacing data folder is the signal. If <Documents>/iRacing exists then
+        the location is right and only the telemetry subfolder is missing, which
+        is safe to create — iRacing populates it as soon as telemetry is enabled.
+        If it does not exist, refuse rather than invent a directory.
+
+        Returns True if the folder is ready to watch.
         """
         if os.path.isdir(self._root):
             return True
-        # Try to create it — iRacing will populate it once telemetry is enabled
+
+        # Only trust a missing telemetry folder if iRacing's own folder is there.
+        parent = os.path.dirname(os.path.normpath(self._root))
+        if not os.path.isdir(parent):
+            log.error(
+                "Telemetry folder not found: %s\n"
+                "  The iRacing folder it should live in does not exist either: %s\n"
+                "  Either iRacing is not installed for this user, or its Documents "
+                "folder has been moved (OneDrive folder backup does this).\n"
+                "  Set TENTHS_TELEMETRY_ROOT to the folder iRacing writes .ibt "
+                "files to, then restart Tenths.", self._root, parent)
+            return False
+
         try:
             os.makedirs(self._root, exist_ok=True)
+            log.info("Created the telemetry folder %s — iRacing will populate it "
+                     "once telemetry logging is enabled.", self._root)
             return True
-        except OSError:
+        except OSError as exc:
+            log.error("Could not create the telemetry folder %s: %s", self._root, exc)
             return False
 
     def start(self):
@@ -251,6 +275,8 @@ class TelemetryWatcher:
             return
 
         from tenths.applog import log_path
+        # Always record the resolved path — the first question for any
+        # "no report appeared" report is which folder was actually watched.
         log.info("Tenths Watch — monitoring: %s", self._root)
         log.info("  Auto-open report: %s", self._auto_open)
         log.info("  Min file size: %.0f MB", MIN_FILE_SIZE / 1_000_000)

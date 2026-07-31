@@ -170,14 +170,33 @@ class TestD4_PyYamlDependency:
 
 
 class TestD2_WatcherFolderGuard:
-    """D2: watcher must not crash when the telemetry folder is missing."""
+    """D2: watcher must not crash when the telemetry folder is missing.
 
-    def test_ensure_watch_root_creates_missing(self, tmp_path):
+    Updated 2026-07-29: it must also not invent a telemetry folder at a path
+    that was resolved wrongly. Creating one made a misresolved Documents folder
+    (OneDrive redirection) look like a healthy install that never produced a
+    report. The iRacing folder is the signal for whether the location is right.
+    """
+
+    def test_creates_telemetry_folder_when_iracing_folder_exists(self, tmp_path):
+        """Right location, telemetry subfolder simply not created yet."""
         from tenths.service.watcher import TelemetryWatcher
-        missing = str(tmp_path / "does_not_exist_yet" / "telemetry")
+        iracing = tmp_path / "iRacing"
+        iracing.mkdir()
+        missing = str(iracing / "telemetry")
         w = TelemetryWatcher(telemetry_root=missing, auto_open=False)
         assert w._ensure_watch_root() is True
         assert os.path.isdir(missing)
+
+    def test_refuses_when_iracing_folder_is_absent(self, tmp_path):
+        """Wrong location — must report rather than create a decoy folder."""
+        from tenths.service.watcher import TelemetryWatcher
+        missing = str(tmp_path / "does_not_exist_yet" / "telemetry")
+        w = TelemetryWatcher(telemetry_root=missing, auto_open=False)
+        assert w._ensure_watch_root() is False
+        assert not os.path.exists(missing), (
+            "a telemetry folder was created at an unverified location, which "
+            "hides the failure instead of reporting it")
 
     def test_ensure_watch_root_existing(self, tmp_path):
         from tenths.service.watcher import TelemetryWatcher
