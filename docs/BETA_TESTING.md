@@ -125,9 +125,10 @@ Nothing is uploaded anywhere. Everything stays on your machine.
 
 ## Uninstalling
 
-Uninstall from Windows Settings, or the Start Menu entry. That removes the app
-and its logs. **Your reports and archived telemetry are left in place** — delete
-`Documents\iRacing\telemetry` yourself if you want them gone.
+Uninstall from Windows Settings, or the Start Menu entry. That removes the app,
+its logs, and the settings file. **Your reports and archived telemetry are left
+in place** — they live in iRacing's own `Documents\iRacing\telemetry` folder.
+Delete that yourself if you want them gone.
 
 ---
 

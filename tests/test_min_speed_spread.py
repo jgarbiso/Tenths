@@ -352,3 +352,90 @@ class TestSummaryJsonContract:
             _report_data(over_braking=13.3, spread=20.0), _file_info(), None)
         reloaded = json.loads(json.dumps(summary))
         assert reloaded['braking_zones'][0]['over_braking_mph'] == 13.3
+
+
+class TestOverBrakingThresholdRR022:
+    """RR-022: Retuned over-braking thresholds — 7% with 1.5 mph floor.
+
+    Validated against 8 archived sessions (41 corners, 4 car models, 2.3–6.4 km).
+    The old 20% / 6.0 mph threshold could never fire (peak was 31% of the limit).
+    """
+
+    def test_production_constants_match_decision(self):
+        """The threshold constants must reflect the owner's retuning decision."""
+        from tenths.analyzer import (
+            OVER_BRAKING_LIMIT_FRACTION,
+            OVER_BRAKING_LIMIT_FLOOR_MPH,
+        )
+        assert OVER_BRAKING_LIMIT_FRACTION == 0.07
+        assert OVER_BRAKING_LIMIT_FLOOR_MPH == 1.5
+
+    def test_spread_constants_untouched(self):
+        """RR-021 validated spread independently; it must not drift."""
+        from tenths.analyzer import (
+            SPREAD_LIMIT_FRACTION,
+            SPREAD_LIMIT_FLOOR_MPH,
+        )
+        assert SPREAD_LIMIT_FRACTION == 0.20
+        assert SPREAD_LIMIT_FLOOR_MPH == 6.0
+
+    def test_over_braking_fires_at_retuned_threshold(self):
+        """A corner where the driver over-slows clearly at a 50 mph avg should fire.
+
+        best_lap=3 carries 60 mph; others at 50 → avg ≈ 53.3, over_braking ≈ 6.7
+        limit = max(0.07 * 53.3, 1.5) ≈ 3.7. 6.7 > 3.7 → fires.
+        """
+        df = _make_df({1: 50.0, 2: 50.0, 3: 60.0})
+        result = _extract_apex_consistency(df, [1, 2, 3], _zones(), best_lap=3)
+        zone = result[0]
+        assert zone['over_braking_limit_mph'] == pytest.approx(3.7, abs=0.3)
+        assert zone['over_braking_mph'] > zone['over_braking_limit_mph']
+
+    def test_over_braking_does_not_fire_below_threshold(self):
+        """A corner where the driver over-slows 2 mph at a 50 mph avg should not fire.
+
+        limit = max(0.07 * 50.7, 1.5) ≈ 3.5. 2 < 3.5 → does not fire.
+        """
+        # best_lap=3 carries 52 mph; others at 50 → avg ≈ 50.7, over_braking ≈ 1.3
+        df = _make_df({1: 50.0, 2: 50.0, 3: 52.0})
+        result = _extract_apex_consistency(df, [1, 2, 3], _zones(), best_lap=3)
+        zone = result[0]
+        assert zone['over_braking_mph'] < zone['over_braking_limit_mph']
+
+    def test_floor_prevents_trivial_flags_at_slow_corners(self):
+        """At a 15 mph hairpin, 0.07 * 15 = 1.05, but the floor is 1.5.
+
+        So a 1.2 mph over-braking should NOT fire.
+        """
+        df = _make_df({1: 15.0, 2: 15.0, 3: 16.5})
+        result = _extract_apex_consistency(df, [1, 2, 3], _zones(), best_lap=3)
+        zone = result[0]
+        assert zone['over_braking_limit_mph'] == pytest.approx(1.5, abs=0.1)
+        # over_braking = 16.5 - ~15.5 ≈ 1.0 → below the 1.5 floor
+        assert zone['over_braking_mph'] < zone['over_braking_limit_mph']
+
+    def test_no_hardcoded_over_braking_8_in_report_js(self):
+        """The old hardcoded `> 8` and `> 4` absolute thresholds must be gone."""
+        js = _get_summary_js()
+        # The old pattern was: overBrk > 8 ? 'bad' : (overBrk > 4 ? 'warn'
+        assert 'overBrk > 8' not in js
+        assert 'overBrk > 4' not in js
+
+    def test_no_hardcoded_fallback_8_in_buildCorner(self):
+        """The ?? 8 fallback for over_braking_limit_mph must be gone."""
+        js = _get_summary_js()
+        assert 'over_braking_limit_mph ?? 8' not in js
+
+    def test_detailed_view_uses_computed_limit(self):
+        """The Detailed table's color logic must reference the computed limit."""
+        from tenths.report import generate_report
+        html = generate_report(
+            _report_data(over_braking=5.0, spread=3.0), _file_info(), None)
+        # The JS should reference overBrkLimit from the zone data
+        assert 'overBrkLimit' in html
+
+    def test_null_limit_suppresses_diagnosis(self):
+        """When over_braking_limit_mph is null, no diagnosis should fire."""
+        js = _get_summary_js()
+        # The condition must check for null before comparing
+        assert 'over_braking_limit_mph !== null' in js

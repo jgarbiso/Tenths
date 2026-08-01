@@ -61,8 +61,16 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch Tenths"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "taskkill"; Parameters: "/IM Tenths.exe /F"; Flags: runhidden
+; Force-kill any running instance so files can be removed cleanly.
+; A graceful shutdown (window message → wait → force) is documented as a future
+; improvement but not worth the installer complexity for beta.
+Filename: "taskkill"; Parameters: "/IM Tenths.exe /F"; Flags: runhidden; RunOnceId: "KillTenths"
 
 [UninstallDelete]
+; Application data created at runtime. Reports and archived telemetry live under
+; Documents\iRacing\telemetry — that is iRacing's directory and is never touched.
 Type: filesandordirs; Name: "{localappdata}\{#MyAppName}\logs"
-Type: filesandordirs; Name: "{localappdata}\{#MyAppName}\config"
+Type: files; Name: "{localappdata}\{#MyAppName}\settings.json"
+; Remove the app-data folder itself if it is now empty (logs gone, settings gone)
+Type: dirifempty; Name: "{localappdata}\{#MyAppName}"
+

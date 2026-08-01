@@ -1201,7 +1201,9 @@ function renderBrakingTable() {
         const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
         // Min Speed Spread — flag when the average lap gives up speed vs the best lap
         const overBrk = z.over_braking_mph;
-        const minClass = overBrk != null && overBrk > 8 ? 'bad' : (overBrk != null && overBrk > 4 ? 'warn' : '');
+        const overBrkLimit = z.over_braking_limit_mph;
+        const minClass = (overBrk != null && overBrkLimit != null && overBrk > overBrkLimit) ? 'bad'
+            : (overBrk != null && overBrkLimit != null && overBrk > overBrkLimit * 0.6) ? 'warn' : '';
         const minAvg = z.apex_avg_mph != null
             ? `<div class="min-speed-avg">avg ${Math.round(z.apex_avg_mph)}</div>`
             : '';
@@ -2397,7 +2399,7 @@ def _get_summary_js():
             min_speed_typical_high_mph: zone?.min_speed_typical_high_mph ?? null,
             // Speed-relative trigger levels computed per corner by the analyser
             spread_limit_mph: zone?.spread_limit_mph ?? 10,
-            over_braking_limit_mph: zone?.over_braking_limit_mph ?? 8,
+            over_braking_limit_mph: zone?.over_braking_limit_mph ?? null,
             apex_std_limit_mph: zone?.apex_std_limit_mph ?? 4,
             entry_mph: zone?.entry_mph ?? null,
             min_mph: zone?.min_mph ?? null,
@@ -2429,7 +2431,7 @@ def _get_summary_js():
         // apex consistency, throttle lag, brake spread.
         // Over-slowing outranks release shape — carrying too little speed is a
         // more fundamental error than how the brake is released.
-        if (corner.over_braking_mph !== null && corner.over_braking_mph > corner.over_braking_limit_mph) {
+        if (corner.over_braking_mph !== null && corner.over_braking_limit_mph !== null && corner.over_braking_mph > corner.over_braking_limit_mph) {
             const delta = Math.round(corner.over_braking_mph);
             return truncate(`${turn}: Over-slowing ~${delta}mph vs your best lap — brake lighter and carry more speed`);
         }
@@ -2462,7 +2464,7 @@ def _get_summary_js():
     }
 
     function getDiagnosisType(corner) {
-        if (corner.over_braking_mph !== null && corner.over_braking_mph > corner.over_braking_limit_mph) return 'over_braking';
+        if (corner.over_braking_mph !== null && corner.over_braking_limit_mph !== null && corner.over_braking_mph > corner.over_braking_limit_mph) return 'over_braking';
         if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > corner.spread_limit_mph) return 'min_speed_spread';
         if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) return 'brake_linearity';
         if (corner.apex_std_mph !== null && corner.apex_std_mph > corner.apex_std_limit_mph) return 'apex_consistency';

@@ -2,12 +2,14 @@
 
 **Status:** Active source of truth  
 **Review date:** 2026-07-28  
-**Last updated:** 2026-07-30 — 11 of 22 issues resolved, 1 deferred by owner, 1 new issue opened (RR-022). Suite at 467 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-009 (offline claims), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
+**Last updated:** 2026-07-31 — 14 of 22 issues resolved, 1 deferred by owner. Suite at 483 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-009 (offline claims), and RR-011 (signing) are open. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-009 (offline claims), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
 **Repository:** `c:\Users\justi\Documents\Sim\Tenths`
 
 This document converts the independent release review into implementation-ready work for another developer or AI model. Treat it as the canonical source for release blockers and remediation status. Older plans and handoff notes may describe behavior that has since changed.
+
+> **If you are here to implement the remaining work, start with `docs/OUTSTANDING_ISSUES.md`.** It is a step-by-step build sheet for the 9 open issues, with verified file/line references, exact commands, per-issue tests, and definitions of done. This document remains the authority on *why* each item was ruled a defect and holds the Resolution record; that document tells you *what to do next*.
 
 ## 1. Mandatory execution contract
 
@@ -84,11 +86,11 @@ Remediation must not regress the following behavior:
 | RR-015 | Medium | ~~`TENTHS_TRACKS_DIR` is shadowed by built-in directories~~ **RESOLVED 2026-07-30** | None |
 | RR-016 | Medium | ~~Summary threshold differs between specs and implementation~~ **RESOLVED 2026-07-30** | Product decisions |
 | RR-017 | Medium | User documentation contains incorrect feature/behavior claims | Functional fixes above |
-| RR-018 | Medium | Uninstall retention and process-kill policy is undocumented | Product decision |
-| RR-019 | Low | Bundle size and hidden imports need profiling | Functional blockers first |
+| RR-018 | Medium | ~~Uninstall retention and process-kill policy is undocumented~~ **RESOLVED 2026-07-31** | Product decision |
+| RR-019 | Low | ~~Bundle size and hidden imports need profiling~~ **RESOLVED 2026-07-31** | Functional blockers first |
 | RR-020 | Low | ~~Frozen startup command has unnecessary CLI arguments~~ **RESOLVED 2026-07-30** | None; not a startup blocker |
 | RR-021 | High | ~~Min-speed spread threshold is absolute mph and misfires on fast corners~~ **RESOLVED 2026-07-30** | Product decision; RR-016 |
-| RR-022 | Medium | Over-braking rule never fires; limit is ~3× too high to trigger | Opened by RR-021 validation |
+| RR-022 | Medium | ~~Over-braking rule never fires; limit is ~3× too high to trigger~~ **RESOLVED 2026-07-31** | Opened by RR-021 validation |
 
 Recommended batches:
 
@@ -774,6 +776,29 @@ The two sessions excluded from the count returned no valid laps and were therefo
 
 **Acceptance criteria:** Either the over-braking diagnosis fires on corners where a driver would agree they are over-slowing, with the validating sessions documented, or it is removed from user-facing output.
 
+**Resolution (2026-07-31) — retuned to 7% / 1.5 mph floor.**
+
+Decision: **(a) Retune.** The metric is conceptually sound and distinct from spread. Spread answers "are you inconsistent?" (full band width). Over-braking answers "are you systematically leaving speed on the table vs your demonstrated capability?" The best lap is treated as demonstrated capability, not luck.
+
+Constants changed in `tenths/analyzer.py`:
+- `OVER_BRAKING_LIMIT_FRACTION`: 0.20 → **0.07**
+- `OVER_BRAKING_LIMIT_FLOOR_MPH`: 6.0 → **1.5**
+
+The old threshold was copied from the spread metric. `over_braking_mph` measures best-lap-vs-trimmed-average, which is inherently much smaller than the full range. At 7%: a 60 mph corner fires at 4.2 mph, a 90 mph sweeper at 6.3 mph. The 1.5 mph floor prevents trivially small deltas at very slow corners.
+
+**Second defect fixed.** `tenths/report.py` had contradictory thresholds:
+- The Detailed table coloured cells using hardcoded `> 8` / `> 4` mph (absolute, not speed-relative).
+- `buildCorner()` used `over_braking_limit_mph ?? 8` — inventing a threshold when the computed one was missing.
+- The Summary view correctly compared against `corner.over_braking_limit_mph`.
+
+All three are now unified: both views use the computed per-corner limit with a null guard that suppresses the diagnosis rather than inventing a number.
+
+Validated: ran `analyze()` over the Coronado 2026-07-28 race (the earlier, less consistent session at 2:08.326). The metric fires on 1 of 9 corners — Zone 3 with `over_braking_mph=5.0` vs `limit=3.7` (135% of limit). This is a corner where the driver was systematically carrying 5 mph less speed than they achieved on their best lap. On the later PB session (2:06.728, after 1.6s of improvement), 0 of 7 corners fire — the driver is no longer over-slowing. That is exactly correct behavior.
+
+Tests in `tests/test_min_speed_spread.py` `TestOverBrakingThresholdRR022`: asserts production constants match the decision, one case that fires and one that does not (using values from the measured distribution), floor behaviour at a slow corner, no hardcoded `> 8`, `> 4`, or `?? 8` in report JS, the null-guard pattern, and the Detailed view using the computed limit variable. Suite: 476 passed.
+
+`docs/COACHING_METRICS_DESIGN.md` updated with the decision rationale, measured distribution, validating sessions, and the conceptual distinction between spread and over-braking.
+
 ## 6. Validation matrix
 
 Run the smallest relevant tests while iterating, then the mandatory full suite after every code change.
@@ -822,11 +847,11 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [x] RR-015 environment track-map override works as documented. Override placed first *and* each directory searched for the specific file.
 - [x] RR-016 threshold decision is consistent across code/spec/tests. Focus Card floor set to **0.05s** by owner decision; Next Race Focus fallback rules preserved; `.kiro/specs` text update folded into RR-017.
 - [ ] RR-017 all documentation matches production behavior.
-- [ ] RR-018 uninstall/data retention is defined and tested.
-- [ ] RR-019 bundle and runtime resource use are measured.
+- [x] RR-018 uninstall/data retention is defined and tested. Settings deleted; force-kill kept; telemetry never touched; `RunOnceId` added; Inno compiles warning-free.
+- [x] RR-019 bundle and runtime resource use are measured. Documented in `docs/PACKAGING.md`; sqlite3 excluded saving 5.4 MB; idle tray ~97 MB WS; processing ~90 MB RSS.
 - [x] RR-020 startup command is cleaned up or explicitly deferred as low risk. Frozen mode registers the quoted exe only.
 - [x] RR-021 spread threshold scales with corner speed and is validated on multiple tracks and car classes. Hybrid percentage-with-floor; 9 of 41 corners flag across 8 sessions, 4 car models, 2.3–6.4 km.
-- [ ] RR-022 over-braking rule fires meaningfully or is removed from user-facing output.
+- [x] RR-022 over-braking rule fires meaningfully or is removed from user-facing output. Retuned to 7%/1.5 mph; fires on 1 of 9 corners at Coronado race 1; hardcoded thresholds removed from report.
 - [ ] Full clean-machine validation and installer matrix pass.
 
 ## 8. Evidence map

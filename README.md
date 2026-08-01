@@ -42,7 +42,7 @@ Corner names come from a built-in database covering **450+ iRacing tracks** — 
 
 ## Highlights
 
-- **Low-friction** — while Tenths is running, it watches for completed sessions and processes them automatically; startup recovery and retry handling are tracked release blockers
+- **Low-friction** — Tenths watches for completed sessions and processes them automatically, including files recorded while it was stopped. Failed sessions retry up to 3 times with backoff, then notify and leave the source in place
 - **Coaching-first** — translates raw telemetry into "release the brake more progressively at T5," not just line charts
 - **Progression tracking** — a master index of processed sessions; compare against your past self, session over session
 - **Physics profiles in development** — braking diagnostics are validated for GT4; other classes use a generic profile, and your report shows your real iRacing class
@@ -155,7 +155,8 @@ See `installer/` — `tenths.spec` (PyInstaller) and `tenths_setup.iss` (Inno Se
 - `docs/HTML_REPORT_DESIGN.md` — report design & theme
 - `docs/COACHING_METRICS_DESIGN.md` — metrics → coaching mapping
 - `docs/WATCHER_ARCHITECTURE.md` — watcher design
-- `docs/RELEASE_REMEDIATION_PLAN.md` — canonical release blockers, implementation steps, tests, and acceptance criteria
+- `docs/OUTSTANDING_ISSUES.md` — **start here to pick up development**: build sheet for the remaining open issues, in dependency order
+- `docs/RELEASE_REMEDIATION_PLAN.md` — canonical release blockers, why each is a defect, and the resolution record
 - `docs/DISTRIBUTION_READINESS.md` — historical first distribution review
 - `docs/TECH_DEBT.md` — known issues and historical plans
 

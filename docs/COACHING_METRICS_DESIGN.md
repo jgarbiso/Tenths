@@ -66,8 +66,9 @@ Tenths turns professional coaching principles into automated, measurable telemet
   - Compute: `best_lap_min`, `average_min`, `worst_min`, `std_dev`
   - Over-braking delta: `average_min - best_lap_min` (negative = braking too deep on average)
 - **Thresholds:**
-  - Spread > 10mph across laps = HIGH priority inconsistency
-  - Average min speed > 8mph below best-lap min speed = over-braking diagnosis
+  - Spread: `min_speed_spread_mph > max(0.20 × avg_apex_speed, 6.0 mph)` — speed-relative with a floor (RR-021, validated 2026-07-30)
+  - Over-braking: `over_braking_mph > max(0.07 × avg_apex_speed, 1.5 mph)` — retuned from 20%/6.0 to 7%/1.5 (RR-022, validated 2026-07-31)
+  - Apex std: `apex_std_mph > max(0.08 × avg_apex_speed, 2.0 mph)`
 - **Visualization:** In Summary View coaching sentence + in Detailed braking zones table as "Min: 106 (avg 85, ±15)"
 - **Coaching sentence examples:**
   - "T5: Min speed varies 77-106mph — you carried 106 on your best lap. Trust the car and brake lighter."
@@ -83,12 +84,18 @@ Tenths turns professional coaching principles into automated, measurable telemet
   - The Summary View sentence renders the band bounds, so the displayed range can never disagree with the reported spread.
   - Exposed in the report DATA blob and in `session_summary.json` as additive fields (schema stays `1.0.0`; missing in older files reads as `null`).
   - Focus cards and Next Race Focus now share one `buildCorner()` helper, so diagnoses cannot drift between them.
-- **Thresholds in production:** `over_braking_mph > 8` and `min_speed_spread_mph > 10`.
-- **Open tuning question:** thresholds are unvalidated across tracks and car classes. The absolute mph spread threshold is a known weakness on fast corners — see "Corner attribution and time-loss accuracy" above. Review alongside the unresolved Focus Card threshold decision (RR-016 in `RELEASE_REMEDIATION_PLAN.md`).
+- **Thresholds in production (RR-022 resolution, 2026-07-31):**
+  - `over_braking_mph > max(0.07 × avg_apex_speed, 1.5)` — 7% with 1.5 mph floor
+  - `min_speed_spread_mph > max(0.20 × avg_apex_speed, 6.0)` — 20% with 6.0 mph floor (RR-021)
+  - `apex_std_mph > max(0.08 × avg_apex_speed, 2.0)` — 8% with 2.0 mph floor
+  - All three are computed per corner and persisted alongside the measurement (`spread_limit_mph`, `over_braking_limit_mph`, `apex_std_limit_mph`), so the report compares against production values rather than re-deriving thresholds in JavaScript.
+- **Over-braking threshold rationale (RR-022):** The original 20%/6.0 mph threshold was copied from the spread metric, but `over_braking_mph` measures best-lap-vs-trimmed-average — a fundamentally smaller quantity than the full band width that spread measures. Across 8 real sessions (41 corners, 4 car models, 2.3–6.4 km tracks), the metric peaked at 31% of the old 20% limit. At 7%: a 60 mph corner fires at 4.2 mph, a 90 mph sweeper at 6.3 mph, flagging the top ~10–15% of corners. The 1.5 mph floor prevents trivially small deltas at very slow corners. Validated on: `bmwm2csr_winton`, `bmwm2g87_summit`, `bmwm4evogt4_midohio`, `bmwm4gt3_limerock`, `bmwm4gt3_roadatlanta`, `ferrari296gt3_coronado` (×2), `ferrari296gt3_roadamerica`, `porsche992rgt3_lagunaseca`. Fires on 1 of 9 corners at Coronado race 1 (the earlier, less consistent session) — Zone 3 with 5.0 mph vs 3.7 mph limit — correctly identifying a corner where the driver was systematically over-slowing.
+- **Conceptual distinction from spread:** Spread answers "are you inconsistent?" (full band width). Over-braking answers "are you systematically leaving speed on the table vs your demonstrated capability on the best lap?" This aligns with coaching methodology that treats "consistent but consistently too slow" as a separate concern from "inconsistent entry speed", and treats best-lap performance as demonstrated capability to be reproduced.
+- **Open monitoring:** The metric should fire on genuinely over-slowed corners. If it never fires for a user across many sessions, the threshold may still be too high for their level of consistency. If it fires on most corners in a session, it may be too sensitive. Revisit if either pattern emerges in beta feedback.
+- **Resolved legacy notes:** The hardcoded `> 8` / `> 4` mph thresholds in the Detailed view table and the `?? 8` fallback in `buildCorner()` have been removed. Both views now use only the computed per-corner limit.
 - **Correction applied 2026-07-28:** the first implementation centred the apex search on the braking zone and trimmed the band but not the mean. Both produced a false over-slowing diagnosis on real data. Fixed the same night; see section 2a.
 - **Original implementation notes:**
-  - Summary View coaching sentence threshold: `min_speed_spread > 10mph`
-  - Priority: should rank ABOVE brake linearity in the coaching priority order when triggered, because over-braking is a more fundamental issue than release shape
+  - Priority: ranks ABOVE brake linearity in the coaching priority order when triggered, because over-braking is a more fundamental issue than release shape
 
 ### Exit Priority Score (NEW)
 - **Definition:** Rank corners by coaching value: `straight_length_after × (max_speed_on_straight - current_exit_speed)`
@@ -126,9 +133,11 @@ Aggregates use clean laps only (within 110% of best lap time, matching corner va
 
 `min_speed_worst_mph` deliberately reports the true slowest clean lap so trimming never hides data.
 
-### Known remaining weakness
+### Known remaining weakness — RESOLVED 2026-07-30
 
-Spread on fast corners is still noisy: T13 reported 14.9 mph spread at an 85.9 mph average, and 5 of 8 corners tripped the 10 mph threshold. A fixed mph threshold does not scale with corner speed and is probably wrong for fast corners. **Open question:** make the spread threshold proportional to corner speed (e.g. a percentage of apex speed) rather than absolute. Not yet validated across tracks or car classes — treat spread-based coaching with caution until this is resolved.
+~~Spread on fast corners is still noisy: T13 reported 14.9 mph spread at an 85.9 mph average, and 5 of 8 corners tripped the 10 mph threshold. A fixed mph threshold does not scale with corner speed and is probably wrong for fast corners.~~
+
+**Resolved (RR-021).** All three speed-based thresholds (spread, over-braking, apex std) are now expressed as a fraction of the corner's own average apex speed, with an absolute floor so very slow corners cannot fire on noise. Validated on 8 sessions (41 corners): spread fires on 9 (22%), apex std on 4 (10%). On Qualcomm specifically, spread went from 5 of 8 corners to 2 of 7.
 
 ### Rules for future speed-based metrics
 

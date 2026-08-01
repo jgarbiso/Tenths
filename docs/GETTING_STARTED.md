@@ -49,7 +49,7 @@ Most people prefer Option B so they never forget.
 
 ## Step 3 — Drive
 
-With Tenths running, drive a practice, qualifying session, or race. When you leave the session (or the session ends), iRacing finishes writing the telemetry file. Files created while Tenths is stopped are not yet recovered automatically on startup; this is a documented release blocker.
+With Tenths running, drive a practice, qualifying session, or race. When you leave the session (or the session ends), iRacing finishes writing the telemetry file. If Tenths was stopped while sessions were recorded, they are picked up automatically the next time it starts.
 
 ---
 

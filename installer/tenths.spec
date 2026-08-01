@@ -82,6 +82,14 @@ a = Analysis(
         'IPython',
         'jupyter',
         'notebook',
+        # sqlite3 is pulled in by pandas.io.sql but Tenths never uses SQL storage.
+        # Saves ~1.5 MB (sqlite3.dll + _sqlite3.pyd).
+        'sqlite3',
+        # pytest and _pytest are collected via numpy._pytesttester but never
+        # actually shipped as directories; the TOC references are harmless.
+        # Listed here defensively in case a future PyInstaller version bundles them.
+        'pytest',
+        '_pytest',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

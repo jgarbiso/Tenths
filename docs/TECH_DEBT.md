@@ -12,7 +12,7 @@ Items identified during development that are acceptable for current use but shou
 |---|-------|--------|----------|
 | W1 | `_set_low_priority()` lowers entire process priority, not per-thread | Main loop also runs at below-normal during processing | Before adding tray UI in same process (Tier 3) |
 | W2 | `_can_open_exclusive()` uses shared read, not true exclusive lock | Could theoretically trigger if iRacing allows read while still writing | If false triggers observed in production |
-| W3 | No processing of pre-existing .ibt files on startup | Files present before watcher starts are missed | Tier 2 — add startup scan |
+| W3 | ~~No processing of pre-existing .ibt files on startup~~ | ~~Files present before watcher starts are missed~~ | **RESOLVED 2026-07-30 (RR-005)** — `_scan_existing()` runs after the observer is live |
 | W4 | `_states` dict grows unbounded (was `_processed`) | One small record per .ibt seen since start. Negligible for typical use; replaced the old set in RR-004 and now also carries attempt counts and errors. | If the watcher runs for weeks; evict DONE records by age |
 
 ## Analyzer (`tenths/analyzer.py`)
@@ -24,7 +24,7 @@ Items identified during development that are acceptable for current use but shou
 | A3 | ~~Duplicate/near-identical braking zones~~ | **LARGELY RESOLVED 2026-07-29** by the distance-based zone split (`ZONE_GAP_METERS`). No duplicate turn labels remain on the Qualcomm, Mid-Ohio or Winton sessions. The unclamped-window fallback in `_apex_window` is retained as a guard. | Re-check if duplicates reappear |
 | A4 | Corner sectors cover ~88% of the lap, not 100% | "Total recoverable" is the sum of corner sectors, not a true lap total. Honest but easy to misread as a full-lap figure. | Either label it explicitly in the UI or move to full Voronoi coverage |
 | A5 | Lap numbering differs from official iRacing results by one | Tenths called the fastest lap #3; the result CSV called it #2. Times match exactly, only the label differs. | Align numbering, or note the offset where laps are displayed |
-| A6 | Spread/std thresholds are absolute mph | Misfires on fast corners — see RR-021 in `RELEASE_REMEDIATION_PLAN.md` | Before trusting spread-based coaching |
+| A6 | ~~Spread/std thresholds are absolute mph~~ | ~~Misfires on fast corners~~ | **RESOLVED 2026-07-30 (RR-021)** — now speed-relative with a floor |
 
 ## Report (`tenths/report.py`)
 
@@ -89,7 +89,7 @@ This resolves most legacy slug/coverage problems for tracks present in the bundl
 **Remaining release work:**
 
 - **RR-001:** Verify the exact landmark source revision, ownership, dataset-specific license, attribution, and redistribution obligations. The former GPL-3.0 assumption is not evidence.
-- **RR-015:** Make `TENTHS_TRACKS_DIR` a real Markdown-map override. It is currently listed after built-in directories, and the loader stops at the first directory that exists even if it lacks the requested map.
+- **RR-015:** ~~Make `TENTHS_TRACKS_DIR` a real Markdown-map override. It is currently listed after built-in directories, and the loader stops at the first directory that exists even if it lacks the requested map.~~ **RESOLVED 2026-07-30.** Override is placed first and each candidate directory is searched for the specific file.
 - Keep Tenths standalone; do not add a CrewChief installation dependency as a workaround.
 
 ### Current Workarounds
