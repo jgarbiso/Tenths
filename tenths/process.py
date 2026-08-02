@@ -34,7 +34,10 @@ from tenths.summary import generate_session_summary, write_session_summary
 from tenths.track_map_generator import generate_skeleton_track_map, write_skeleton_track_map
 
 # ── Config ────────────────────────────────────────────────────────────────────
-from tenths.config import TELEMETRY_ROOT, ARCHIVE_DIR, TRACKS_DIR, MIN_SESSION_SIZE, DOWNLOADS_DIR
+from tenths.config import (
+    TELEMETRY_ROOT, ARCHIVE_DIR, TRACKS_DIR, MIN_SESSION_SIZE, DOWNLOADS_DIR,
+    REQUIRED_ARTIFACTS, session_output_dir,
+)
 
 FILENAME_PATTERN = re.compile(
     r'^(.+?)_(.+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})(.*?)(\.\w+)$'
@@ -601,45 +604,43 @@ def main():
 
     print(f"Found {len(ibt_files)} file(s) to process.\n")
 
-    # Group files by (car, track, date) for multi-session support
-    day_groups = {}  # key: (car, track, date) → list of (filepath, file_info)
-    skip_files = []
+    # Process each file individually — every session gets its own output folder
+    succeeded = 0
+    skipped = 0
+    failed = 0
 
     for filepath in ibt_files:
         file_info = parse_filename(filepath)
         if not file_info:
             print(f"  SKIP: Could not parse filename: {os.path.basename(filepath)}")
-            skip_files.append(filepath)
+            skipped += 1
             continue
-        key = (file_info['car'], file_info['track'], file_info['date'])
-        if key not in day_groups:
-            day_groups[key] = []
-        day_groups[key].append((filepath, file_info))
 
-    # Process each day group
-    for (car, track, date), files_in_day in sorted(day_groups.items()):
+        car = file_info['car']
+        track = file_info['track']
+        date = file_info['date']
+        time_str = file_info['time']
+        filesize_mb = os.path.getsize(filepath) / 1024 / 1024
+
+        print(f"\n{'='*60}")
+        print(f"SESSION: {car} / {track} / {date} {time_str} ({filesize_mb:.1f}MB)")
         print(f"{'='*60}")
-        print(f"DAY: {car} / {track} / {date} ({len(files_in_day)} file(s))")
-        print(f"{'='*60}")
 
-        # Analyze all files for this day
-        sessions = []  # list of (file_info, data, race_result)
-        for filepath, file_info in sorted(files_in_day, key=lambda x: x[1]['time']):
-            filesize_mb = os.path.getsize(filepath) / 1024 / 1024
-            print(f"\n  Processing: {file_info['time']} ({filesize_mb:.1f}MB)")
-
+        try:
             data = analyze(filepath)
             if not data:
-                print(f"    No valid laps — skipping (archiving)")
+                print(f"  No valid laps — skipping")
                 if not dry_run:
                     os.makedirs(ARCHIVE_DIR, exist_ok=True)
                     shutil.move(filepath, os.path.join(ARCHIVE_DIR, os.path.basename(filepath)))
+                skipped += 1
                 continue
 
-            # Store filesize in data for later use (file may be archived before notes generation)
+            # Store filesize for notes
             data['filesize_mb'] = filesize_mb
 
-            print(f"    Valid laps: {len(data['valid_laps'])}, Best: Lap {data['best_lap']}, Type: {data.get('session_info', {}).get('event_type', '?')}")
+            print(f"  Valid laps: {len(data['valid_laps'])}, Best: Lap {data['best_lap']}, "
+                  f"Type: {data.get('session_info', {}).get('event_type', '?')}")
 
             # Auto-find race result
             race_result = None
@@ -650,144 +651,103 @@ def main():
                 race_result = parse_result(result_file, my_cust_id=si.get('driver_id'))
                 if race_result and race_result.get('my_result'):
                     me = race_result['my_result']
-                    print(f"    Race result: P{me['finish_pos']}/{race_result['entries']}, iR {me.get('old_irating',0)}->{me.get('new_irating',0)}")
+                    print(f"  Race result: P{me['finish_pos']}/{race_result['entries']}, "
+                          f"iR {me.get('old_irating',0)}->{me.get('new_irating',0)}")
 
-            sessions.append((file_info, data, race_result))
+            # Determine output directory (per-session, with collision handling)
+            session_dir = session_output_dir(TELEMETRY_ROOT, car, track, date, time_str)
 
-            # Archive the .ibt
-            if not dry_run:
-                os.makedirs(ARCHIVE_DIR, exist_ok=True)
-                shutil.move(filepath, os.path.join(ARCHIVE_DIR, os.path.basename(filepath)))
+            if dry_run:
+                print(f"\n  Would write to: {session_dir}")
+                print(f"  Artifacts: {', '.join(REQUIRED_ARTIFACTS)}")
+                succeeded += 1
+                continue
 
-        if not sessions:
-            print("  No valid sessions for this day.")
-            continue
-
-        # Load track map and baseline
-        track_map = load_track_map(track)
-        if track_map:
-            print(f"\n  Track map: {len(track_map)} zones loaded")
-        else:
-            # Auto-generate skeleton track map from the best session's data
-            best_session_data = max(sessions, key=lambda s: -min(
-                (r['time'] for r in s[1]['lap_results'] if r['time'] > 0), default=9999))
-            _, gen_data, _ = best_session_data
-            if gen_data.get('braking_zones'):
-                si = gen_data.get('session_info', {})
-                skeleton = generate_skeleton_track_map(gen_data, si)
-                track_slug = track.lower().replace(' ', '_')
-                written = write_skeleton_track_map(skeleton, track_slug)
-                if written:
-                    print(f"\n  Auto-generated track map: {os.path.basename(written)}")
-                    # Reload the newly created track map
-                    track_map = load_track_map(track)
-
-        baseline = load_baseline(car, track)
-        if baseline:
-            print(f"  Baseline: {baseline['date']} (PB: {fmt_time(baseline.get('pb_time', 0))})")
-
-        # Generate combined session notes for the day
-        session_dir = os.path.join(TELEMETRY_ROOT, car, track, date)
-        notes_path = os.path.join(session_dir, "session_notes.md")
-
-        notes_content = generate_day_notes(sessions, car, track, date, track_map, baseline)
-
-        if dry_run:
-            print(f"\n  Would write: {notes_path}")
-            print(f"  Content: {len(notes_content)} chars, {notes_content.count(chr(10))} lines")
-            print(f"  Sessions included: {len(sessions)}")
-        else:
             os.makedirs(session_dir, exist_ok=True)
+
+            # Load track map
+            track_map = load_track_map(track)
+            if not track_map and data.get('braking_zones'):
+                si = data.get('session_info', {})
+                try:
+                    skeleton = generate_skeleton_track_map(data, si)
+                    track_slug = track.lower().replace(' ', '_')
+                    written = write_skeleton_track_map(skeleton, track_slug)
+                    if written:
+                        print(f"  Auto-generated track map: {os.path.basename(written)}")
+                        track_map = load_track_map(track)
+                except Exception as e:
+                    print(f"  Warning: track map generation failed: {e}")
+
+            baseline = load_baseline(car, track)
+
+            # 1. Session notes (per-session, not day-level)
+            notes_content = generate_day_notes(
+                [(file_info, data, race_result)], car, track, date, track_map, baseline)
+            notes_path = os.path.join(session_dir, "session_notes.md")
             with open(notes_path, 'w', encoding='utf-8') as f:
                 f.write(notes_content)
-            print(f"\n  Created: {notes_path} ({len(sessions)} session(s))")
+            print(f"  Created: session_notes.md")
 
-            # Generate HTML report for the best session of the day
-            # Priority: Race > Qualify > Practice. Within same type, pick fastest lap.
-            def session_priority(s):
-                fi, data, rr = s
-                event_type = data.get('session_info', {}).get('event_type', '').lower()
-                type_rank = 0  # Practice/Test
-                if 'race' in event_type:
-                    type_rank = 2
-                elif 'qual' in event_type:
-                    type_rank = 1
-                best_time = min((r['time'] for r in data['lap_results'] if r['time'] > 0), default=9999)
-                return (type_rank, -best_time)  # Higher type_rank wins, then faster lap
-            best_session = max(sessions, key=session_priority)
-            best_fi, best_data, best_rr = best_session
+            # 2. HTML report
+            progression = None
             try:
-                # Compute progression for summary view
-                progression = None
-                try:
-                    summary_for_prog = generate_session_summary(best_data, best_fi, track_map, best_rr)
-                    from tenths.summary import compute_progression
-                    progression = compute_progression(summary_for_prog, session_dir)
-                except Exception:
-                    pass
-                report_html = generate_report(best_data, best_fi, track_map, best_rr, progression=progression)
-                report_path = os.path.join(session_dir, "session_report.html")
-                with open(report_path, 'w', encoding='utf-8') as f:
-                    f.write(report_html)
-                print(f"  Created: session_report.html")
-            except Exception as e:
-                print(f"  Warning: HTML report generation failed: {e}")
+                summary_for_prog = generate_session_summary(data, file_info, track_map, race_result)
+                from tenths.summary import compute_progression
+                progression = compute_progression(summary_for_prog, session_dir)
+            except Exception:
+                pass
 
-            # Generate session_summary.json
-            try:
-                summary = generate_session_summary(best_data, best_fi, track_map, best_rr)
-                summary_path = write_session_summary(summary, session_dir)
-                print(f"  Created: session_summary.json")
-            except Exception as e:
-                print(f"  Warning: JSON summary generation failed: {e}")
+            report_html = generate_report(data, file_info, track_map, race_result, progression=progression)
+            report_path = os.path.join(session_dir, "session_report.html")
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_html)
+            print(f"  Created: session_report.html")
+
+            # 3. JSON summary
+            summary = generate_session_summary(data, file_info, track_map, race_result)
+            write_session_summary(summary, session_dir)
+            print(f"  Created: session_summary.json")
 
             # Copy race result file to session dir if found
-            for file_info, data, race_result in sessions:
-                if race_result and race_result.get('filepath'):
-                    src = race_result['filepath']
-                    dst = os.path.join(session_dir, os.path.basename(src))
-                    if not os.path.exists(dst):
-                        shutil.copy2(src, dst)
-                        print(f"  Copied race result: {os.path.basename(src)}")
+            if race_result and race_result.get('filepath'):
+                src = race_result['filepath']
+                dst = os.path.join(session_dir, os.path.basename(src))
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+                    print(f"  Copied race result: {os.path.basename(src)}")
 
-            # Update track file (use best session of the day)
-            all_valid = []
-            for fi, d, rr in sessions:
-                for r in d['lap_results']:
-                    if r['time'] > 0:
-                        all_valid.append(r)
-            if all_valid:
-                best_of_day = min(all_valid, key=lambda x: x['time'])
-                cleanest_of_day = min(all_valid, key=lambda x: x['abs'] if x['time'] < best_of_day['time'] + 3 else 9999)
-                is_first = baseline is None
-                # Use the first session's file_info for the track file update
-                update_track_file(sessions[0][0], sessions[0][1], best_of_day, cleanest_of_day, is_first)
+            # Verify all required artifacts before archiving (RR-007)
+            missing = [name for name in REQUIRED_ARTIFACTS
+                       if not os.path.exists(os.path.join(session_dir, name))]
+            if missing:
+                print(f"  ERROR: Missing artifacts {missing} — source NOT archived")
+                failed += 1
+                continue
 
-    # Git commit (opt-in with --git flag)
-    if git_commit and not dry_run and day_groups:
-        print(f"\n{'='*60}")
-        print("Git commit...")
-        try:
-            subprocess.run(['git', 'add', '-A'], cwd=SIM_ROOT, capture_output=True)
-            msg = f"Auto-process session notes ({datetime.now().strftime('%Y-%m-%d')})"
-            result = subprocess.run(['git', 'commit', '-m', msg], cwd=SIM_ROOT, capture_output=True, text=True)
-            if result.returncode == 0:
-                subprocess.run(['git', 'push'], cwd=SIM_ROOT, capture_output=True)
-                print("  Committed and pushed.")
-            else:
-                print(f"  Nothing to commit (or error): {result.stderr[:200]}")
+            # Archive the .ibt only after all artifacts are confirmed
+            os.makedirs(ARCHIVE_DIR, exist_ok=True)
+            shutil.move(filepath, os.path.join(ARCHIVE_DIR, os.path.basename(filepath)))
+            print(f"  Archived: _archive/{os.path.basename(filepath)}")
+            succeeded += 1
+
         except Exception as e:
-            print(f"  Git error: {e}")
+            print(f"  FAILED: {e}")
+            failed += 1
+            continue
 
+    # Batch summary
     print(f"\n{'='*60}")
-    print("DONE")
+    print(f"BATCH COMPLETE: {succeeded} succeeded, {skipped} skipped, {failed} failed")
+    print(f"{'='*60}")
 
     # Regenerate master index so new sessions appear
-    try:
-        from tenths.index_generator import generate_master_index
-        generate_master_index()
-    except Exception:
-        pass  # Non-critical
+    if not dry_run and succeeded > 0:
+        try:
+            from tenths.index_generator import generate_master_index
+            generate_master_index()
+        except Exception:
+            pass  # Non-critical
 
 
 def generate_day_notes(sessions, car, track, date, track_map, baseline):

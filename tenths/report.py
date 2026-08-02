@@ -2904,7 +2904,9 @@ def generate_report_cli():
         race_result = parse_result(result_file, my_cust_id=si.get('driver_id'))
 
     # Generate report (with progression if available)
-    session_dir = os.path.join(TELEMETRY_ROOT, file_info['car'], file_info['track'], file_info['date'])
+    from tenths.config import session_output_dir
+    session_dir = session_output_dir(TELEMETRY_ROOT, file_info['car'], file_info['track'],
+                                     file_info['date'], file_info['time'])
     os.makedirs(session_dir, exist_ok=True)
 
     # Try to compute progression

@@ -2,7 +2,7 @@
 
 **Status:** Active source of truth  
 **Review date:** 2026-07-28  
-**Last updated:** 2026-08-01 — 15 of 22 issues resolved, 1 deferred by owner. Suite at 524 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
+**Last updated:** 2026-08-01 — 17 of 22 issues resolved, 0 deferred. Suite at 537 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
 **Repository:** `c:\Users\justi\Documents\Sim\Tenths`
@@ -74,8 +74,8 @@ Remediation must not regress the following behavior:
 | RR-003 | Release blocker | ~~Progression cannot traverse canonical date/time session layout~~ **RESOLVED 2026-07-30** | RR-006 stage A path helper |
 | RR-004 | Release blocker | ~~Watcher failures are silent, permanent, and not retried~~ **RESOLVED 2026-07-29** | None |
 | RR-005 | Release blocker | ~~Watcher misses files present at startup~~ **RESOLVED 2026-07-30** | RR-004 state model |
-| RR-006 | Release blocker | Manual processing emits one representative report per day | None |
-| RR-007 | High | ~~Manual processing is not failure-isolated or transactional~~ **DEFERRED 2026-07-30** by owner decision — beta testers use the watcher, not manual processing | RR-006 |
+| RR-006 | Release blocker | ~~Manual processing emits one representative report per day~~ **RESOLVED 2026-08-01** | None |
+| RR-007 | High | ~~Manual processing is not failure-isolated or transactional~~ **RESOLVED 2026-08-01** | RR-006 |
 | RR-008 | High | ~~GT3 and most cars are mislabeled as Touring~~ **RESOLVED 2026-07-30** | None |
 | RR-009 | High | ~~Detailed report is not offline despite product claims~~ **RESOLVED 2026-08-01** | None |
 | RR-010 | High | ~~Race-result parsing aborts on malformed row values~~ **RESOLVED 2026-07-30** | None |
@@ -337,6 +337,10 @@ The scan is nonrecursive by design: `_archive` and the generated `car/track/date
 
 **Acceptance criteria:** Every file successfully handled by watcher or `process` has its own report, notes, and summary. Standalone generation commands place their requested artifact in that same session-specific location without implicitly creating unrelated artifacts or archiving the input.
 
+**Resolution (2026-08-01).**
+
+Stage A: `session_output_dir()` added to `tenths/config.py` with deterministic collision handling (`-2`, `-3` suffixes). `REQUIRED_ARTIFACTS` moved from `watcher.py` to `config.py`; watcher imports it from there. Watcher now uses `session_output_dir(self._root, ...)` instead of hardcoded `os.path.join(TELEMETRY_ROOT, ...)`, and uses `self._root` for archive path instead of the global `TELEMETRY_ROOT` (fixing the known inconsistency). Stage B: manual `process` iterates files directly (no day-grouping, no `session_priority` / best-session selection). Each session gets its own time-level folder with all three artifacts. Standalone `report` and `summary` CLIs write to the canonical time-level directory without archiving. 13 integration tests validate per-session output, failure isolation, and batch summary counts.
+
 ### RR-007 — Isolate manual failures and archive transactionally
 
 **Files:** `tenths/process.py`, error-path tests.
@@ -363,6 +367,10 @@ The scan is nonrecursive by design: `_archive` and the generated `car/track/date
 **Deferred (2026-07-30) — owner decision, not a technical conclusion.**
 
 The owner deferred this for the beta because beta testers install the tray app and never invoke `tenths process` by hand; the durability that matters for them is RR-004's watcher path, which is done. This is a scope decision on *when*, not a claim that the defect is absent. The specification above stays as written and RR-007 remains unchecked on the release gate.
+
+**Resolution (2026-08-01).**
+
+Implemented as part of the RR-006 rewrite. Manual `process` now wraps each file in try/except — one bad file logs the error and continues to the next. Archiving is deferred until all `REQUIRED_ARTIFACTS` are confirmed on disk; if any are missing the source `.ibt` stays in place. Batch summary prints succeeded/skipped/failed counts. Tests confirm a corrupt first file does not block a valid second file, and that report generation failure leaves the source unarchived.
 
 Two consequences to keep in view: the batch failure-isolation gap is still present in `process.py` for anyone who does run it (the owner, and any tester given manual instructions), and RR-007 depends on RR-006, which is also still open. If manual processing is ever surfaced in user documentation, this must be reopened first.
 
@@ -839,8 +847,8 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [x] RR-003 progression works across nested dates and same-day sessions. Path-based current-session exclusion, strictly-earlier history filter, duplicate-layout dedupe.
 - [x] RR-004 failures retry, notify, and log without stranding input. Rotating log at `%LOCALAPPDATA%\Tenths\logs\tenths.log`; 3 attempts with backoff; artifacts verified before archiving.
 - [x] RR-005 startup scan processes files created while Tenths was stopped. `_scan_existing()` reuses the RR-004 claim path, so scan and event cannot double-process.
-- [ ] RR-006 watcher and `process` produce complete per-session artifacts; standalone commands preserve their artifact-specific semantics in the canonical directory.
-- [ ] RR-007 manual processing is isolated and archives only after success. **Deferred by owner** for beta; testers use the watcher.
+- [x] RR-006 watcher and `process` produce complete per-session artifacts; standalone commands preserve their artifact-specific semantics in the canonical directory. **RESOLVED 2026-08-01.**
+- [x] RR-007 manual processing is isolated and archives only after success. **RESOLVED 2026-08-01.**
 - [x] RR-008 class labels/profiles use `.ibt` metadata. Display class and physics profile separated; `PROFILE_GENERIC` replaces "Touring"; slug-shaped class values rejected.
 - [x] RR-009 offline behavior and claims agree. **RESOLVED 2026-08-01** — Option A (inline) implemented.
 - [x] RR-010 race-result parsing tolerates bad fields/rows. All numeric fields via `_safe_int`; type-insensitive `_same_customer()`; non-dict rows filtered before sorting.

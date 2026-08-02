@@ -104,7 +104,7 @@ Right-click the Tenths tray icon:
 
 ## Where your data lives
 
-Successfully processed watcher sessions are saved under your telemetry folder, organized by car → track → date → session time. Manual CLI output is not yet fully consistent with this layout and is tracked as a release blocker:
+Successfully processed sessions are saved under your telemetry folder, organized by car → track → date → session time. Both the watcher and manual `tenths process` use the same layout:
 
 ```
 Documents\iRacing\telemetry\

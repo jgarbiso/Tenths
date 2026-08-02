@@ -95,7 +95,7 @@ python -m pytest tests/
 
 ### What gets generated
 
-Watcher-generated sessions are stored under `telemetry/<car>/<track>/<date>/<time>/`. Manual and standalone CLI commands still have known date-level output inconsistencies tracked in `docs/RELEASE_REMEDIATION_PLAN.md`.
+Watcher-generated sessions are stored under `telemetry/<car>/<track>/<date>/<time>/`. Manual `process` and standalone CLI commands use the same per-session layout.
 
 | File | Purpose |
 |------|---------|

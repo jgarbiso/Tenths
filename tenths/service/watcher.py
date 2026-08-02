@@ -42,7 +42,8 @@ RETRY_BACKOFF_SECONDS = (10, 45)   # delay before attempt 2, then attempt 3
 
 # Artifacts that must exist before a session counts as processed. The source
 # .ibt is only archived once all of these are on disk.
-REQUIRED_ARTIFACTS = ("session_report.html", "session_notes.md", "session_summary.json")
+# Canonical definition lives in tenths.config; imported here for local use.
+from tenths.config import REQUIRED_ARTIFACTS
 
 
 class FileState:
@@ -517,7 +518,8 @@ class TelemetryWatcher:
 
         # Import here to avoid circular deps and keep idle memory low
         from tenths.analyzer import analyze
-        from tenths.process import parse_filename, find_race_result, TELEMETRY_ROOT
+        from tenths.process import parse_filename, find_race_result
+        from tenths.config import session_output_dir
         from tenths.track_map import load_track_map
         from tenths.track_map_generator import generate_skeleton_track_map, write_skeleton_track_map
         from tenths.report import generate_report
@@ -573,7 +575,7 @@ class TelemetryWatcher:
                         os.path.basename(filepath), exc)
 
         # Output directory — include session time so each session gets its own folder
-        session_dir = os.path.join(TELEMETRY_ROOT, car, track, date, file_info['time'])
+        session_dir = session_output_dir(self._root, car, track, date, file_info['time'])
         os.makedirs(session_dir, exist_ok=True)
 
         # 1. Session notes
@@ -646,7 +648,7 @@ class TelemetryWatcher:
 
         # Archive the source only now that everything is safely on disk
         import shutil
-        archive_dir = os.path.join(TELEMETRY_ROOT, "_archive")
+        archive_dir = os.path.join(self._root, "_archive")
         os.makedirs(archive_dir, exist_ok=True)
         destination = os.path.join(archive_dir, os.path.basename(filepath))
         try:

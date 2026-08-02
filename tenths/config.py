@@ -258,6 +258,44 @@ ICON_PATH = os.path.join(ASSETS_DIR, "tenths.ico")
 DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
 
 
+# ── Session Output Helpers ────────────────────────────────────────────────────
+
+# Artifacts that must exist before a session counts as processed. The source
+# .ibt is only archived once all of these are on disk.
+REQUIRED_ARTIFACTS = ("session_report.html", "session_notes.md", "session_summary.json")
+
+
+def session_output_dir(telemetry_root, car, track, date, time):
+    """Canonical per-session output directory.
+
+    Path structure: <telemetry_root>/<car>/<track>/<date>/<time>
+
+    If the directory already exists (collision from a prior run or a duplicate
+    filename), a deterministic numeric suffix is appended: <time>-2, <time>-3, etc.
+    This ensures every session gets its own folder without overwriting.
+
+    Args:
+        telemetry_root: base directory for all telemetry output
+        car: car slug (e.g. 'bmwm2csr')
+        track: track slug (e.g. 'winton_national')
+        date: date string (e.g. '2026-06-06')
+        time: time string (e.g. '22-26-36')
+
+    Returns:
+        Absolute path to the session directory (not yet created).
+    """
+    base = os.path.join(telemetry_root, car, track, date, time)
+    if not os.path.exists(base):
+        return base
+    # Collision: append deterministic suffix
+    suffix = 2
+    while True:
+        candidate = f"{base}-{suffix}"
+        if not os.path.exists(candidate):
+            return candidate
+        suffix += 1
+
+
 def _default_app_data_dir():
     """Per-user application data directory (%LOCALAPPDATA%\\Tenths)."""
     base = os.environ.get('LOCALAPPDATA')

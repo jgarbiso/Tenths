@@ -636,7 +636,9 @@ def generate_summary_cli():
     summary = generate_session_summary(data, file_info, track_map, race_result)
 
     # Write to session directory
-    session_dir = os.path.join(TELEMETRY_ROOT, file_info['car'], file_info['track'], file_info['date'])
+    from tenths.config import session_output_dir
+    session_dir = session_output_dir(TELEMETRY_ROOT, file_info['car'], file_info['track'],
+                                     file_info['date'], file_info['time'])
     summary_path = write_session_summary(summary, session_dir)
 
     print(f"Summary generated: {summary_path}")

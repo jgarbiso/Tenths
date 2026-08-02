@@ -55,11 +55,6 @@ including GT3 — uses a **Generic** profile. Your report shows your real iRacin
 class, but the coaching rules are not yet class-specific beyond GT4. Some
 notes may be less relevant for your car.
 
-### Use the tray, not `tenths process`
-The background tray app gives each session its own report folder. The manual
-`process` command still groups by day and can overwrite same-day output. Please
-just let the tray do the work.
-
 ### Race results need a manual export
 For finishing position and iRating on a race report, export the result from the
 iRacing website (the Export button on a race result page). It lands in Downloads
