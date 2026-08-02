@@ -40,3 +40,11 @@ cache/
 dist/
 build/
 installer/Output/
+
+# Backstop for RR-023. Auto-generated track maps now go to
+# %LOCALAPPDATA%\Tenths\tracks (config.USER_TRACKS_DIR) and the autouse
+# _never_write_track_maps_into_the_repo fixture redirects them in tests.
+# This pattern only catches a regression in either of those; the committed
+# hand-authored maps in tracks/ are unaffected.
+tracks/test_track.md
+tracks/test_*.md

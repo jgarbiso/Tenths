@@ -85,6 +85,8 @@ def config_cli(args):
           f"{'' if os.path.isdir(cfg.TELEMETRY_ROOT) else '   (NOT FOUND)'}")
     print(f"    source         : {source}")
     print(f"  Archive folder   : {cfg.ARCHIVE_DIR}")
+    print(f"  Track maps       : {cfg.USER_TRACKS_DIR}"
+          f"{'' if os.path.isdir(cfg.USER_TRACKS_DIR) else '   (none generated yet)'}")
     print(f"  Log file         : {log_path()}")
     print(f"  Settings file    : {cfg.SETTINGS_PATH}"
           f"{'' if os.path.isfile(cfg.SETTINGS_PATH) else '   (not created yet)'}")

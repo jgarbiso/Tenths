@@ -120,3 +120,167 @@ class TestIntegrationWithRealData:
         assert 'Mid-Ohio' in content or 'midohio' in content.lower()
         # Should have lat/lon for braking zones
         assert '40.6' in content  # Mid-Ohio latitude range
+
+
+class TestWriteTargetIsUserWritable:
+    """RR-023: generated maps must not be written into the install/repo directory.
+
+    The original default derived its target from __file__, which meant:
+      - the test suite wrote `tracks/test_track.md` into the repository
+      - a frozen build wrote into `_internal/tracks/`, which the installer
+        overwrites on upgrade and removes on uninstall, silently destroying
+        the user's generated maps
+      - TENTHS_TRACKS_DIR overrode reads but not writes
+    """
+
+    def test_default_target_is_config_user_tracks_dir(self, tmp_path, monkeypatch):
+        """With no explicit dir, the writer must use config.USER_TRACKS_DIR."""
+        from tenths import config
+        target = tmp_path / "user_tracks"
+        monkeypatch.setattr(config, "USER_TRACKS_DIR", str(target))
+
+        written = write_skeleton_track_map("# Test\n", "some_track")
+
+        assert written is not None, "expected a file to be written"
+        assert os.path.isfile(written)
+        # Must be inside the redirected dir, proving config is honoured
+        assert os.path.normcase(str(target)) in os.path.normcase(written)
+
+    def test_default_target_is_not_the_bundled_tracks_dir(self):
+        """The write target must never be the package's read-only tracks dir."""
+        from tenths import config
+        import tenths.track_map_generator as tmg
+
+        bundled = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(tmg.__file__))), "tracks")
+
+        assert os.path.normcase(config.USER_TRACKS_DIR) != os.path.normcase(bundled), (
+            "USER_TRACKS_DIR must not be the bundled tracks directory — in a frozen "
+            "build that lives inside the install folder and is wiped on upgrade")
+
+    def test_default_target_lives_under_app_data(self):
+        """Generated maps belong in per-user app data, not the program folder.
+
+        Asserts the *configured* default, recomputed here rather than read from
+        config, because the autouse test guard redirects USER_TRACKS_DIR to a
+        temp dir for isolation.
+        """
+        from tenths import config
+        expected = os.path.join(config.APP_DATA_DIR, "tracks")
+        actual = os.environ.get('TENTHS_USER_TRACKS_DIR', expected)
+        assert os.path.normcase(config.APP_DATA_DIR) in os.path.normcase(actual)
+
+    def test_explicit_dir_still_honoured(self, tmp_path):
+        """An explicit tracks_dir argument overrides the default."""
+        written = write_skeleton_track_map("# Test\n", "explicit_track",
+                                          tracks_dir=str(tmp_path))
+        assert written == os.path.join(str(tmp_path), "explicit_track.md")
+        assert os.path.isfile(written)
+
+    def test_existing_map_is_never_overwritten(self, tmp_path):
+        """A hand-edited map must survive regeneration."""
+        existing = tmp_path / "keepme.md"
+        existing.write_text("# Hand edited\n", encoding="utf-8")
+
+        result = write_skeleton_track_map("# Generated\n", "keepme",
+                                         tracks_dir=str(tmp_path))
+
+        assert result is None, "should refuse to overwrite"
+        assert existing.read_text(encoding="utf-8") == "# Hand edited\n"
+
+    def test_unwritable_target_degrades_gracefully(self, monkeypatch):
+        """A generated map is a convenience; it must never fail a session."""
+        import tenths.track_map_generator as tmg
+
+        def boom(*args, **kwargs):
+            raise OSError("read-only filesystem")
+
+        monkeypatch.setattr(tmg.os, "makedirs", boom)
+
+        # Must return None rather than propagating
+        assert write_skeleton_track_map("# Test\n", "t", tracks_dir="/nope") is None
+
+
+class TestGeneratedMapIsReadable:
+    """A map written to the user dir must be found by the loader."""
+
+    def test_user_dir_is_in_the_read_search_path(self):
+        from tenths import config
+        from tenths.track_map import TRACK_MAPS_DIRS
+
+        normalized = [os.path.normcase(d) for d in TRACK_MAPS_DIRS if d]
+        assert os.path.normcase(config.USER_TRACKS_DIR) in normalized, (
+            "USER_TRACKS_DIR must be searched on read, or generated maps are "
+            "written somewhere the loader never looks")
+
+    def test_user_dir_is_searched_before_bundled_maps(self):
+        """A user's own map for a track should win over a shipped one."""
+        from tenths import config
+        from tenths.track_map import TRACK_MAPS_DIRS
+
+        normalized = [os.path.normcase(d) for d in TRACK_MAPS_DIRS if d]
+        user_idx = normalized.index(os.path.normcase(config.USER_TRACKS_DIR))
+
+        bundled = [i for i, d in enumerate(normalized)
+                   if d.endswith(os.path.normcase(os.sep + "tracks"))
+                   and i != user_idx]
+        assert bundled, "expected at least one bundled tracks dir in the search path"
+        assert user_idx < min(bundled), (
+            "user-generated maps must be searched before bundled maps")
+
+
+class TestUserDirDoesNotBreakBundledMaps:
+    """User-first ordering must not stop curated bundled maps from loading."""
+
+    def test_bundled_map_still_loads_when_user_dir_is_empty(self, tmp_path, monkeypatch):
+        """An empty user dir must contribute no candidates and fall through."""
+        import tenths.track_map as tm
+
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "winton_national.md").write_text(
+            "# Winton National\n\n## Turn Map\n\n"
+            "| Track % | Turn | Name | Direction | Description |\n"
+            "|---|---|---|---|---|\n"
+            "| ~5-7% | **T1** | Bundled Turn | Left | test |\n",
+            encoding="utf-8")
+
+        empty_user = tmp_path / "user"
+        empty_user.mkdir()
+
+        monkeypatch.setattr(tm, "TRACK_MAPS_DIRS",
+                            [str(empty_user), str(bundled)])
+
+        found = tm._load_from_md_file("winton_national")
+        assert found, "bundled map must still be found when the user dir is empty"
+
+    def test_user_map_wins_when_both_exist(self, tmp_path, monkeypatch):
+        """A user's own map for the same track takes precedence.
+
+        This is the deliberate trade-off of user-first ordering: an edited map
+        wins. The cost is that a stale generic skeleton also wins until the user
+        deletes it — see POST_MVP.md for the marker-based resolution.
+        """
+        import tenths.track_map as tm
+
+        table = ("\n\n## Turn Map\n\n"
+                 "| Track % | Turn | Name | Direction | Description |\n"
+                 "|---|---|---|---|---|\n"
+                 "| ~5-7% | **T1** | {name} | Left | test |\n")
+
+        bundled = tmp_path / "bundled"
+        bundled.mkdir()
+        (bundled / "sometrack.md").write_text("# Bundled" + table.format(name="Bundled Turn"),
+                                             encoding="utf-8")
+
+        user = tmp_path / "user"
+        user.mkdir()
+        (user / "sometrack.md").write_text("# User" + table.format(name="User Turn"),
+                                          encoding="utf-8")
+
+        monkeypatch.setattr(tm, "TRACK_MAPS_DIRS", [str(user), str(bundled)])
+
+        result = tm._load_from_md_file("sometrack")
+        assert result, "expected a map to load"
+        names = str(result)
+        assert "User Turn" in names, f"user map should win, got: {names}"

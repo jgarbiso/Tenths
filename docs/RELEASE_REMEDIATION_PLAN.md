@@ -2,7 +2,7 @@
 
 **Status:** Active source of truth  
 **Review date:** 2026-07-28  
-**Last updated:** 2026-08-01 — 19 of 22 issues resolved, 0 deferred. Suite at 537 passing, zero skips. Distribution remains **NO-GO**: RR-011 (signing) is deferred to Post-MVP.  
+**Last updated:** 2026-08-01 — 20 of 23 issues resolved, 0 deferred. Suite at 545 passing, zero skips, and a full run leaves the working tree clean. Distribution remains **NO-GO**: RR-011 (signing) is deferred to Post-MVP.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
 **Repository:** `c:\Users\justi\Documents\Sim\Tenths`
@@ -91,6 +91,7 @@ Remediation must not regress the following behavior:
 | RR-020 | Low | ~~Frozen startup command has unnecessary CLI arguments~~ **RESOLVED 2026-07-30** | None; not a startup blocker |
 | RR-021 | High | ~~Min-speed spread threshold is absolute mph and misfires on fast corners~~ **RESOLVED 2026-07-30** | Product decision; RR-016 |
 | RR-022 | Medium | ~~Over-braking rule never fires; limit is ~3× too high to trigger~~ **RESOLVED 2026-07-31** | Opened by RR-021 validation |
+| RR-023 | High | ~~Generated track maps written into the install dir; destroyed on upgrade, and the suite wrote into the repo~~ **RESOLVED 2026-08-01** | Opened by post-session review |
 
 Recommended batches:
 
@@ -807,6 +808,40 @@ Tests in `tests/test_min_speed_spread.py` `TestOverBrakingThresholdRR022`: asser
 
 `docs/COACHING_METRICS_DESIGN.md` updated with the decision rationale, measured distribution, validating sessions, and the conceptual distinction between spread and over-braking.
 
+### RR-023 — Generated track maps were written into the install directory
+
+**Files:** `tenths/track_map_generator.py`, `tenths/config.py`, `tenths/track_map.py`, `tenths/cli.py`, `tests/conftest.py`, `tests/test_track_map_generator.py`, `.gitignore`.
+
+**Severity:** High. Silent user data loss in production, plus a test-isolation breach.
+
+**Opened and resolved:** 2026-08-01, during the post-session senior review.
+
+**Root cause.** `write_skeleton_track_map()` derived its default output directory from its own `__file__`:
+
+```python
+tracks_dir = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "tracks")
+```
+
+One root cause, three separate symptoms:
+
+1. **Silent user data loss.** In a frozen build that path resolves to `_internal/tracks/` — inside the install folder. The installer copies `dist\Tenths\*` to `{app}` with `Flags: ignoreversion` and uninstall removes `{app}`, so a user's auto-generated track maps were destroyed by the next upgrade. A tester racing a circuit with no landmark entry would get named corners once, then silently lose them.
+2. **Test suite wrote into the repository.** `tests/test_process_per_session.py` created `tracks/test_track.md` on every run. Because the write target came from `__file__` rather than config, no amount of monkeypatching could redirect it. This violates the RR-014 requirement that the suite produce no persistent changes, and the file was staged by a `git add -A` — caught only by manual inspection of `git status` before committing.
+3. **RR-015 was asymmetric.** `TENTHS_TRACKS_DIR` overrode reads but not writes. Verified: setting it moved `config.TRACKS_DIR` and left the generator's target unchanged.
+
+**Resolution.**
+
+- New `config.USER_TRACKS_DIR`, defaulting to `%LOCALAPPDATA%\Tenths\tracks` with a `TENTHS_USER_TRACKS_DIR` override. This is outside `{app}` by construction, so it survives upgrade and uninstall. Verified on the frozen build: `Tenths.exe config` reports `C:\Users\<user>\AppData\Local\Tenths\tracks`.
+- `write_skeleton_track_map()` reads that value **at call time**, so it can be redirected. Its failure path is now graceful: an `OSError` returns `None` rather than propagating, because a generated map is a convenience and must never fail a session.
+- `track_map.TRACK_MAPS_DIRS` searches the user directory **ahead of** the bundled maps, so a user's own map wins over a shipped one. `TENTHS_TRACKS_DIR` still takes precedence over both.
+- `tenths config` now prints the track-maps directory, so "where did my generated map go?" is answerable without a developer.
+- New autouse fixture `_never_write_track_maps_into_the_repo` in `tests/conftest.py` redirects both the write target and the matching entry in `TRACK_MAPS_DIRS`, keeping reads and writes coherent under test. Modelled on the existing `_never_touch_real_registry` guard so tests added later are protected automatically.
+- `.gitignore` gained a backstop pattern in case either guard regresses.
+
+**Tests.** `tests/test_track_map_generator.py` adds 8 tests: the default target honours `config.USER_TRACKS_DIR`; it is *not* the bundled directory; it lives under `APP_DATA_DIR`; an explicit `tracks_dir` still wins; an existing map is never overwritten; an unwritable target degrades to `None`; the user directory is in the read search path; and it is searched before the bundled maps. Suite 537 → 545, and a full run now leaves the working tree clean.
+
+**Note on the fix's own review.** Two of these tests failed on first run and caught a real inconsistency in the fix itself: writes resolved dynamically while `TRACK_MAPS_DIRS` was built at import time, so redirecting config alone left reads pointing at the real directory. The conftest guard now patches both.
+
 ## 6. Validation matrix
 
 Run the smallest relevant tests while iterating, then the mandatory full suite after every code change.
@@ -860,6 +895,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [x] RR-020 startup command is cleaned up or explicitly deferred as low risk. Frozen mode registers the quoted exe only.
 - [x] RR-021 spread threshold scales with corner speed and is validated on multiple tracks and car classes. Hybrid percentage-with-floor; 9 of 41 corners flag across 8 sessions, 4 car models, 2.3–6.4 km.
 - [x] RR-022 over-braking rule fires meaningfully or is removed from user-facing output. Retuned to 7%/1.5 mph; fires on 1 of 9 corners at Coronado race 1; hardcoded thresholds removed from report.
+- [x] RR-023 generated track maps persist across upgrade and the suite leaves no repo changes. `config.USER_TRACKS_DIR` under `%LOCALAPPDATA%`; autouse test guard; verified on the frozen build.
 - [ ] Full clean-machine validation and installer matrix pass.
 
 ## 8. Evidence map

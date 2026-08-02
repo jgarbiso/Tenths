@@ -191,6 +191,39 @@ def _never_touch_real_registry(monkeypatch, request):
     monkeypatch.setattr(tray, "winreg", FakeRegistry())
 
 
+@pytest.fixture(autouse=True)
+def _never_write_track_maps_into_the_repo(monkeypatch, tmp_path_factory):
+    """Guard: auto-generated track maps must never land in the working tree.
+
+    Any test that exercises the analyse/process path for a track with no
+    landmark entry triggers `write_skeleton_track_map()`. Its default target is
+    `config.USER_TRACKS_DIR`; redirecting that per-test keeps the repository and
+    the developer's real app-data folder clean.
+
+    Before this guard, `tests/test_process_per_session.py` created
+    `tracks/test_track.md` in the repo on every run — it was staged by a
+    `git add -A` and only caught by manual inspection.
+    """
+    target = str(tmp_path_factory.mktemp("user_tracks"))
+    try:
+        from tenths import config
+        from tenths import track_map
+    except Exception:
+        return
+
+    real = config.USER_TRACKS_DIR
+    monkeypatch.setattr(config, "USER_TRACKS_DIR", target, raising=False)
+
+    # Keep the read path in step with the write path, so a test that generates a
+    # map can also load it back. TRACK_MAPS_DIRS is built at import time, so
+    # patching config alone would leave reads pointing at the real directory.
+    monkeypatch.setattr(
+        track_map, "TRACK_MAPS_DIRS",
+        [target if d == real else d for d in track_map.TRACK_MAPS_DIRS],
+        raising=False,
+    )
+
+
 # ─── Synthetic telemetry (machine independent) ────────────────────────────────
 
 @pytest.fixture(scope="session")

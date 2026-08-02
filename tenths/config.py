@@ -311,6 +311,20 @@ APP_DATA_DIR = os.environ.get('TENTHS_APP_DATA', _default_app_data_dir())
 # only way a user (or a beta tester filing a report) can see what went wrong.
 LOG_DIR = os.environ.get('TENTHS_LOG_DIR', os.path.join(APP_DATA_DIR, "logs"))
 
+# Where auto-generated track maps are WRITTEN.
+#
+# This must never be the bundled `tracks` directory. In a frozen build that
+# resolves inside the install folder, which the installer overwrites on upgrade
+# (`Flags: ignoreversion`) and removes on uninstall — so a user's generated maps
+# were silently destroyed by the next update. It also meant the test suite wrote
+# into the repository on every run, because the write target was derived from
+# __file__ and could not be redirected through config.
+#
+# Read precedence is handled separately in track_map.TRACK_MAPS_DIRS; this
+# directory is searched there ahead of the bundled maps.
+USER_TRACKS_DIR = os.environ.get(
+    'TENTHS_USER_TRACKS_DIR', os.path.join(APP_DATA_DIR, "tracks"))
+
 # ── Processing Settings ───────────────────────────────────────────────────────
 
 # Minimum file size to process (below this is a false start)

@@ -39,8 +39,21 @@ _RESOURCE_BASE = _resource_base()
 # An override must take precedence, so it comes first. Previously it was last
 # and the loader stopped at the first directory that merely existed, so a
 # bundled `tracks` folder shadowed it entirely.
+def _user_tracks_dir():
+    """Where auto-generated maps are written; also searched on read.
+
+    Imported lazily so track_map does not depend on config at module scope.
+    """
+    try:
+        from tenths.config import USER_TRACKS_DIR
+        return USER_TRACKS_DIR
+    except Exception:
+        return ''
+
+
 TRACK_MAPS_DIRS = [
-    os.environ.get('TENTHS_TRACKS_DIR', ''),        # user override wins
+    os.environ.get('TENTHS_TRACKS_DIR', ''),        # explicit override wins
+    _user_tracks_dir(),                             # user's generated maps
     os.path.join(_RESOURCE_BASE, "tracks"),         # frozen: <MEIPASS>/tracks
     os.path.join(os.path.dirname(_SCRIPT_DIR), "tracks"),  # source: <root>/tracks
 ]

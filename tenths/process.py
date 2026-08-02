@@ -20,12 +20,6 @@ import sys
 import re
 import glob
 import shutil
-import subprocess
-from datetime import datetime
-
-# Add tools dir to path
-import os
-import sys
 
 from tenths.analyzer import analyze, fmt_time, parse_ibt
 from tenths.track_map import load_track_map, get_turn_name
@@ -35,7 +29,7 @@ from tenths.track_map_generator import generate_skeleton_track_map, write_skelet
 
 # ── Config ────────────────────────────────────────────────────────────────────
 from tenths.config import (
-    TELEMETRY_ROOT, ARCHIVE_DIR, TRACKS_DIR, MIN_SESSION_SIZE, DOWNLOADS_DIR,
+    TELEMETRY_ROOT, ARCHIVE_DIR, MIN_SESSION_SIZE, DOWNLOADS_DIR,
     REQUIRED_ARTIFACTS, session_output_dir,
 )
 
@@ -490,52 +484,20 @@ def generate_targets(data, best_result, track_map=None):
     return targets
 
 
-# ── Track File Updater ────────────────────────────────────────────────────────
-def update_track_file(file_info, data, best_result, cleanest_result, is_first):
-    """Append a row to the track reference file's Performance History."""
-    track_name = file_info['track']
-    track_file = None
-    if os.path.isdir(TRACKS_DIR):
-        for f in os.listdir(TRACKS_DIR):
-            if track_name.lower().replace(' ', '') in f.lower().replace('_', '').replace(' ', ''):
-                track_file = os.path.join(TRACKS_DIR, f)
-                break
-
-    if not track_file:
-        return  # no track file to update
-
-    with open(track_file, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    # Find the Performance History table
-    perf_match = re.search(r'(## Performance History.*?\n\|.*?\n\|.*?\n)((?:\|.*?\n)*)', content)
-    if not perf_match:
-        return
-
-    # Build the new row
-    date_short = datetime.strptime(file_info['date'], '%Y-%m-%d').strftime('%b %-d').replace(' 0', ' ')
-    # Windows strftime doesn't support %-d, use manual
-    dt = datetime.strptime(file_info['date'], '%Y-%m-%d')
-    date_short = f"{dt.strftime('%b')} {dt.day}"
-
-    time_fmt = fmt_time(best_result['time'])
-    notes_parts = []
-    if is_first:
-        improvement = data['lap_results'][0]['time'] - best_result['time'] if data['lap_results'][0]['time'] > 0 else 0
-        notes_parts.append(f"First session — {improvement:.1f}s improvement")
-    else:
-        notes_parts.append("Practice")
-
-    new_row = f"| {date_short} | Practice | {time_fmt} | {cleanest_result['abs']} | {', '.join(notes_parts)} |"
-
-    # Insert before the blank line or end of table
-    table_end = perf_match.end()
-    updated = content[:table_end] + new_row + "\n" + content[table_end:]
-
-    with open(track_file, 'w', encoding='utf-8') as f:
-        f.write(updated)
-
-    print(f"  Updated track file: {os.path.basename(track_file)}")
+# Removed 2026-08-01: update_track_file() appended a row to each track's .md
+# "Performance History" table after every day group. The RR-006 per-session
+# rewrite dropped its only caller, leaving it dead.
+#
+# It is not being restored, for two reasons:
+#   1. It wrote into the bundled `tracks` directory, which in a frozen build is
+#      inside the install folder — overwritten on upgrade, removed on uninstall.
+#      See config.USER_TRACKS_DIR for why that path is no longer written to.
+#   2. It was already broken on Windows: it called strftime('%b %-d'), and the
+#      %-d directive raises ValueError on Windows. The line below it was a
+#      workaround that could never execute.
+#
+# If per-track history tables are wanted again, they need a user-writable
+# destination and a portable date format.
 
 
 # ── Race Result Auto-Matching ─────────────────────────────────────────────────
@@ -568,7 +530,6 @@ def main():
     configure_console()
 
     dry_run = '--dry-run' in sys.argv
-    git_commit = '--git' in sys.argv
     specific = None
 
     # Collect non-flag arguments — these form the file path

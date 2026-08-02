@@ -139,22 +139,37 @@ def write_skeleton_track_map(content, track_slug, tracks_dir=None):
     Args:
         content: markdown string from generate_skeleton_track_map()
         track_slug: filename slug (e.g., 'daytona_rallycross_short')
-        tracks_dir: directory to write to (defaults to Tenths tracks/)
+        tracks_dir: directory to write to. Defaults to config.USER_TRACKS_DIR,
+                    a per-user location outside the install directory.
 
     Returns:
-        Path to the written file, or None if file already exists.
+        Path to the written file, or None if the file already exists or the
+        directory cannot be created.
+
+    The default deliberately does NOT use the bundled `tracks` directory. That
+    path is derived from __file__, which in a frozen build lands inside the
+    install folder — overwritten on upgrade and removed on uninstall, so
+    generated maps were silently lost. It also made the write target
+    unredirectable, so the test suite wrote into the repository.
     """
     if tracks_dir is None:
-        tracks_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tracks")
+        # Read at call time so tests and overrides can redirect it.
+        from tenths.config import USER_TRACKS_DIR
+        tracks_dir = USER_TRACKS_DIR
 
-    os.makedirs(tracks_dir, exist_ok=True)
     filepath = os.path.join(tracks_dir, f"{track_slug}.md")
 
-    # Don't overwrite existing track maps
-    if os.path.exists(filepath):
-        return None
+    try:
+        os.makedirs(tracks_dir, exist_ok=True)
 
-    with open(filepath, 'w', encoding='utf-8') as f:
-        f.write(content)
+        # Don't overwrite existing track maps — a hand-edited map must survive
+        if os.path.exists(filepath):
+            return None
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+    except OSError:
+        # A generated map is a convenience, never worth failing a session over.
+        return None
 
     return filepath
