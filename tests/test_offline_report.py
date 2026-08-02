@@ -160,3 +160,34 @@ class TestReportHasNoExternalAssets:
     def test_contains_jetbrains_mono_font(self, generated_html):
         """JetBrains Mono font must be embedded."""
         assert "font-family: 'JetBrains Mono'" in generated_html
+
+
+class TestIndexHasNoExternalReferences:
+    """The master index must be fully offline like session reports."""
+
+    def test_index_has_no_external_references(self, tmp_path):
+        from tenths.index_generator import generate_master_index
+
+        # Create a minimal session so the index has something to list
+        car_dir = tmp_path / "testcar" / "testtrack" / "2026-01-01" / "12-00-00"
+        car_dir.mkdir(parents=True)
+        summary = {
+            "schema_version": "1.0.0",
+            "session": {"date": "2026-01-01", "time": "12-00-00", "type": "Practice"},
+            "car": {"name": "Test Car"},
+            "track": {"name": "Test Track", "config": ""},
+            "best_lap": {"time_formatted": "1:30.000", "time_seconds": 90.0},
+            "total_valid_laps": 5,
+        }
+        import json
+        with open(car_dir / "session_summary.json", "w") as f:
+            json.dump(summary, f)
+
+        index_path = generate_master_index(telemetry_root=str(tmp_path))
+        assert index_path is not None
+
+        html = open(index_path, 'r', encoding='utf-8').read()
+        assert 'https://' not in html, "Index still has external references"
+        assert 'http://' not in html
+        assert '@font-face' in html, "Fonts should be inlined"
+        assert 'data:font/woff2;base64,' in html, "Font data should be embedded"

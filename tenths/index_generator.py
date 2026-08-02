@@ -18,6 +18,7 @@ import glob
 from html import escape as html_escape
 
 from tenths.config import TELEMETRY_ROOT
+from tenths.report import _get_font_face_css
 
 
 def generate_master_index(telemetry_root=None):
@@ -118,7 +119,9 @@ def _build_master_html(sessions, cars, tracks, root):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tenths — Session Browser</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+{_get_font_face_css()}
+    </style>
     <style>
         :root {{
             --bg-base: #0a0a0f;

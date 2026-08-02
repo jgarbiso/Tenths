@@ -37,6 +37,12 @@ class TestTrayInit:
         assert tray._watcher is None
         assert tray._last_report is None
 
+    def test_open_index_exists_in_menu(self):
+        """Browse Sessions must appear in the tray menu."""
+        tray = TenthsTray()
+        assert hasattr(tray, '_open_index')
+        assert callable(tray._open_index)
+
 
 class TestTrayFindReport:
     """Test finding the latest report against a controlled directory tree."""

@@ -94,6 +94,7 @@ Right-click the Tenths tray icon:
 | Option | What it does |
 |--------|--------------|
 | **Open Last Report** | Opens your most recent session report (also the default double-click action) |
+| **Browse Sessions** | Opens the session index — browse all your processed sessions by car/track |
 | **Pause Processing** | Temporarily stops watching for new sessions |
 | **Start with Windows** | Toggle auto-launch on boot |
 | **Exit** | Stops Tenths |
@@ -118,7 +119,7 @@ Documents\iRacing\telemetry\
 │               └── session_summary.json  ← Raw data
 ```
 
-Open **`index.html`** at the top level to see every indexed session and filter by car or track. The current tray menu does not include a Browse Sessions action.
+Open **`index.html`** at the top level to see every indexed session and filter by car or track. You can also right-click the tray icon → **Browse Sessions**.
 
 ---
 

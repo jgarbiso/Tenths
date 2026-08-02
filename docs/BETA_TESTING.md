@@ -14,8 +14,8 @@ reporting things I already know about.
    that's completely reasonable — say so and I'll get a certificate first.
 3. Leave **"Start Tenths with Windows"** checked.
 
-Tenths lives in your system tray. Right-click it for Open Last Report, Pause
-Processing, Start with Windows, and Exit.
+Tenths lives in your system tray. Right-click it for Open Last Report, Browse
+Sessions, Pause Processing, Start with Windows, and Exit.
 
 ## Turn on iRacing telemetry
 

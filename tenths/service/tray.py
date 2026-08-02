@@ -46,6 +46,7 @@ class TenthsTray:
         # Create menu
         menu = pystray.Menu(
             pystray.MenuItem("Open Last Report", self._open_last_report, default=True),
+            pystray.MenuItem("Browse Sessions", self._open_index),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Pause Processing", self._toggle_pause, checked=lambda item: self._paused),
             pystray.MenuItem("Start with Windows", self._toggle_startup, checked=lambda item: self._is_startup_registered()),
@@ -105,6 +106,12 @@ class TenthsTray:
             report = self._find_latest_report()
             if report:
                 webbrowser.open(f'file:///{report.replace(os.sep, "/")}')
+
+    def _open_index(self, icon=None, item=None):
+        """Open the master session index in the browser."""
+        index_path = os.path.join(TELEMETRY_ROOT, "index.html")
+        if os.path.exists(index_path):
+            webbrowser.open(f'file:///{index_path.replace(os.sep, "/")}')
 
     def _find_latest_report(self):
         """Find the most recently modified session_report.html."""
