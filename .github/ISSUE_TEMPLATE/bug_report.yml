@@ -1,0 +1,55 @@
+name: Bug Report
+description: Report a problem with Tenths
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      placeholder: Describe what you expected vs what happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log file content
+      description: "Paste the contents of `%LOCALAPPDATA%\\Tenths\\logs\\tenths.log`"
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Output of Tenths.exe config
+      description: 'Open a Command Prompt, run `"%LOCALAPPDATA%\Tenths\Tenths.exe" config`, paste the output'
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: car-track
+    attributes:
+      label: Car and track
+      placeholder: "e.g. Ferrari 296 GT3 at Road Atlanta"
+    validations:
+      required: false
+
+  - type: textarea
+    id: report
+    attributes:
+      label: Session report (if relevant)
+      description: Attach or paste the session_report.html if the issue is visible in the report
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Tenths version
+      description: From the output of Tenths.exe config
+      placeholder: "0.9.0"
+    validations:
+      required: false
