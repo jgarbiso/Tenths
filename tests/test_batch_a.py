@@ -405,9 +405,9 @@ class TestResultParsingRobustness:
         path = self._csv(tmp_path, [
             self._row(fin="1", cust="1000"),
             self._row(fin="NA", cust="2000", ir_old="", inc="x"),   # junk values
-            self._row(fin="3", cust="1434150"),
+            self._row(fin="3", cust="900001"),
         ])
-        data = parse_result(path, my_cust_id=1434150)
+        data = parse_result(path, my_cust_id=900001)
         assert data is not None, "a single malformed row discarded the whole file"
         assert len(data["results"]) == 3
         assert data["my_result"] is not None
@@ -415,31 +415,31 @@ class TestResultParsingRobustness:
 
     def test_blank_irating_becomes_zero(self, tmp_path):
         from tenths.results import parse_result
-        path = self._csv(tmp_path, [self._row(cust="1434150", ir_old="", ir_new="")])
-        data = parse_result(path, my_cust_id=1434150)
+        path = self._csv(tmp_path, [self._row(cust="900001", ir_old="", ir_new="")])
+        data = parse_result(path, my_cust_id=900001)
         assert data["my_result"]["old_irating"] == 0
         assert data["my_result"]["new_irating"] == 0
 
     def test_string_customer_id_matches_int(self, tmp_path):
         from tenths.results import parse_result
-        path = self._csv(tmp_path, [self._row(cust="1434150")])
-        assert parse_result(path, my_cust_id="1434150")["my_result"] is not None
-        assert parse_result(path, my_cust_id=1434150)["my_result"] is not None
+        path = self._csv(tmp_path, [self._row(cust="900001")])
+        assert parse_result(path, my_cust_id="900001")["my_result"] is not None
+        assert parse_result(path, my_cust_id=900001)["my_result"] is not None
 
     def test_same_customer_helper(self):
         from tenths.results import _same_customer
-        assert _same_customer(1434150, "1434150") is True
-        assert _same_customer("1434150", 1434150) is True
-        assert _same_customer(1434150, 1434150) is True
-        assert _same_customer(1434150, 999) is False
-        assert _same_customer(1434150, None) is False
-        assert _same_customer(None, 1434150) is False
+        assert _same_customer(900001, "900001") is True
+        assert _same_customer("900001", 900001) is True
+        assert _same_customer(900001, 900001) is True
+        assert _same_customer(900001, 999) is False
+        assert _same_customer(900001, None) is False
+        assert _same_customer(None, 900001) is False
 
     def test_json_numeric_junk_tolerated(self, tmp_path):
         import json as _json
         from tenths.results import parse_result
         payload = {"session_results": [{"simsession_name": "RACE", "results": [
-            {"finish_position": 0, "display_name": "A", "cust_id": 1434150,
+            {"finish_position": 0, "display_name": "A", "cust_id": 900001,
              "laps_complete": "bad", "incidents": None, "oldi_rating": "",
              "newi_rating": 1520, "average_lap": "x", "best_lap_time": 895000},
             "not a dict",
@@ -447,7 +447,7 @@ class TestResultParsingRobustness:
         path = tmp_path / "eventresult-1.json"
         with open(path, "w", encoding="utf-8") as f:
             _json.dump(payload, f)
-        data = parse_result(str(path), my_cust_id="1434150")
+        data = parse_result(str(path), my_cust_id="900001")
         assert data is not None
         assert len(data["results"]) == 1, "unusable row should be skipped, valid kept"
         assert data["my_result"]["laps_completed"] == 0

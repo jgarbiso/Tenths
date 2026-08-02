@@ -5,7 +5,7 @@
 **Last updated:** 2026-08-01 — 20 of 23 issues resolved, 0 deferred. Suite at 545 passing, zero skips, and a full run leaves the working tree clean. Distribution remains **NO-GO**: RR-011 (signing) is deferred to Post-MVP.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
-**Repository:** `c:\Users\justi\Documents\Sim\Tenths`
+**Repository:** `git@github.com:jgarbiso/Tenths.git`
 
 This document converts the independent release review into implementation-ready work for another developer or AI model. Treat it as the canonical source for release blockers and remediation status. Older plans and handoff notes may describe behavior that has since changed.
 
@@ -15,7 +15,7 @@ This document converts the independent release review into implementation-ready 
 
 Before changing code:
 
-1. Read `c:\Users\justi\Documents\Sim\.kiro\steering\tenths-development.md`.
+1. Read `.kiro/steering/tenths-development.md` (in the workspace root).
 2. Read this entire document and the files named by the issue being addressed.
 3. Inspect the working tree before editing. Preserve and understand existing changes; never discard them merely to obtain a clean tree. If unrelated changes are present, keep remediation edits isolated.
 4. Do not commit unless the user explicitly requests a commit.

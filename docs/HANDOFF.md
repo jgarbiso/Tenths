@@ -8,7 +8,7 @@
 An iRacing telemetry analysis tool that auto-processes .ibt files and generates interactive HTML coaching reports with a VR-readable Summary View. Runs as a Windows system tray app — zero-friction background service.
 
 ### Repository
-- **Path:** `c:\Users\justi\Documents\Sim\Tenths`
+- **Path:** `<repo-root>` (clone from GitHub)
 - **GitHub:** `git@github.com:jgarbiso/Tenths.git`
 - **Branch:** `main`
 - **Version:** 0.9.0
@@ -174,7 +174,7 @@ Changed from 0.3s to 0.1s so distributed time loss across corners surfaces in Su
 
 ## Testing
 ```cmd
-cd c:\Users\justi\Documents\Sim\Tenths
+cd <repo-root>
 python -m pytest tests/ -v --tb=short
 ```
 

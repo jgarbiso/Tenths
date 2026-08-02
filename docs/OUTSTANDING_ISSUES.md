@@ -12,7 +12,7 @@
 
 These are not suggestions. Violating any of them means the work has to be redone.
 
-1. **Run the full test suite after every code change**, from `c:\Users\justi\Documents\Sim\Tenths`:
+1. **Run the full test suite after every code change**, from the repo root:
    ```cmd
    python -m pytest tests/ -v --tb=short
    ```
@@ -22,7 +22,7 @@ These are not suggestions. Violating any of them means the work has to be redone
 4. **Tests must call production functions**, not re-implement their logic. Copying a formula into a test proves only that you can copy a formula.
 5. **Do not commit** unless the owner explicitly asks. Do not amend or force-push.
 6. **Do not modify the real Windows registry.** `tests/conftest.py` has an autouse `_never_touch_real_registry` fixture; leave it in place.
-7. **Do not modify anything under `c:\Users\justi\Documents\Sim\telemetry\`.** That is the owner's real telemetry and contains other drivers' names and customer IDs. Read it if you need evidence; never write to it.
+7. **Do not modify anything under the owner's telemetry directory.** It contains other drivers' names and customer IDs. Read it if you need evidence; never write to it.
 8. **Do not commit telemetry data** to the parent `Sim` repo. If you commit there, stage only the `Tenths` submodule pointer: `git add Tenths`.
 9. **Use `webbrowser.open()`** for anything that opens a browser. Never hardcode Chrome or any browser path.
 10. **Delete any temporary script you create** once you have used it. Do not leave scratch files in the repo.
@@ -37,10 +37,10 @@ These are not suggestions. Violating any of them means the work has to be redone
 
 | What | Path |
 |---|---|
-| Repo root (run all commands here) | `c:\Users\justi\Documents\Sim\Tenths` |
-| Parent repo (Tenths is a submodule) | `c:\Users\justi\Documents\Sim` |
-| Owner's real telemetry (read-only to you) | `c:\Users\justi\Documents\Sim\telemetry` |
-| Archived `.ibt` source files for evidence | `c:\Users\justi\Documents\Sim\telemetry\_archive` |
+| Repo root (run all commands here) | `<repo-root>` |
+| Parent repo (Tenths is a submodule) | `<repo-root>/..` |
+| Owner's real telemetry (read-only to you) | `<Documents>/iRacing/telemetry` |
+| Archived `.ibt` source files for evidence | `<Documents>/iRacing/telemetry/_archive` |
 | Committed test fixtures (safe, scrubbed) | `Tenths\tests\data\*.ibt` |
 | Build output | `Tenths\dist\Tenths\` |
 | Installer output | `Tenths\installer\Output\TenthsSetup.exe` |
@@ -239,7 +239,7 @@ So the Detailed table colours cells using 8/4 mph while the Summary uses a compu
 
 **Step 1 — measure the real distribution before changing any number.**
 
-Write a temporary script that runs `analyzer.analyze()` over at least 8 archived `.ibt` files from `c:\Users\justi\Documents\Sim\telemetry\_archive`, and for every corner records `over_braking_mph` together with `avg_apex_mph`. Report:
+Write a temporary script that runs `analyzer.analyze()` over at least 8 archived `.ibt` files from the telemetry archive, and for every corner records `over_braking_mph` together with `avg_apex_mph`. Report:
 
 - the distribution of `over_braking_mph` (min, median, 90th percentile, max);
 - the same as a **percentage of `avg_apex_mph`**, which is what the fraction actually controls.

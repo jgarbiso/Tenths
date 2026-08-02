@@ -13,7 +13,7 @@ The architecture is solid (clean separation, event-driven watcher, 204 tests, sc
 ## 🔴 Critical — must fix before sharing
 
 ### D1 — Hardcoded iRacing customer ID
-- **Location:** `results.py:19` → `MY_CUST_ID = 1434150  # Justin Garbiso`
+- **Location:** `results.py:19` → formerly `MY_CUST_ID = <owner_id>`
 - **Impact:** All race-result matching keys off this constant. For any other user, `my_result` is always `None` — race badge, finish position, iRating delta, and race notifications silently never appear. The single biggest distribution defect.
 - **Fix:** Derive the driver's cust_id from the .ibt session_info (`DriverInfo.DriverUserID` / `DriverInfo.Drivers[CarIdx==PlayerCarIdx]`). Fall back to a config/env override. Never hardcode.
 - **Status:** ✅ FIXED (2026-07-28) — `parse_result(filepath, my_cust_id=...)` now takes the driver's cust_id; all 4 call sites pass `si.get('driver_id')` (already extracted by analyzer). Constant removed. Tests: TestD1_NoHardcodedCustId.
@@ -83,7 +83,7 @@ The architecture is solid (clean separation, event-driven watcher, 204 tests, sc
 - **Status:** OPEN
 
 ### D10 — Integration tests only run on the developer's machine
-- **Location:** `conftest.py` → `TELEMETRY_ARCHIVE = r"c:\Users\justi\...\_archive"` with two specific files.
+- **Location:** `conftest.py` → formerly referenced a developer-local `_archive` path with two specific files.
 - **Impact:** The entire .ibt→analysis→report pipeline is unverified on any other machine or CI. No regression safety net for parsing.
 - **Fix:** Commit one small anonymized/sample .ibt (or a recorded fixture) to the repo so integration tests run anywhere. Alternatively, add a synthetic .ibt builder.
 - **Status:** OPEN

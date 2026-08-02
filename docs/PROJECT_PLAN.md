@@ -18,13 +18,13 @@ Replace the manual AI-driven telemetry processing workflow with a single Python 
 ## Target Workflow (script-driven, zero tokens)
 
 ```cmd
-cd c:\Users\justi\Documents\iRacing\telemetry
+cd <Documents>\iRacing\telemetry
 python tools\generate_session_notes.py
 ```
 
 Or with race results:
 ```cmd
-python tools\generate_session_notes.py --race-result "C:\Users\justi\Downloads\eventresult_12345_0.csv"
+python tools\generate_session_notes.py --race-result "<Downloads>\eventresult_12345_0.csv"
 ```
 
 ---
@@ -279,11 +279,11 @@ Logic:
 ## File Organization
 
 ```
-Input:  c:\Users\justi\Documents\iRacing\telemetry\*.ibt (unprocessed files in root)
-Output: c:\Users\justi\Documents\iRacing\telemetry\<car>\<track>\<date>\session_notes.md
-Archive: c:\Users\justi\Documents\iRacing\telemetry\_archive\<original filename>.ibt
-Track:  c:\Users\justi\Documents\Sim\Sim\tracks\<track>.md (updated)
-Git:    c:\Users\justi\Documents\Sim (commit + push)
+Input:  <Documents>\iRacing\telemetry\*.ibt (unprocessed files in root)
+Output: <Documents>\iRacing\telemetry\<car>\<track>\<date>\session_notes.md
+Archive: <Documents>\iRacing\telemetry\_archive\<original filename>.ibt
+Track:  <repo-root>\tracks\<track>.md (updated)
+Git:    <repo-root> (commit + push)
 ```
 
 ---

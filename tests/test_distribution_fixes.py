@@ -88,7 +88,7 @@ class TestD1_NoHardcodedCustId:
         with open(results_py, 'r', encoding='utf-8') as f:
             content = f.read()
         assert "MY_CUST_ID" not in content
-        assert "1434150" not in content
+        assert "1434150" not in content  # owner's real ID must not be hardcoded
 
 
 class TestD8_MalformedResultFiles:
