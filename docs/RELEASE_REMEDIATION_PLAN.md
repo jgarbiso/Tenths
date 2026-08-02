@@ -2,7 +2,7 @@
 
 **Status:** Active source of truth  
 **Review date:** 2026-07-28  
-**Last updated:** 2026-07-31 — 14 of 22 issues resolved, 1 deferred by owner. Suite at 483 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-009 (offline claims), and RR-011 (signing) are open. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-009 (offline claims), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
+**Last updated:** 2026-08-01 — 15 of 22 issues resolved, 1 deferred by owner. Suite at 524 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-006 (per-session manual output), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
 **Repository:** `c:\Users\justi\Documents\Sim\Tenths`
@@ -77,7 +77,7 @@ Remediation must not regress the following behavior:
 | RR-006 | Release blocker | Manual processing emits one representative report per day | None |
 | RR-007 | High | ~~Manual processing is not failure-isolated or transactional~~ **DEFERRED 2026-07-30** by owner decision — beta testers use the watcher, not manual processing | RR-006 |
 | RR-008 | High | ~~GT3 and most cars are mislabeled as Touring~~ **RESOLVED 2026-07-30** | None |
-| RR-009 | High | Detailed report is not offline despite product claims | RR-001 if assets are bundled |
+| RR-009 | High | ~~Detailed report is not offline despite product claims~~ **RESOLVED 2026-08-01** | None |
 | RR-010 | High | ~~Race-result parsing aborts on malformed row values~~ **RESOLVED 2026-07-30** | None |
 | RR-011 | High | Executable is unsigned and lacks metadata — **metadata done 2026-07-30, signing still open** | Release credentials for signing |
 | RR-012 | Medium | ~~First-run telemetry guidance is ineffective~~ **RESOLVED 2026-07-29** — path resolution fixed, settings file, `tenths config`, one-time hint | None |
@@ -429,6 +429,10 @@ For Option A:
 - For Option B, tests preserve the formal single-HTML/no-server Summary contract and docs disclose Detailed-view CDN behavior.
 
 **Acceptance criteria:** The implemented artifact and every user-facing claim agree. Option A provides a fully offline report; Option B remains one local HTML file with an offline Summary but a network-dependent Detailed view. Full offline behavior is preferred but is a product/release decision, not an existing formal requirement for Detailed.
+
+**Resolution (2026-08-01).**
+
+Option A (inline) implemented. All six external references in `report.py` replaced with inlined vendor assets. Leaflet 1.9.4 CSS/JS, Chart.js 4.4.0, and nine WOFF2 font files (Orbitron 700/900, Inter 400/500/600, JetBrains Mono 400/500/600/700) are read from `tenths/assets/vendor/` at report-generation time and embedded directly into the HTML via inline `<style>` and `<script>` blocks with base64 data URIs for fonts. Generated reports are fully self-contained single files (~1.1 MB) with zero network requests. The `installer/tenths.spec` bundles the vendor directory for frozen builds. README, BETA_TESTING, and HTML_REPORT_DESIGN docs updated to reflect offline-first behavior.
 
 ### RR-010 — Harden race-result parsing
 
@@ -838,7 +842,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [ ] RR-006 watcher and `process` produce complete per-session artifacts; standalone commands preserve their artifact-specific semantics in the canonical directory.
 - [ ] RR-007 manual processing is isolated and archives only after success. **Deferred by owner** for beta; testers use the watcher.
 - [x] RR-008 class labels/profiles use `.ibt` metadata. Display class and physics profile separated; `PROFILE_GENERIC` replaces "Touring"; slug-shaped class values rejected.
-- [ ] RR-009 offline behavior and claims agree.
+- [x] RR-009 offline behavior and claims agree. **RESOLVED 2026-08-01** — Option A (inline) implemented.
 - [x] RR-010 race-result parsing tolerates bad fields/rows. All numeric fields via `_safe_int`; type-insensitive `_same_customer()`; non-dict rows filtered before sorting.
 - [ ] RR-011 release artifacts carry metadata and approved signatures. **Metadata done**; signing, version single-sourcing, artifact-level assertion, and installer testing outstanding.
 - [x] RR-012 first-run setup guidance is visible and actionable. Documents resolved via the Known Folder API, no decoy folder created, `settings.json` + `tenths config` for unusual layouts, one-time setup toast.

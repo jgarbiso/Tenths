@@ -49,10 +49,6 @@ If your telemetry lives somewhere unusual:
 
 These are understood and tracked. No need to report them.
 
-### Reports need internet on the Detailed tab
-The **Summary** tab works offline. The **Detailed** tab loads its map and charts
-from third-party CDNs, so it needs a connection. Bundling those is planned.
-
 ### Physics coaching is GT4-specific only
 Braking and shifting diagnostics were validated on GT4 cars. Every other class —
 including GT3 — uses a **Generic** profile. Your report shows your real iRacing

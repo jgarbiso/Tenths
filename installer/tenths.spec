@@ -43,6 +43,8 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'tracks'), 'tracks'),
         # Include bundled track landmark data (PRIMARY track source — 457 tracks)
         (os.path.join(PROJECT_ROOT, 'tenths', 'data'), 'data'),
+        # Include vendored JS/CSS/font assets for offline HTML reports (RR-009)
+        (os.path.join(PROJECT_ROOT, 'tenths', 'assets', 'vendor'), os.path.join('tenths', 'assets', 'vendor')),
     ],
     hiddenimports=[
         'tenths',

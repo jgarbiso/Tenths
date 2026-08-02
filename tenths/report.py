@@ -15,10 +15,87 @@ Usage:
     html = generate_report(data, file_info, track_map, race_result)
 """
 
+import base64
 import json
+import os
 
+from tenths.config import PACKAGE_ROOT
 from tenths.jsonio import dumps_json
 from tenths.track_map import get_turn_name
+
+
+# ── Vendor asset inlining ─────────────────────────────────────────────────────
+
+_VENDOR_DIR = os.path.join(PACKAGE_ROOT, 'tenths', 'assets', 'vendor')
+
+_FONT_FILES = {
+    'orbitron-700': 'orbitron-700.woff2',
+    'orbitron-900': 'orbitron-900.woff2',
+    'inter-400': 'inter-400.woff2',
+    'inter-500': 'inter-500.woff2',
+    'inter-600': 'inter-600.woff2',
+    'jetbrainsmono-400': 'jetbrainsmono-400.woff2',
+    'jetbrainsmono-500': 'jetbrainsmono-500.woff2',
+    'jetbrainsmono-600': 'jetbrainsmono-600.woff2',
+    'jetbrainsmono-700': 'jetbrainsmono-700.woff2',
+}
+
+
+def _read_vendor_text(filename):
+    """Read a vendored text asset (CSS/JS) and return its content."""
+    path = os.path.join(_VENDOR_DIR, filename)
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+def _read_vendor_binary_b64(filename):
+    """Read a vendored binary asset and return base64-encoded string."""
+    path = os.path.join(_VENDOR_DIR, filename)
+    with open(path, 'rb') as f:
+        return base64.b64encode(f.read()).decode('ascii')
+
+
+def _get_font_face_css():
+    """Generate @font-face declarations with inline base64 data URIs."""
+    declarations = []
+    font_defs = [
+        ('Orbitron', '700', 'orbitron-700'),
+        ('Orbitron', '900', 'orbitron-900'),
+        ('Inter', '400', 'inter-400'),
+        ('Inter', '500', 'inter-500'),
+        ('Inter', '600', 'inter-600'),
+        ('JetBrains Mono', '400', 'jetbrainsmono-400'),
+        ('JetBrains Mono', '500', 'jetbrainsmono-500'),
+        ('JetBrains Mono', '600', 'jetbrainsmono-600'),
+        ('JetBrains Mono', '700', 'jetbrainsmono-700'),
+    ]
+    for family, weight, key in font_defs:
+        b64 = _read_vendor_binary_b64(_FONT_FILES[key])
+        declarations.append(
+            f"@font-face {{\n"
+            f"  font-family: '{family}';\n"
+            f"  font-style: normal;\n"
+            f"  font-weight: {weight};\n"
+            f"  font-display: swap;\n"
+            f"  src: url(data:font/woff2;base64,{b64}) format('woff2');\n"
+            f"}}"
+        )
+    return '\n'.join(declarations)
+
+
+def _get_leaflet_css():
+    """Return the raw Leaflet CSS text."""
+    return _read_vendor_text('leaflet.css')
+
+
+def _get_leaflet_js():
+    """Return the raw Leaflet JS text."""
+    return _read_vendor_text('leaflet.js')
+
+
+def _get_chartjs():
+    """Return the raw Chart.js text."""
+    return _read_vendor_text('chart.umd.min.js')
 
 
 def generate_report(data, file_info, track_map, race_result=None, progression=None):
@@ -226,10 +303,10 @@ def _build_html(data_json, car, track, date, best_time, race_data):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{car} — {track} — {date}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+{_get_font_face_css()}
+{_get_leaflet_css()}
+    </style>
     <style>
 {_get_css()}
 {_get_summary_css()}
@@ -388,8 +465,12 @@ def _build_html(data_json, car, track, date, best_time, race_data):
         </div>
     </main>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+{_get_leaflet_js()}
+    </script>
+    <script>
+{_get_chartjs()}
+    </script>
     <script>
 const DATA = {data_json};
     </script>

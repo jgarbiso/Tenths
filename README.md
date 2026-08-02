@@ -4,7 +4,7 @@
 
 Tenths is an automated race engineer for iRacing. It runs quietly in your system tray, watches for new telemetry, and the moment a session ends it builds a visual coaching report that tells you **where you're losing time and why** — in plain English, no charts to decipher.
 
-No accounts. Telemetry analysis and the Summary view run locally. The current Detailed view loads chart, map, and font assets from third-party CDNs, so it requires internet access for full functionality; fully offline Detailed reporting is tracked in the release remediation plan.
+No accounts. No internet required. Every report is a single self-contained HTML file that works fully offline — analysis, charts, maps, and fonts are all embedded.
 
 ---
 
