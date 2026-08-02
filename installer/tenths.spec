@@ -45,6 +45,8 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'tenths', 'data'), 'data'),
         # Include vendored JS/CSS/font assets for offline HTML reports (RR-009)
         (os.path.join(PROJECT_ROOT, 'tenths', 'assets', 'vendor'), os.path.join('tenths', 'assets', 'vendor')),
+        # Third-party license notices (required by dependency licenses)
+        (os.path.join(PROJECT_ROOT, 'THIRD_PARTY_NOTICES.md'), '.'),
     ],
     hiddenimports=[
         'tenths',

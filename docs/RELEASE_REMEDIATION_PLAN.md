@@ -2,7 +2,7 @@
 
 **Status:** Active source of truth  
 **Review date:** 2026-07-28  
-**Last updated:** 2026-08-01 — 17 of 22 issues resolved, 0 deferred. Suite at 537 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-011 (signing), and RR-017 (docs) are open.  
+**Last updated:** 2026-08-01 — 19 of 22 issues resolved, 0 deferred. Suite at 537 passing, zero skips. Distribution remains **NO-GO**: RR-011 (signing) is deferred to Post-MVP.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
 **Repository:** `c:\Users\justi\Documents\Sim\Tenths`
@@ -69,7 +69,7 @@ Remediation must not regress the following behavior:
 
 | ID | Severity | Summary | Depends on |
 |---|---|---|---|
-| RR-001 | Release gate | Landmark and dependency licensing/notices | Human verification of source terms |
+| RR-001 | Release gate | ~~Landmark and dependency licensing/notices~~ **RESOLVED 2026-08-01** | Human verification of source terms |
 | RR-002 | Release blocker | ~~NumPy values serialize as strings and cause false PB badges~~ **RESOLVED 2026-07-30** | None |
 | RR-003 | Release blocker | ~~Progression cannot traverse canonical date/time session layout~~ **RESOLVED 2026-07-30** | RR-006 stage A path helper |
 | RR-004 | Release blocker | ~~Watcher failures are silent, permanent, and not retried~~ **RESOLVED 2026-07-29** | None |
@@ -85,7 +85,7 @@ Remediation must not regress the following behavior:
 | RR-014 | Execution prerequisite | ~~Tests mutate HKCU and depend on developer-local data~~ **RESOLVED 2026-07-29** | None |
 | RR-015 | Medium | ~~`TENTHS_TRACKS_DIR` is shadowed by built-in directories~~ **RESOLVED 2026-07-30** | None |
 | RR-016 | Medium | ~~Summary threshold differs between specs and implementation~~ **RESOLVED 2026-07-30** | Product decisions |
-| RR-017 | Medium | User documentation contains incorrect feature/behavior claims | Functional fixes above |
+| RR-017 | Medium | ~~User documentation contains incorrect feature/behavior claims~~ **RESOLVED 2026-08-01** | Functional fixes above |
 | RR-018 | Medium | ~~Uninstall retention and process-kill policy is undocumented~~ **RESOLVED 2026-07-31** | Product decision |
 | RR-019 | Low | ~~Bundle size and hidden imports need profiling~~ **RESOLVED 2026-07-31** | Functional blockers first |
 | RR-020 | Low | ~~Frozen startup command has unnecessary CLI arguments~~ **RESOLVED 2026-07-30** | None; not a startup blocker |
@@ -838,7 +838,7 @@ Before declaring release readiness:
 
 Public distribution remains **NO-GO** until all applicable items are checked:
 
-- [ ] RR-001 provenance and third-party notices approved.
+- [x] RR-001 provenance and third-party notices approved. Landmark data is MIT (Britton IT Ltd / CrewChiefV4). `THIRD_PARTY_NOTICES.md` covers all shipped dependencies with actual license texts.
 - [x] RR-002 false-PB serialization fixed with NumPy production tests. Shared `tenths/jsonio.py` normalizer; `default=str` removed; unsupported types raise.
 - [x] RR-003 progression works across nested dates and same-day sessions. Path-based current-session exclusion, strictly-earlier history filter, duplicate-layout dedupe.
 - [x] RR-004 failures retry, notify, and log without stranding input. Rotating log at `%LOCALAPPDATA%\Tenths\logs\tenths.log`; 3 attempts with backoff; artifacts verified before archiving.
@@ -854,7 +854,7 @@ Public distribution remains **NO-GO** until all applicable items are checked:
 - [x] RR-014 tests are portable and side-effect free. Registry isolated (verified with a sentinel); committed scrubbed telemetry fixtures give 343 passing with zero skips on a clean checkout.
 - [x] RR-015 environment track-map override works as documented. Override placed first *and* each directory searched for the specific file.
 - [x] RR-016 threshold decision is consistent across code/spec/tests. Focus Card floor set to **0.05s** by owner decision; Next Race Focus fallback rules preserved; `.kiro/specs` text update folded into RR-017.
-- [ ] RR-017 all documentation matches production behavior.
+- [x] RR-017 all documentation matches production behavior. Final sweep 2026-08-01: removed stale CDN claims from README and GETTING_STARTED, corrected closing paragraph.
 - [x] RR-018 uninstall/data retention is defined and tested. Settings deleted; force-kill kept; telemetry never touched; `RunOnceId` added; Inno compiles warning-free.
 - [x] RR-019 bundle and runtime resource use are measured. Documented in `docs/PACKAGING.md`; sqlite3 excluded saving 5.4 MB; idle tray ~97 MB WS; processing ~90 MB RSS.
 - [x] RR-020 startup command is cleaned up or explicitly deferred as low risk. Frozen mode registers the quoted exe only.

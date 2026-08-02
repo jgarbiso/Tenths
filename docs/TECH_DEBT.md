@@ -88,7 +88,7 @@ This resolves most legacy slug/coverage problems for tracks present in the bundl
 
 **Remaining release work:**
 
-- **RR-001:** Verify the exact landmark source revision, ownership, dataset-specific license, attribution, and redistribution obligations. The former GPL-3.0 assumption is not evidence.
+- **RR-001:** ~~Verify the exact landmark source revision, ownership, dataset-specific license, attribution, and redistribution obligations. The former GPL-3.0 assumption is not evidence.~~ **RESOLVED 2026-08-01.** Source is CrewChiefV4 (MIT, Britton IT Ltd). See `THIRD_PARTY_NOTICES.md`.
 - **RR-015:** ~~Make `TENTHS_TRACKS_DIR` a real Markdown-map override. It is currently listed after built-in directories, and the loader stops at the first directory that exists even if it lacks the requested map.~~ **RESOLVED 2026-07-30.** Override is placed first and each candidate directory is searched for the specific file.
 - Keep Tenths standalone; do not add a CrewChief installation dependency as a workaround.
 

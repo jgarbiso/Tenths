@@ -11,7 +11,7 @@ This guide gets you from install to your first report in about five minutes.
 - **iRacing** (any membership)
 - **Windows 10 or 11**
 
-That's it for installation. Tenths analyzes laps and renders the Summary view locally. The current Detailed map/charts load third-party CDN assets and need internet access for full functionality.
+That's it for installation. Tenths runs entirely locally — no accounts, no internet required. Every report is a self-contained HTML file.
 
 ---
 
@@ -182,4 +182,4 @@ Right-click the tray icon → Exit. To stop it launching on boot, uncheck "Start
 
 ## That's it
 
-Race as normal with Tenths and telemetry recording enabled. Each successfully processed session produces coaching that points to the next opportunity; startup recovery, retries, and complete per-session CLI consistency remain pre-release work.
+Race as normal with Tenths and telemetry recording enabled. Each session produces coaching that points to your next opportunity — where you're losing time and what to do about it.

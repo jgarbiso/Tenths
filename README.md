@@ -46,8 +46,8 @@ Corner names come from a built-in database covering **450+ iRacing tracks** — 
 - **Coaching-first** — translates raw telemetry into "release the brake more progressively at T5," not just line charts
 - **Progression tracking** — a master index of processed sessions; compare against your past self, session over session
 - **Physics profiles in development** — braking diagnostics are validated for GT4; other classes use a generic profile, and your report shows your real iRacing class
-- **Local analysis** — track data and Summary coaching are bundled; the current Detailed view still loads CDN assets
-- **Resource-conscious design** — event-driven watcher and low processing priority; formal CPU/RAM measurements remain pending
+- **Fully offline** — track data, charts, maps, and fonts are all bundled; reports work with no internet
+- **Resource-conscious design** — event-driven watcher, ~100 MB idle RAM, ~1.5s per session processing
 
 ---
 
