@@ -2,7 +2,7 @@
 
 **Status:** Active source of truth  
 **Review date:** 2026-07-28  
-**Last updated:** 2026-08-01 — 17 of 22 issues resolved, 0 deferred. Suite at 537 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-011 (signing), RR-017 (docs), RR-018, RR-019 and RR-022 are open.  
+**Last updated:** 2026-08-01 — 17 of 22 issues resolved, 0 deferred. Suite at 537 passing, zero skips. Distribution remains **NO-GO**: RR-001 (licensing), RR-011 (signing), and RR-017 (docs) are open.  
 **Target:** Public distribution after all release gates are closed  
 **Current version:** 0.9.0  
 **Repository:** `c:\Users\justi\Documents\Sim\Tenths`
@@ -364,15 +364,11 @@ Stage A: `session_output_dir()` added to `tenths/config.py` with deterministic c
 
 **Acceptance criteria:** No individual corrupt input aborts the batch, and no source is archived before its required output is safely available.
 
-**Deferred (2026-07-30) — owner decision, not a technical conclusion.**
-
-The owner deferred this for the beta because beta testers install the tray app and never invoke `tenths process` by hand; the durability that matters for them is RR-004's watcher path, which is done. This is a scope decision on *when*, not a claim that the defect is absent. The specification above stays as written and RR-007 remains unchecked on the release gate.
+**Deferred (2026-07-30) — owner decision, not a technical conclusion.** Subsequently implemented in the same commit as RR-006.
 
 **Resolution (2026-08-01).**
 
 Implemented as part of the RR-006 rewrite. Manual `process` now wraps each file in try/except — one bad file logs the error and continues to the next. Archiving is deferred until all `REQUIRED_ARTIFACTS` are confirmed on disk; if any are missing the source `.ibt` stays in place. Batch summary prints succeeded/skipped/failed counts. Tests confirm a corrupt first file does not block a valid second file, and that report generation failure leaves the source unarchived.
-
-Two consequences to keep in view: the batch failure-isolation gap is still present in `process.py` for anyone who does run it (the owner, and any tester given manual instructions), and RR-007 depends on RR-006, which is also still open. If manual processing is ever surfaced in user documentation, this must be reopened first.
 
 ### RR-008 — Use session metadata for car class and physics profile
 
