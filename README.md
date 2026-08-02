@@ -1,5 +1,7 @@
 # Tenths
 
+[![Tests](https://github.com/jgarbiso/Tenths/actions/workflows/ci.yml/badge.svg)](https://github.com/jgarbiso/Tenths/actions/workflows/ci.yml)
+
 *Find your tenths.*
 
 Tenths is an automated race engineer for iRacing. It runs quietly in your system tray, watches for new telemetry, and the moment a session ends it builds a visual coaching report that tells you **where you're losing time and why** — in plain English, no charts to decipher.
