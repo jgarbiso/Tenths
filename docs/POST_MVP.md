@@ -94,3 +94,21 @@ Currently only GT4 has validated coaching thresholds. GT3, prototypes, formula c
 **Effort:** Investigation
 
 The bundle is 80.9 MB (mostly numpy + pandas + PIL, all genuinely used). The only path to significant reduction is replacing pandas DataFrames with raw numpy arrays in `analyzer.py`, which is a major rewrite. Not worth it unless the installer size becomes a distribution concern.
+
+---
+
+## Lap Comparison Visual Identifier
+
+**Priority:** High — before wider beta
+**Effort:** ~1 hour
+
+When comparing two laps in the Detailed view (via the Compare button), the traces overlap but there is no persistent legend indicating which lap is solid and which is dashed. The lap selectors show the lap numbers with a blue left-border on the comparison dropdown, but once your eyes are on the chart there's no inline label or color key saying "solid = Lap 11 (best), dashed = Lap 3."
+
+**What's needed:**
+- A small persistent label or color-coded legend near the telemetry chart header: e.g., "━ Lap 11 (2:13.5)  ┈ Lap 3 (2:19.8)" using the same solid/dashed styling as the traces
+- Should update dynamically when either lap selector changes
+- The speed delta panel (green/red shading) also needs context — which direction is "faster"? Currently it shows the delta but doesn't label which lap is the reference
+
+**Current behavior:** The compare delta badge in the top-right says something like "−4.3s" which tells you the comparison lap is slower, but you have to remember which dropdown is which. In the heat of reviewing telemetry this is easy to lose track of.
+
+**Reference:** The telemetry header row already has `crosshair-info` for hover data. The lap identity labels could sit next to the legend dots (Throttle/Brake/Speed/Steering) or replace the Compare button area once comparison is active.
