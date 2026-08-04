@@ -112,3 +112,112 @@ When comparing two laps in the Detailed view (via the Compare button), the trace
 **Current behavior:** The compare delta badge in the top-right says something like "−4.3s" which tells you the comparison lap is slower, but you have to remember which dropdown is which. In the heat of reviewing telemetry this is easy to lose track of.
 
 **Reference:** The telemetry header row already has `crosshair-info` for hover data. The lap identity labels could sit next to the legend dots (Throttle/Brake/Speed/Steering) or replace the Compare button area once comparison is active.
+
+---
+
+## Enhanced Coaching Features (Post-MVP Feature Pass)
+
+Identified from a coaching review of the COTA practice session (2026-08-03) using professional racing methodology as a reference framework. All features use generic coaching language. Internal development references ARA methodology for prioritization and message quality, but the user-facing output remains neutral and data-driven.
+
+### Batch 1 — High Value, Low Effort (data already exists)
+
+#### Throttle Hesitation on Summary
+
+Surface `thr_lag` on the Summary page when it exceeds 1.0s at any corner. Currently buried in the Detailed braking table. A 1.5s throttle lag before a long straight is arguably the single biggest recoverable item per corner.
+
+- Display: coaching sentence on a Focus Card — "T1: 1.57s throttle hesitation — commit to throttle at the apex and let the car carry you to the outside."
+- Priority weighting: `thr_lag × straight_length_after_corner` estimates the time cost.
+- Data: `thr_lag` and `thr_on` are already computed per zone.
+
+#### Theoretical Best (Assembled Lap)
+
+Sum of best per-corner sector times across all laps. Shows the speed the driver has *already demonstrated* but not on one lap.
+
+- Display on Summary: "Theoretical Best: 2:10.1 | Actual Best: 2:13.5 | Consistency Gap: 3.4s"
+- Coaching message: "You already have the speed — focus on repeating what you proved, not finding new pace."
+- Data: corner_variance already has per-corner best times. Just sum them.
+- This reframes "you're slow" as "you're inconsistent" — which is actionable.
+
+#### ABS Hotspot on Summary
+
+Surface ABS activations when a zone exceeds a threshold (e.g., >30 hits).
+
+- Display: "T15: 62 ABS hits — you're past the brake limit. Find the pressure just below lock-up and maintain it."
+- If ABS trend is improving across the session, acknowledge it: "ABS improving — you're calibrating."
+- Data: `abs_hits` per zone, `abs_trend` already computed.
+
+#### Session Progression Indicator
+
+Show whether the driver was still improving at session end or plateaued.
+
+- Compare mean lap time of first half vs second half.
+- If best lap came in last 25%: "Still finding time — consider extending next session."
+- If best lap came early and times worsened: "Peak was early — possible fatigue."
+- If times are flat for 5+ laps: "Plateau — you need new input, not more laps."
+- Data: lap times are already available.
+
+### Batch 2 — Medium Effort, High Value (needs new computation)
+
+#### Sector-Level Time Breakdown
+
+Divide the track into 3 sectors and show which part costs the most time.
+
+- Display: `S1: +1.2s | S2: +0.8s | S3: +0.7s` (gap vs theoretical per sector)
+- Immediately tells the driver where to focus without reading every corner.
+- Computation: accumulate sample time per sector per lap using `LapDistPct` boundaries.
+
+#### Exit Priority Weighting
+
+Weight corner importance by the straight length that follows.
+
+- Computation: distance from zone exit to next zone entry (partially done in HTML with `exitWeight`).
+- Display in notes: add a "Straight After" column to the corner variance table.
+- A 0.3s loss before an 1100m straight costs more than 0.3s before a 200m straight.
+
+#### Untracked Section Warning
+
+Flag large gaps in the track where no braking zone was detected but time is likely being lost.
+
+- If >20% of track has no braking zone, display: "Turns 2-10 (34% of track) — no heavy braking detected. Test your grip: try turning more mid-corner."
+- Calculation: sum of zone influence ranges vs track length.
+- Connects to the known limitation that only >50% brake corners are detected.
+
+#### Driver Level Detection
+
+Estimate how far off pace the driver is to tailor message complexity.
+
+- `gap_per_km = gap_to_reference / track_length_km`
+- >1.0s/km: focus on consistency, simple messages ("throttle at the apex")
+- 0.5–1.0s/km: balance and speed, intermediate messages
+- <0.5s/km: precision, advanced messages
+- Requires a reference pace per car/track (could be the driver's own PB from progression, or a static reference)
+
+### Batch 3 — Notes Enhancements (trivial effort, data exists)
+
+#### Throttle Application Table in Session Notes
+
+Add per-zone `thr_on` and `thr_lag` to the markdown output. Data exists, just needs a table row.
+
+#### Min Speed Variance Table in Session Notes
+
+Add best/worst/avg/spread/over-braking per zone. Data exists in `apex_consistency`, just needs formatting.
+
+#### Focus for Next Session (Plain-English Actions)
+
+Replace the current generic "Targets for Next Session" with coaching-style actions that reference what the driver should *do*, not just what number to hit.
+
+Current: "Best lap under 2:13.0"
+Better: "T1 Exit — commit to throttle at the apex (thr_lag: 1.57s). T12 Entry — same reference, lighter peak pressure (over-slowing 4.4mph vs your best)."
+
+### Internal Reference (not user-facing)
+
+The Almeida Racing Academy methodology is documented in `SimCoach/CONTEXT.md` and used internally as a quality reference for coaching message generation. Key principles used for prioritization:
+
+- "Entry is cause, exit is consequence" — trace exit problems back to entry
+- "Consistency before speed" — Level 1 priority
+- "Speed and rotation are inversely proportional" — inform over-braking messages
+- "Fast application, maintained pressure" — inform T2Peak/brake shape coaching
+- "1% brake feeling" — inform trail braking prompts
+- "If you can cause it, you can prevent it" — inform drill suggestions (future)
+
+This methodology is NOT exposed to users as "ARA" or any branded framework. It influences how we write messages and prioritize what to surface — the output stays generic and data-driven.
