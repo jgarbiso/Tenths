@@ -221,3 +221,54 @@ The Almeida Racing Academy methodology is documented in `SimCoach/CONTEXT.md` an
 - "If you can cause it, you can prevent it" — inform drill suggestions (future)
 
 This methodology is NOT exposed to users as "ARA" or any branded framework. It influences how we write messages and prioritize what to surface — the output stays generic and data-driven.
+
+---
+
+## Race Readiness Assessment (Standalone Feature)
+
+**Priority:** After enhanced coaching features (Batches 1-3 above)
+**Effort:** ~1-2 days for MVP
+**Full spec:** `SimCoach/race_readiness_feature.md`
+
+### What it does
+
+User drops an iRacing race result JSON (exported from the iRacing website) and Tenths produces a field analysis showing where their pace would land them, what lap time is needed for specific positions, and how incidents affect outcomes in their split.
+
+### Why it matters
+
+Answers the question every driver asks before clicking "Race": *Am I ready? Where will I finish? What should I focus on?* No existing tool provides this from a single exported result file.
+
+### MVP scope
+
+- Input: single `eventresult-*.json` file (iRacing website export)
+- Output: standalone Race Readiness report
+- No practice session required (pure field assessment)
+- If a matching practice session exists (same track/car class), overlay the user's pace as "You Are Here"
+
+### Key outputs
+
+1. **Field stats** — SOF, entries, race length, event best/avg lap
+2. **Position target table** — Top 3 / Top 5 / Top 10 requirements: avg lap needed, best lap typical, max incidents tolerated, consistency spread (avg-best gap)
+3. **Field tier detection** — auto-cluster the field into performance tiers based on natural gaps in average lap time, with a coaching description of each tier's profile
+4. **Coaching insight** — one plain-English message about what decides results in this split (e.g., "Incidents decide more than speed" or "The top 4 are in their own race — focus on winning the Tier 2 battle")
+5. **User assessment** (when practice session linked) — estimated qualifying and race finish position, gap to target positions, primary risk factor, pre-race brief
+
+### Technical notes
+
+- `tenths/results.py` already parses both CSV and JSON race results — the data extraction exists
+- New computation module needed for tier detection, position targets, and coaching insight generation
+- Practice session matching requires resolving track name across JSON metadata and `.ibt` filename slugs — same class of problem as `find_race_result()` but in reverse
+- The result JSON is typically downloaded *after* the race (post-hoc analysis for next week), not in real-time before racing. Frame accordingly.
+- Edge cases documented in full spec: partial results, small fields, multi-class, no qualifying, user's own result as calibration
+
+### Post-MVP extensions
+
+- Multi-race ingestion (3+ JSONs) for statistical confidence
+- iRating-based split prediction
+- Qualifying strategy recommendations
+- Incident budget calculator
+- Historical position trends across race weeks
+
+### Reference
+
+Designed from real data: Ferrari 296 GT3 @ COTA GP practice (2:13.502 best) vs GT3 Regional Tour Split 3 (SOF 1071, 15 drivers). Finding: user's pace projects to P7-P9, with top-10 achievable purely through clean driving (the split was incident-dominated).
