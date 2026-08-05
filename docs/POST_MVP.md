@@ -272,3 +272,55 @@ Answers the question every driver asks before clicking "Race": *Am I ready? Wher
 ### Reference
 
 Designed from real data: Ferrari 296 GT3 @ COTA GP practice (2:13.502 best) vs GT3 Regional Tour Split 3 (SOF 1071, 15 drivers). Finding: user's pace projects to P7-P9, with top-10 achievable purely through clean driving (the split was incident-dominated).
+
+---
+
+## Unit System Toggle (Imperial / Metric)
+
+**Priority:** High — before wider international beta
+**Effort:** ~half day
+
+Currently all user-facing speeds are MPH and temperatures are °F (hardcoded US units per the original steering file). International drivers expect KPH/°C. iRacing itself supports both unit systems, and the sim racing community outside the US overwhelmingly uses metric.
+
+### What needs to toggle
+
+| Unit type | Imperial (current) | Metric |
+|---|---|---|
+| Speed | MPH | KPH |
+| Temperature | °F | °C |
+| Distance (short) | ft | m |
+| Track length | mi | km |
+
+Lap times, percentages, and brake pressures stay the same regardless of unit system.
+
+### Where units appear
+
+- **HTML report** — Summary hero numbers, Focus Card speed context, Detailed braking zones table (entry/min speed), corner variance, telemetry chart Y-axes, brake release annotations
+- **Session notes (markdown)** — braking zones table, tire temps, lap table max speed
+- **Session summary (JSON)** — all speed/temp fields
+- **CLI output** — `tenths config` doesn't show units but `tenths analyze` does
+- **Index page** — if it shows speed data (currently doesn't)
+
+### Implementation approach
+
+1. Add `units` to `settings.json` (values: `"imperial"` or `"metric"`, default `"imperial"` for backward compatibility)
+2. Add `tenths config --units metric` / `tenths config --units imperial` CLI command
+3. Create a small `tenths/units.py` module with conversion helpers:
+   ```python
+   def speed_label(settings): return "km/h" if metric else "mph"
+   def to_display_speed(mps, settings): return mps * 3.6 if metric else mps * 2.237
+   def to_display_temp(celsius, settings): return celsius if metric else celsius * 9/5 + 32
+   ```
+4. All display code calls through these helpers rather than hardcoding `* 2.237`
+5. The JSON summary stores values in the chosen unit system (with a `units` field for consumers to know which)
+6. The HTML report reads the unit preference at generation time and renders accordingly — reports are static after generation, so a unit change requires regenerating
+
+### Design decision: per-report or global?
+
+**Global (recommended for MVP).** The setting lives in `settings.json` and applies to all future reports. Old reports stay in whatever unit they were generated with. A per-report toggle in the HTML would require client-side conversion logic in JavaScript — doable but adds complexity.
+
+### Edge case
+
+If a user changes units after accumulating sessions, their progression data (previous session's best lap speeds) was stored in the old unit system. The JSON schema should either always store SI internally and convert on display, or include a `units` metadata field so consumers know what they're reading.
+
+**Recommended:** Store SI (m/s, °C) in the JSON always. Convert to display units only at render time (report generation, CLI output). This makes the stored data unit-agnostic and avoids the conversion-on-read problem entirely. The `* 2.237` conversions currently scattered through `analyzer.py` would move to display-layer code only.
