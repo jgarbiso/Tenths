@@ -236,6 +236,42 @@ def _resolve_telemetry_root():
     return _find_iracing_telemetry()
 
 
+# Display unit system. Internal data is always SI (m/s, °C, metres); this only
+# controls how values are rendered in reports, notes, and CLI output.
+UNITS_IMPERIAL = "imperial"
+UNITS_METRIC = "metric"
+
+
+def _resolve_units():
+    """Display unit system: 'imperial' (default) or 'metric'.
+
+    Precedence: TENTHS_UNITS environment variable, then the settings file, then
+    the imperial default. An unrecognised value falls back to imperial and
+    records a warning rather than raising, so a hand-edited settings file cannot
+    stop Tenths from starting.
+    """
+    configured = os.environ.get('TENTHS_UNITS') or SETTINGS.get('units')
+    if not configured:
+        return UNITS_IMPERIAL
+
+    value = str(configured).strip().lower()
+    if value in (UNITS_IMPERIAL, UNITS_METRIC):
+        return value
+
+    CONFIG_WARNINGS.append(
+        f"Unrecognised units setting {configured!r}; using {UNITS_IMPERIAL}. "
+        f"Valid values are {UNITS_IMPERIAL} and {UNITS_METRIC}.")
+    return UNITS_IMPERIAL
+
+
+UNITS = _resolve_units()
+
+
+def is_metric():
+    """True when the user has selected metric display units."""
+    return UNITS == UNITS_METRIC
+
+
 # Telemetry root — where iRacing writes .ibt files
 TELEMETRY_ROOT = _resolve_telemetry_root()
 

@@ -26,7 +26,29 @@ def config_cli(args):
         print("Usage:\n"
               "  tenths config                              Show resolved paths\n"
               "  tenths config --telemetry-root <path>      Set the telemetry folder\n"
-              "  tenths config --reset-telemetry-root       Go back to auto-detection")
+              "  tenths config --reset-telemetry-root       Go back to auto-detection\n"
+              "  tenths config --units imperial|metric      Set display units")
+        return
+
+    if "--units" in args:
+        index = args.index("--units")
+        if index + 1 >= len(args):
+            print("Error: --units needs a value (imperial or metric)")
+            return
+        value = args[index + 1].strip().lower()
+        if value not in (cfg.UNITS_IMPERIAL, cfg.UNITS_METRIC):
+            print(f"Error: unknown units {value!r}. "
+                  f"Use {cfg.UNITS_IMPERIAL} or {cfg.UNITS_METRIC}.")
+            return
+        try:
+            written = cfg.save_settings({'units': value})
+        except OSError as exc:
+            print(f"Error: could not write settings: {exc}")
+            return
+        labels = "mph, °F" if value == cfg.UNITS_IMPERIAL else "km/h, °C"
+        print(f"Display units set to: {value} ({labels})")
+        print(f"Saved to: {written}")
+        print("Restart Tenths for this to take effect.")
         return
 
     if "--telemetry-root" in args:
@@ -76,8 +98,11 @@ def config_cli(args):
     else:
         source = "auto-detected from your Documents folder"
 
+    unit_labels = "mph, °F" if not cfg.is_metric() else "km/h, °C"
+
     print("Tenths configuration")
     print(f"  Version          : {cfg.VERSION}")
+    print(f"  Units            : {cfg.UNITS} ({unit_labels})")
     print(f"  Documents folder : {cfg._documents_dir()}")
     print(f"  iRacing folder   : {cfg.iracing_dir()}"
           f"{'' if os.path.isdir(cfg.iracing_dir()) else '   (NOT FOUND)'}")
@@ -218,6 +243,7 @@ iRacing telemetry analysis and coaching tool.
 Commands:
   config                          Show resolved paths (telemetry, log, settings)
   config --telemetry-root <path>  Point Tenths at a different telemetry folder
+  config --units imperial|metric  Set display units (default: imperial)
   watch                           Watch for new sessions and auto-process (Ctrl+C to stop)
   watch --open                    Watch and auto-open reports in browser
   tray                            Run as system tray app (no terminal window)
