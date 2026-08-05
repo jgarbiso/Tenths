@@ -19,8 +19,23 @@ from datetime import datetime, timezone
 
 from tenths.jsonio import dump_json
 from tenths.track_map import get_turn_name
+from tenths.units import celsius_to_fahrenheit, mps_to_mph
 
 CURRENT_SCHEMA_VERSION = "1.0.0"
+
+
+def _mph(mps, ndigits=1):
+    """Convert an analyzer speed (m/s) to mph for the JSON contract.
+
+    The summary is a machine contract read by the index and progression logic,
+    so it stays in mph regardless of the user's display-unit preference. The
+    analyzer stores SI; this is the conversion boundary. `ndigits=None` leaves
+    the value unrounded, matching the fields that were previously unrounded.
+    """
+    if mps is None:
+        return None
+    value = mps_to_mph(mps)
+    return value if ndigits is None else round(value, ndigits)
 
 
 def generate_session_summary(data, file_info, track_map, race_result=None):
@@ -83,7 +98,7 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
         'time_seconds': best_result['time'],
         'time_formatted': _fmt_time(best_result['time']),
         'abs_hits': best_result['abs'],
-        'max_speed_mph': best_result['max_speed_mph'],
+        'max_speed_mph': _mph(best_result['max_speed_mph'], None),
     }
 
     # All valid laps
@@ -94,7 +109,7 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
             'time_seconds': r['time'],
             'time_formatted': _fmt_time(r['time']),
             'abs_hits': r['abs'],
-            'max_speed_mph': round(r['max_speed_mph'], 1),
+            'max_speed_mph': _mph(r['max_speed_mph']),
             'is_best': r['lap'] == best_result['lap'],
             'is_cleanest': r == cleanest_result,
         })
@@ -116,8 +131,8 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
             'turn_name': get_turn_name(track_map, z['pct']),
             'position_pct': round(z['pct'], 1),
             'entry_pct': round(z.get('entry_pct', z['pct']), 1),
-            'entry_speed_mph': round(z['entry_mph'], 1),
-            'min_speed_mph': round(z['min_mph'], 1),
+            'entry_speed_mph': _mph(z['entry_mph']),
+            'min_speed_mph': _mph(z['min_mph']),
             'max_brake_pct': round(z['max_brake'], 1),
             'abs_hits': z['abs'],
             'distance_m': round(z.get('dist_m', 0), 0),
@@ -143,14 +158,14 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
             zone['brake_linearity'] = None
         # Merge apex consistency + Min Speed Spread (additive schema fields)
         if i < len(apex_data):
-            zone['apex_avg_mph'] = apex_data[i].get('avg_apex_mph')
-            zone['apex_std_mph'] = apex_data[i].get('std_apex_mph')
-            zone['min_speed_best_mph'] = apex_data[i].get('min_speed_best_mph')
-            zone['min_speed_worst_mph'] = apex_data[i].get('min_speed_worst_mph')
-            zone['min_speed_typical_low_mph'] = apex_data[i].get('min_speed_typical_low_mph')
-            zone['min_speed_typical_high_mph'] = apex_data[i].get('min_speed_typical_high_mph')
-            zone['min_speed_spread_mph'] = apex_data[i].get('min_speed_spread_mph')
-            zone['over_braking_mph'] = apex_data[i].get('over_braking_mph')
+            zone['apex_avg_mph'] = _mph(apex_data[i].get('avg_apex_mph'))
+            zone['apex_std_mph'] = _mph(apex_data[i].get('std_apex_mph'))
+            zone['min_speed_best_mph'] = _mph(apex_data[i].get('min_speed_best_mph'))
+            zone['min_speed_worst_mph'] = _mph(apex_data[i].get('min_speed_worst_mph'))
+            zone['min_speed_typical_low_mph'] = _mph(apex_data[i].get('min_speed_typical_low_mph'))
+            zone['min_speed_typical_high_mph'] = _mph(apex_data[i].get('min_speed_typical_high_mph'))
+            zone['min_speed_spread_mph'] = _mph(apex_data[i].get('min_speed_spread_mph'))
+            zone['over_braking_mph'] = _mph(apex_data[i].get('over_braking_mph'))
         else:
             zone['apex_avg_mph'] = None
             zone['apex_std_mph'] = None
@@ -187,11 +202,29 @@ def generate_session_summary(data, file_info, track_map, race_result=None):
             'diagnosis': tb['diagnosis'],
         })
 
-    # GPS trace (best lap — 200 points)
-    gps_trace = data.get('gps_trace', [])
+    # GPS trace (best lap — 200 points). The analyzer stores speed in m/s; the
+    # contract keeps the historical mph values under the same key.
+    gps_trace = []
+    for p in data.get('gps_trace', []):
+        point = dict(p)
+        if point.get('speed_mph') is not None:
+            # Unrounded, as the trace has always been stored.
+            point['speed_mph'] = _mph(point['speed_mph'], None)
+        gps_trace.append(point)
 
-    # Tire temps
-    tire_temps = data.get('tire_temps', {})
+    # Tire temps — analyzer stores °C, the contract keeps °F.
+    tire_temps = {}
+    for corner, values in (data.get('tire_temps') or {}).items():
+        converted = {
+            key: (celsius_to_fahrenheit(v) if isinstance(v, (int, float)) else v)
+            for key, v in values.items()
+        }
+        # Average the converted corners, not the converted average — the order
+        # the original inline conversion used, so results stay bit-identical.
+        parts = [converted.get(k) for k in ('inner', 'mid', 'outer')]
+        if all(isinstance(p, (int, float)) for p in parts):
+            converted['avg'] = sum(parts) / 3
+        tire_temps[corner] = converted
 
     # Race result
     race = None

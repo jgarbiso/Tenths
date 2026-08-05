@@ -12,6 +12,9 @@ Usage:
 
 import os
 
+from tenths.config import is_metric
+from tenths.units import to_display_units
+
 
 def generate_skeleton_track_map(data, session_info):
     """Generate a skeleton track map markdown file from analysis data.
@@ -23,6 +26,9 @@ def generate_skeleton_track_map(data, session_info):
     Returns:
         String containing the complete markdown track map file content.
     """
+    # The analyzer works in SI; the generated map shows display units.
+    data = to_display_units(data, metric=is_metric())
+
     # Track metadata
     track_name = session_info.get('track_display_name', 'Unknown Track')
     track_config = session_info.get('track_config_name', '')

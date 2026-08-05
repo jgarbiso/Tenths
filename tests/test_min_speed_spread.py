@@ -14,9 +14,21 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tenths.analyzer import _extract_apex_consistency
+from tenths.analyzer import _extract_apex_consistency as _apex_consistency_si
 from tenths.report import generate_report, _get_summary_js
 from tenths.summary import generate_session_summary
+from tenths.units import mps_to_mph
+from unit_helpers import apex_results_to_mph, to_si_fixture
+
+
+def _extract_apex_consistency(*args, **kwargs):
+    """Production apex consistency, with SI results converted to mph.
+
+    The analyzer stores m/s internally; the assertions below are written in the
+    mph figures a driver sees, so the conversion happens here rather than in
+    every expectation.
+    """
+    return apex_results_to_mph(_apex_consistency_si(*args, **kwargs))
 
 
 MPS_PER_MPH = 1 / 2.237
@@ -164,8 +176,13 @@ class TestAnalyzerMinSpeedSpread:
 
 
 def _report_data(over_braking=None, spread=None, brake_linearity=0.9):
-    """Minimal analyzer-shaped payload with one diagnosed corner."""
-    return {
+    """Minimal analyzer-shaped payload with one diagnosed corner.
+
+    Speeds are written as mph literals for readability and converted to SI on
+    the way out, because `analyzer.analyze()` — which this stands in for — now
+    returns m/s.
+    """
+    return to_si_fixture({
         'session_info': {'car_screen_name': 'BMW M4 GT3', 'track_display_name': 'Road Atlanta'},
         'lap_results': [
             {'lap': 1, 'time': 99.5, 'abs': 4, 'max_speed_mph': 150.0},
@@ -216,7 +233,7 @@ def _report_data(over_braking=None, spread=None, brake_linearity=0.9):
         'tire_temps': {},
         'car_class': 'Touring',
         'track_length_m': 4088,
-    }
+    })
 
 
 def _file_info():
@@ -362,22 +379,51 @@ class TestOverBrakingThresholdRR022:
     """
 
     def test_production_constants_match_decision(self):
-        """The threshold constants must reflect the owner's retuning decision."""
+        """The threshold constants must reflect the owner's retuning decision.
+
+        The floor is stored in SI; the decision was made in mph, so the assertion
+        is expressed in mph to stay comparable to that decision record.
+        """
         from tenths.analyzer import (
             OVER_BRAKING_LIMIT_FRACTION,
-            OVER_BRAKING_LIMIT_FLOOR_MPH,
+            OVER_BRAKING_LIMIT_FLOOR_MPS,
         )
         assert OVER_BRAKING_LIMIT_FRACTION == 0.07
-        assert OVER_BRAKING_LIMIT_FLOOR_MPH == 1.5
+        assert mps_to_mph(OVER_BRAKING_LIMIT_FLOOR_MPS) == pytest.approx(1.5, abs=1e-6)
 
     def test_spread_constants_untouched(self):
         """RR-021 validated spread independently; it must not drift."""
         from tenths.analyzer import (
             SPREAD_LIMIT_FRACTION,
-            SPREAD_LIMIT_FLOOR_MPH,
+            SPREAD_LIMIT_FLOOR_MPS,
         )
         assert SPREAD_LIMIT_FRACTION == 0.20
-        assert SPREAD_LIMIT_FLOOR_MPH == 6.0
+        assert mps_to_mph(SPREAD_LIMIT_FLOOR_MPS) == pytest.approx(6.0, abs=1e-6)
+
+    def test_apex_std_constants_untouched(self):
+        """The apex-std floor must survive the SI conversion unchanged."""
+        from tenths.analyzer import (
+            APEX_STD_LIMIT_FRACTION,
+            APEX_STD_LIMIT_FLOOR_MPS,
+        )
+        assert APEX_STD_LIMIT_FRACTION == 0.08
+        assert mps_to_mph(APEX_STD_LIMIT_FLOOR_MPS) == pytest.approx(2.0, abs=1e-6)
+
+    def test_hidden_note_thresholds_preserved_in_si(self):
+        """The inline mph gates behind the coaching notes must be unchanged.
+
+        These were bare literals (min_spd > 20, min_spd > 40, apex_speed < 30)
+        before the SI refactor. Naming them in SI is only safe if their real-world
+        values did not move.
+        """
+        from tenths.analyzer import (
+            OVER_SLOWING_MIN_SPEED_MPS,
+            LUGGING_MIN_SPEED_MPS,
+            EXIT_METRICS_MIN_APEX_MPS,
+        )
+        assert mps_to_mph(OVER_SLOWING_MIN_SPEED_MPS) == pytest.approx(20.0, abs=1e-6)
+        assert mps_to_mph(LUGGING_MIN_SPEED_MPS) == pytest.approx(40.0, abs=1e-6)
+        assert mps_to_mph(EXIT_METRICS_MIN_APEX_MPS) == pytest.approx(30.0, abs=1e-6)
 
     def test_over_braking_fires_at_retuned_threshold(self):
         """A corner where the driver over-slows clearly at a 50 mph avg should fire.

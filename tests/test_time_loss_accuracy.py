@@ -18,10 +18,21 @@ import pytest
 from tenths.analyzer import (
     _apex_window,
     _corner_sectors,
-    _extract_apex_consistency,
+    _extract_apex_consistency as _apex_consistency_si,
     _extract_corner_variance,
     APEX_WINDOW_METERS,
 )
+from unit_helpers import apex_results_to_mph
+
+
+def _extract_apex_consistency(*args, **kwargs):
+    """Production apex consistency, with SI results converted to mph.
+
+    The analyzer stores m/s internally; the assertions here are written in the
+    mph figures a driver sees, so the conversion happens once here.
+    """
+    return apex_results_to_mph(_apex_consistency_si(*args, **kwargs))
+
 
 MPS_PER_MPH = 1 / 2.237
 

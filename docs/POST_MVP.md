@@ -278,7 +278,8 @@ Designed from real data: Ferrari 296 GT3 @ COTA GP practice (2:13.502 best) vs G
 ## Unit System Toggle (Imperial / Metric)
 
 **Priority:** High — before wider international beta
-**Effort:** ~half day
+**Effort:** 1–2 days. The original "half day" estimate was wrong. Measured surface: **293 `mph` references across 8 modules plus 249 across 10 test files** — `report.py` 133, `analyzer.py` 74, `summary.py` 32, `track_map_generator.py` 15, `process.py` 14, `incidents.py` 13. `index_generator.py` displays no speeds and is not involved.
+**Status:** groundwork committed (`tenths/units.py`, `config.UNITS`, `config.is_metric()`, `tenths config --units`). The refactor itself is specified and pending.
 
 Currently all user-facing speeds are MPH and temperatures are °F (hardcoded US units per the original steering file). International drivers expect KPH/°C. iRacing itself supports both unit systems, and the sim racing community outside the US overwhelmingly uses metric.
 
@@ -297,9 +298,10 @@ Lap times, percentages, and brake pressures stay the same regardless of unit sys
 
 - **HTML report** — Summary hero numbers, Focus Card speed context, Detailed braking zones table (entry/min speed), corner variance, telemetry chart Y-axes, brake release annotations
 - **Session notes (markdown)** — braking zones table, tire temps, lap table max speed
-- **Session summary (JSON)** — all speed/temp fields
-- **CLI output** — `tenths config` doesn't show units but `tenths analyze` does
-- **Index page** — if it shows speed data (currently doesn't)
+- **Generated track maps (markdown)** — `track_map_generator.py` bakes braking-zone entry and minimum speeds into the `.md` files it writes
+- **CLI output** — `tenths analyze` and `tenths incident` both print speeds; `tenths config` reports the active setting
+- **Session summary (JSON)** — stays mph deliberately, see the design decision below
+- **Index page** — displays no speed data, not involved
 
 ### Implementation approach
 
@@ -312,15 +314,63 @@ Lap times, percentages, and brake pressures stay the same regardless of unit sys
    def to_display_temp(celsius, settings): return celsius if metric else celsius * 9/5 + 32
    ```
 4. All display code calls through these helpers rather than hardcoding `* 2.237`
-5. The JSON summary stores values in the chosen unit system (with a `units` field for consumers to know which)
-6. The HTML report reads the unit preference at generation time and renders accordingly — reports are static after generation, so a unit change requires regenerating
+5. The HTML report reads the unit preference at generation time and renders accordingly — reports are static after generation, so a unit change requires regenerating
 
 ### Design decision: per-report or global?
 
 **Global (recommended for MVP).** The setting lives in `settings.json` and applies to all future reports. Old reports stay in whatever unit they were generated with. A per-report toggle in the HTML would require client-side conversion logic in JavaScript — doable but adds complexity.
 
-### Edge case
+### Design decision: store SI internally
 
-If a user changes units after accumulating sessions, their progression data (previous session's best lap speeds) was stored in the old unit system. The JSON schema should either always store SI internally and convert on display, or include a `units` metadata field so consumers know what they're reading.
+**Store SI (m/s, °C) throughout the pipeline. Convert only at display time.** This makes stored data unit-agnostic and removes the conversion-on-read problem: if a user switches units after accumulating sessions, progression comparisons against earlier best-lap speeds still work because nothing stored ever changed unit.
 
-**Recommended:** Store SI (m/s, °C) in the JSON always. Convert to display units only at render time (report generation, CLI output). This makes the stored data unit-agnostic and avoids the conversion-on-read problem entirely. The `* 2.237` conversions currently scattered through `analyzer.py` would move to display-layer code only.
+The `* 2.237` conversions currently scattered through `analyzer.py` move to display-layer code only.
+
+### Design decision: ships as one commit
+
+The analyzer emitting m/s while the display layer still prints "mph" is not a partial feature, it is a shipped bug — a 117 mph corner would render as "52 mph". `main` is public with a live beta and `release.py` builds straight from `main`, so there is no safe intermediate commit. The whole refactor lands together or not at all.
+
+### Design decision: the JSON summary stays in mph for now
+
+`session_summary.json` keeps its `*_mph` keys and mph values regardless of the user's display setting, and `CURRENT_SCHEMA_VERSION` stays `1.0.0`.
+
+The summary is a machine-readable contract read by `index_generator.py` and the progression logic, so its shape must not depend on a display preference — a metric user must not get km/h under `*_mph` keys. Since the file content does not change, there is nothing to version. An earlier draft of this plan called for a `1.1.0` bump with a `units` field; that was wrong on both points.
+
+Renaming the summary keys to SI (`entry_speed_mph` → `entry_speed_mps`) is the correct end state but it is a separate change: it is invisible to users, and it needs a real migration for existing archived files. Tracked as a follow-up below.
+
+### Precision risk (measured, not hypothetical)
+
+Speeds are currently stored via `round(value, 1)`. That is 0.1 mph granularity today but 0.1 m/s after the refactor — 2.24× coarser. Measured effect of rounding a calibrated threshold to 1 decimal in m/s and converting back:
+
+| Calibrated mph | m/s exact | rounded to 0.1 | back to mph | error |
+|---|---|---|---|---|
+| 1.5 (over-braking floor) | 0.6706 | 0.7 | 1.566 | +4.4% |
+| 2.0 (apex-std floor) | 0.8941 | 0.9 | 2.013 | +0.7% |
+| 6.0 (spread floor) | 2.6822 | 2.7 | 6.040 | +0.7% |
+
+RR-021 and RR-022 were calibrated so those rules fire on a known set of corners. A 2–5% threshold shift can silently flip borderline corners and change coaching output. **Mitigation: do not round speeds in the analyzer at all** — store the full float, round only in the display format string. At 4 decimals the worst error across the same cases is +0.006%.
+
+The three fractional limits (`SPREAD_LIMIT_FRACTION` etc.) are percentages of the corner's own apex speed and so are unit-agnostic — leave them alone. Only the absolute floors convert, and they should be written as `mph_to_mps(6.0)` rather than a transcribed decimal so the calibration provenance stays visible.
+
+### Regression guard
+
+The specific historical validation counts ("9 of 41 corners", "1 of 9 at Coronado") **cannot be reproduced** — the 8 archived `.ibt` files those numbers came from no longer exist on the dev machine. Do not chase them; the risk is retuning a threshold to hit a remembered number.
+
+Use invariance instead: baseline every corner's three metrics, three computed limits, and three flag decisions across all currently available sessions before the change, then assert after the change that **every flag decision is identical** and every mph-equivalent value matches within 0.05 mph.
+
+**Result (2026-08-05).** 27 `.ibt` files were available; 13 analysable, giving 78 corners. Flag decisions, coaching notes, exit-metric availability and corner counts were all identical, with **zero** metric drift. Imperial output turned out to be **byte-identical** — `session_report.html`, `session_notes.md`, `session_summary.json` and the generated track map all matched by SHA256.
+
+Two extra invariants were added to the harness after scoping found gaps in the original plan:
+
+- **Coaching notes.** Seven absolute mph gates sat inline in the analyzer behind the note logic — `min_spd > 20` ("Over-slowing"), `min_spd > 40` ("Lugging", ×4), and `apex_speed < 30` (which gates whether `thr_on`/`thr_lag` are computed at all). None were covered by the three flag decisions. Left unconverted they would have silently disabled "Lugging" (40 m/s = 89 mph) and blanked exit metrics on most corners. They are now named SI constants and asserted in `tests/test_units.py`.
+- **Exit-metric availability.** `thr_on`/`thr_lag` presence is recorded per corner, which is what pins the `apex_speed < 30` gate.
+
+Byte-identity was only reachable by **keeping the factor at 2.237** rather than adopting the exact 2.23694 — see the follow-up below.
+
+### Follow-ups deliberately excluded from the refactor
+
+- **Correct the mph conversion factor.** `units.MPS_TO_MPH` is pinned to `2.237`, the value the analyzer used inline, because adopting the exact `2.2369362920544` shifts every displayed speed by ~2.7e-5 relative. Measured on the Winton fixture that moved 1247 values in the DATA blob by ~0.003 mph and pushed one corner's `spread_limit` across a 1dp rounding boundary (9.2 → 9.1 mph) — no flag decision changed, but the report was no longer byte-identical. Pinning it kept this refactor provably behaviour-preserving. Correcting the constant is a one-line change that should ship on its own so any output movement is attributable to it. Guarded by `TestConversionFactorIsPinned` in `tests/test_units.py`.
+- **Rename summary keys to SI** (`*_mph` → `*_mps`) with a schema bump and a migration for existing archived files.
+- **Absolute apex-std colouring thresholds.** `report.py` (~line 1282) colours the apex-std cell with hardcoded `> 5` and `> 2` mph rather than the per-corner computed `apex_std_limit_mph`. This is the same absolute-threshold defect RR-021 fixed for the spread rule and RR-022 fixed for over-braking; it survived in the colouring path. **The literals were left untouched.** Conversion happens in Python before the data is serialised into `DATA`, so the JavaScript still receives mph and these thresholds still compare mph against mph — behaviour is preserved by construction rather than by transcribing new constants. Retuning them to use `apex_std_limit_mph` belongs in its own change with its own validation.
+- **Metric mode is wired but unexercised.** `config.UNITS`, `is_metric()` and `to_display_units(metric=True)` all work and are unit-tested, but no consumer has been visually checked in metric, and the report's axis labels, `mph` suffixes and Summary-view copy are still hardcoded strings in the JS. Rendering actual km/h labels is the remaining work for the toggle; this refactor only made it possible.
+- **Stale unit labels in generated track maps.** `track_map_generator.py` bakes speeds and their label into the `.md` files it writes to `%LOCALAPPDATA%\Tenths\tracks`. A map generated in imperial keeps imperial labels after a switch to metric. Because the label is written alongside the value the file is never wrong, only inconsistent with the current setting. Regenerating on unit change is not worth building yet.

@@ -336,14 +336,15 @@ class TestSpeedRelativeThresholds:
 
     def test_floor_applies_to_very_slow_corners(self, tmp_path):
         from synthetic_ibt import build_ibt, Corner
-        from tenths.analyzer import analyze, SPREAD_LIMIT_FLOOR_MPH
+        from tenths.analyzer import analyze, SPREAD_LIMIT_FLOOR_MPS
 
         path = tmp_path / "testcar_testtrack 2026-07-29 21-00-00.ibt"
         build_ibt(str(path), [Corner(pct=0.3, apex_speeds=8.0),
                               Corner(pct=0.8, apex_speeds=30.0)],
                   laps=6, track_length_m=3000.0)
         data = analyze(str(path))
-        assert data["apex_consistency"][0]["spread_limit_mph"] >= SPREAD_LIMIT_FLOOR_MPH
+        # Both sides are SI (m/s), as stored by the analyzer.
+        assert data["apex_consistency"][0]["spread_limit_mph"] >= SPREAD_LIMIT_FLOOR_MPS
 
     def test_consistent_fast_corner_does_not_trigger(self, tmp_path):
         """The Qualcomm symptom: fast corners firing on normal variation."""

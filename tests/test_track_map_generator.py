@@ -8,13 +8,17 @@ import tempfile
 import pytest
 
 from tenths.track_map_generator import generate_skeleton_track_map, write_skeleton_track_map
+from unit_helpers import to_si_fixture
 
 
 class TestSkeletonGeneration:
     """Test that skeleton track maps are generated correctly."""
 
     def _mock_data(self):
-        return {
+        """Analyzer-shaped payload. Speeds are written in mph for readability and
+        converted to SI, because `analyze()` stores m/s and the generator converts
+        back for display."""
+        return to_si_fixture({
             'track_length_m': 2945,
             'braking_zones': [
                 {'pct': 6.0, 'entry_pct': 5.0, 'entry_mph': 116, 'min_mph': 75, 'dist_m': 150, 'lat': -36.518, 'lon': 146.087},
@@ -22,7 +26,7 @@ class TestSkeletonGeneration:
                 {'pct': 46.9, 'entry_pct': 46.4, 'entry_mph': 71, 'min_mph': 57, 'dist_m': 1366, 'lat': -36.515, 'lon': 146.089},
             ],
             'gps_trace': [{'pct': i * 0.5, 'lat': -36.518, 'lon': 146.087} for i in range(200)],
-        }
+        })
 
     def _mock_session_info(self):
         return {

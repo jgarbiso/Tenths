@@ -30,8 +30,9 @@ from tenths.track_map_generator import generate_skeleton_track_map, write_skelet
 # ── Config ────────────────────────────────────────────────────────────────────
 from tenths.config import (
     TELEMETRY_ROOT, ARCHIVE_DIR, MIN_SESSION_SIZE, DOWNLOADS_DIR,
-    REQUIRED_ARTIFACTS, session_output_dir,
+    REQUIRED_ARTIFACTS, session_output_dir, is_metric,
 )
+from tenths.units import to_display_units
 
 FILENAME_PATTERN = re.compile(
     r'^(.+?)_(.+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})(.*?)(\.\w+)$'
@@ -716,6 +717,13 @@ def generate_day_notes(sessions, car, track, date, track_map, baseline):
     Generate a single session_notes.md for all sessions on this day.
     Each session gets its own section (Practice, Qualifying, Race).
     """
+    # The analyzer works in SI; the notes render display units. Convert once up
+    # front so every table below formats display values.
+    sessions = [
+        (fi, to_display_units(data, metric=is_metric()), rr)
+        for fi, data, rr in sessions
+    ]
+
     # Use the first session's data for the header metadata
     first_fi, first_data, _ = sessions[0]
     si = first_data.get('session_info', {})

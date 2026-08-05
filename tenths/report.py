@@ -19,9 +19,10 @@ import base64
 import json
 import os
 
-from tenths.config import PACKAGE_ROOT
+from tenths.config import PACKAGE_ROOT, is_metric
 from tenths.jsonio import dumps_json
 from tenths.track_map import get_turn_name
+from tenths.units import to_display_units
 
 
 # ── Vendor asset inlining ─────────────────────────────────────────────────────
@@ -98,6 +99,9 @@ def _get_chartjs():
     return _read_vendor_text('chart.umd.min.js')
 
 
+
+
+
 def generate_report(data, file_info, track_map, race_result=None, progression=None):
     """Generate a self-contained HTML session report.
 
@@ -112,6 +116,10 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
     Returns:
         Complete HTML string ready to write to file.
     """
+    # The analyzer works in SI. Convert once here so the rest of this function
+    # and all of the embedded JavaScript operate on display units.
+    data = to_display_units(data, metric=is_metric())
+
     si = data.get('session_info', {})
     car_display = si.get('car_screen_name') or file_info['car'].replace('_', ' ')
     track_display_name = si.get('track_display_name') or file_info['track'].replace('_', ' ').title()

@@ -4,6 +4,8 @@ Tests for exit metrics: Thr On, Thr Lag, Brake Linearity, Brake Release Curve.
 
 import pytest
 
+from tenths.units import mps_to_mph
+
 
 class TestExitMetricsIntegration:
     """Integration tests using real telemetry data."""
@@ -101,16 +103,19 @@ class TestApexConsistency:
         assert len(winton_race_data['apex_consistency']) == len(winton_race_data['braking_zones'])
 
     def test_apex_std_values(self, winton_race_data):
-        """Std dev should be non-negative and reasonable (< 20 mph)."""
+        """Std dev should be non-negative and reasonable (< 20 mph).
+
+        The analyzer stores m/s, so the bound is converted rather than relaxed.
+        """
         for ac in winton_race_data['apex_consistency']:
             if ac['std_apex_mph'] is not None:
-                assert 0 <= ac['std_apex_mph'] < 20
+                assert 0 <= mps_to_mph(ac['std_apex_mph']) < 20
 
     def test_apex_avg_values(self, winton_race_data):
         """Average apex speed should be positive and reasonable."""
         for ac in winton_race_data['apex_consistency']:
             if ac['avg_apex_mph'] is not None:
-                assert 20 < ac['avg_apex_mph'] < 200
+                assert 20 < mps_to_mph(ac['avg_apex_mph']) < 200
 
     def test_per_lap_apex_count(self, winton_race_data):
         """Should have one entry per valid lap."""

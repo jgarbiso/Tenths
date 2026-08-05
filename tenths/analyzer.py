@@ -19,6 +19,8 @@ import irsdk
 import pandas as pd
 import numpy as np
 
+from tenths.units import celsius_to_fahrenheit, mph_to_mps, mps_to_mph
+
 # ── Config ────────────────────────────────────────────────────────────────────
 COACHING_CHANNELS = [
     "Lap", "LapCurrentLapTime", "LapDistPct", "LapDist", "LapDeltaToBestLap",
@@ -37,6 +39,14 @@ COACHING_CHANNELS = [
 
 LOAD_LAT_G = 0.5
 LOAD_LONG_G = 0.3
+
+# Absolute speed gates behind the class-specific coaching notes. These were
+# authored as mph literals inline; they are named and expressed in SI here so
+# the analysis pipeline can carry m/s throughout. Values are unchanged.
+OVER_SLOWING_MIN_SPEED_MPS = mph_to_mps(20.0)   # 20 mph — "Over-slowing"
+LUGGING_MIN_SPEED_MPS = mph_to_mps(40.0)        # 40 mph — "Lugging"
+# Below this apex speed, full throttle is trivial, so exit metrics are skipped.
+EXIT_METRICS_MIN_APEX_MPS = mph_to_mps(30.0)    # 30 mph
 
 # Car class detection — GT4 cars have high-downforce physics requiring
 # different braking shape (spike initial brake) and faster downshifts
@@ -236,7 +246,7 @@ def lap_summary(df, valid_laps):
         ld = df[df['Lap'] == lap]
         time = ld['LapLastLapTime'].iloc[-1]
         abs_hits = int(ld['BrakeABSactive'].sum())
-        max_spd = ld['Speed'].max() * 2.237
+        max_spd = mps_to_mph(ld['Speed'].max())
         avg_thr = ld['Throttle'].mean()
         avg_brk = ld['Brake'].mean()
         results.append({'Lap': lap, 'Time': time, 'ABS': abs_hits,
@@ -360,14 +370,16 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
 
     for z, grp in braking.groupby('zone'):
         pos = grp['LapDistPct'].mean()
-        entry = grp['Speed'].iloc[0] * 2.237
-        min_spd = grp['Speed'].min() * 2.237
+        # SI internally so the shared note thresholds apply; converted at print.
+        entry = grp['Speed'].iloc[0]
+        min_spd = grp['Speed'].min()
         max_brk = grp['Brake'].max()
         abs_h = int(grp['BrakeABSactive'].sum())
         flag = " [ABS]" if abs_h > 0 else ""
 
         if not has_gear:
-            print(f"  {pos:5.1f}% {entry:>7.0f}mph {min_spd:>6.0f}mph {max_brk:>7.0f}% {abs_h:>5}{flag}")
+            print(f"  {pos:5.1f}% {mps_to_mph(entry):>7.0f}mph "
+                  f"{mps_to_mph(min_spd):>6.0f}mph {max_brk:>7.0f}% {abs_h:>5}{flag}")
             continue
 
         # Gear shifting diagnostics
@@ -447,14 +459,14 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
             if late_abs:
                 notes.append("Late Brake Squeeze")
             # GT4: stiff suspension needs early brake release to rotate
-            if apex_brake > 15 and min_spd > 20:
+            if apex_brake > 15 and min_spd > OVER_SLOWING_MIN_SPEED_MPS:
                 notes.append("Over-slowing (Trust GT4 Grip)")
             # GT4: fast downshifts are optimal for engine braking
             if brake_to_shift is not None and brake_to_shift >= 0 and brake_to_shift < 0.15:
                 notes.append("Early Shift (Protection Risk)")
             if max_ds_rpm > 7500:
                 notes.append("Over-rev Risk")
-            if apex_rpm < 4000 and min_spd > 40:
+            if apex_rpm < 4000 and min_spd > LUGGING_MIN_SPEED_MPS:
                 notes.append("Lugging")
         else:
             # Touring car (M2 CS, etc.) — original logic
@@ -462,7 +474,7 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
                 notes.append("Early Shift")
             if max_ds_rpm > 7000:
                 notes.append("Aggressive Shift")
-            if apex_rpm < 3500 and min_spd > 40:
+            if apex_rpm < 3500 and min_spd > LUGGING_MIN_SPEED_MPS:
                 notes.append("Lugging")
 
         b2s_str = f"{brake_to_shift:.2f}s" if brake_to_shift is not None else "N/A"
@@ -502,10 +514,12 @@ def braking_analysis(df, lap_num, vehicle="Unknown"):
             coast_str = f"{coast_time_val:.2f}s" if coast_time_val is not None else "N/A"
             turnin_str = f"{turnin_brk_val:.0f}%" if turnin_brk_val is not None else "N/A"
 
-            print(f"  {pos:5.1f}% {entry:>7.0f}mph {min_spd:>6.0f}mph {max_brk:>6.0f}% {abs_h:>5} "
+            print(f"  {pos:5.1f}% {mps_to_mph(entry):>7.0f}mph "
+                  f"{mps_to_mph(min_spd):>6.0f}mph {max_brk:>6.0f}% {abs_h:>5} "
                   f"{t2p_str:>7} {coast_str:>6} {turnin_str:>7} {apx_brk_str:>7}  {notes_str}")
         else:
-            print(f"  {pos:5.1f}% {entry:>7.0f}mph {min_spd:>6.0f}mph {max_brk:>6.0f}% {abs_h:>5} "
+            print(f"  {pos:5.1f}% {mps_to_mph(entry):>7.0f}mph "
+                  f"{mps_to_mph(min_spd):>6.0f}mph {max_brk:>6.0f}% {abs_h:>5} "
                   f"{b2s_str:>9} {ds_rpm_str:>10} {apex_rpm:>8.0f}  {notes_str}")
 
 def tire_temp_analysis(df, lap_num):
@@ -534,8 +548,9 @@ def tire_temp_analysis(df, lap_num):
         if not all(c in under_load.columns for c in [ic, mc, oc]):
             continue
         i, m, o = under_load[ic].mean(), under_load[mc].mean(), under_load[oc].mean()
-        # Convert C to F
-        i_f, m_f, o_f = i*9/5+32, m*9/5+32, o*9/5+32
+        # This is the legacy print path, so it formats °F directly.
+        i_f, m_f, o_f = (celsius_to_fahrenheit(i), celsius_to_fahrenheit(m),
+                         celsius_to_fahrenheit(o))
         avg_f = (i_f + m_f + o_f) / 3
         print(f"  {corner:<6} {i_f:>7.1f} {m_f:>7.1f} {o_f:>7.1f} {avg_f:>7.1f}")
 
@@ -626,8 +641,8 @@ def track_position_map(df, lap_num):
 
     for z, grp in braking.groupby('zone'):
         pct = grp['LapDistPct'].iloc[0]  # entry point (first sample)
-        entry_spd = grp['Speed'].iloc[0] * 2.237
-        min_spd = grp['Speed'].min() * 2.237
+        entry_spd = mps_to_mph(grp['Speed'].iloc[0])
+        min_spd = mps_to_mph(grp['Speed'].min())
 
         # Get GPS at brake entry point
         entry_idx = grp.index[0]
@@ -649,7 +664,7 @@ def track_position_map(df, lap_num):
             section = lap[(lap['LapDistPct'] >= pct_target) & (lap['LapDistPct'] < pct_target + 1)]
             if not section.empty:
                 row = section.iloc[0]
-                spd = row['Speed'] * 2.237
+                spd = mps_to_mph(row['Speed'])
                 dist_str = f"{row['LapDist']:5.0f}m" if has_dist else "    —"
                 print(f"  {pct_target:4d}% {dist_str} {row['Lat']:11.6f} {row['Lon']:12.6f} {spd:6.0f}mph")
 
@@ -768,7 +783,7 @@ def analyze(filepath):
         ld = df[df['Lap'] == lap]
         time = ld['LapLastLapTime'].iloc[-1]
         abs_hits = int(ld['BrakeABSactive'].sum())
-        max_spd = ld['Speed'].max() * 2.237
+        max_spd = ld['Speed'].max()
         lap_results.append({
             'lap': lap, 'time': time, 'abs': abs_hits, 'max_speed_mph': max_spd,
         })
@@ -882,8 +897,8 @@ def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60, track_length_m=
     for z, grp in braking.groupby('zone'):
         pos = grp['LapDistPct'].mean()
         entry_idx = grp.index[0]
-        entry = grp['Speed'].iloc[0] * 2.237
-        min_spd = grp['Speed'].min() * 2.237
+        entry = grp['Speed'].iloc[0]
+        min_spd = grp['Speed'].min()
         max_brk = grp['Brake'].max()
         abs_h = int(grp['BrakeABSactive'].sum())
 
@@ -1009,20 +1024,20 @@ def _extract_braking_zones(df, lap_num, vehicle, sample_rate=60, track_length_m=
                 notes.append("Lazy Initial Brake")
             if late_abs:
                 notes.append("Late Brake Squeeze")
-            if zone_data['apex_brake'] > 15 and min_spd > 20:
+            if zone_data['apex_brake'] > 15 and min_spd > OVER_SLOWING_MIN_SPEED_MPS:
                 notes.append("Over-slowing (Trust GT4 Grip)")
             if zone_data['brake_to_shift'] is not None and zone_data['brake_to_shift'] >= 0 and zone_data['brake_to_shift'] < 0.15:
                 notes.append("Early Shift (Protection Risk)")
             if zone_data['max_ds_rpm'] > 7500:
                 notes.append("Over-rev Risk")
-            if zone_data['apex_rpm'] < 4000 and min_spd > 40:
+            if zone_data['apex_rpm'] < 4000 and min_spd > LUGGING_MIN_SPEED_MPS:
                 notes.append("Lugging")
         else:
             if zone_data['brake_to_shift'] is not None and zone_data['brake_to_shift'] >= 0 and zone_data['brake_to_shift'] < 0.2:
                 notes.append("Early Shift")
             if zone_data['max_ds_rpm'] > 7000:
                 notes.append("Aggressive Shift")
-            if zone_data['apex_rpm'] < 3500 and min_spd > 40:
+            if zone_data['apex_rpm'] < 3500 and min_spd > LUGGING_MIN_SPEED_MPS:
                 notes.append("Lugging")
 
         # Input Stability: detect brake pumping during mid-corner phase
@@ -1167,9 +1182,10 @@ def _extract_tire_temps(df, lap_num):
         if not all(c in under_load.columns for c in [ic, mc, oc]):
             continue
         i, m, o = under_load[ic].mean(), under_load[mc].mean(), under_load[oc].mean()
+        # Stored in °C; the display layer converts.
         temps[corner] = {
-            'inner': i*9/5+32, 'mid': m*9/5+32, 'outer': o*9/5+32,
-            'avg': (i*9/5+32 + m*9/5+32 + o*9/5+32) / 3
+            'inner': i, 'mid': m, 'outer': o,
+            'avg': (i + m + o) / 3
         }
     return temps
 
@@ -1206,7 +1222,7 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
 
         # Find apex (minimum speed point in this zone)
         apex_idx = zone_data['Speed'].idxmin()
-        apex_speed = zone_data.loc[apex_idx, 'Speed'] * 2.237  # mph
+        apex_speed = zone_data.loc[apex_idx, 'Speed']  # m/s
 
         # === Brake Release Curve & Linearity ===
         # Find peak brake in this zone, then extract the release phase (peak → 0%)
@@ -1259,7 +1275,7 @@ def _extract_exit_metrics(df, lap_num, braking_zones, sample_rate=60):
 
         # === Throttle Exit Metrics ===
         # Skip very slow hairpins where 100% throttle is trivial
-        if apex_speed < 30:
+        if apex_speed < EXIT_METRICS_MIN_APEX_MPS:
             results.append({'thr_on': None, 'thr_lag': None, 'brake_linearity': brake_linearity, 'brake_release_curve': curve_normalized, 'brake_duration_s': brake_duration})
             continue
 
@@ -1479,15 +1495,18 @@ def _outlier_trimmed_band(values):
 
 
 # Coaching trigger levels, expressed as a fraction of the corner's apex speed
-# with an absolute floor. A fixed mph threshold is far more sensitive on fast
+# with an absolute floor. A fixed threshold is far more sensitive on fast
 # corners than slow ones: 10mph is 25% of a 40mph hairpin but 11% of a 90mph
 # sweeper, which is why 5 of 8 corners fired on a real 5.4km lap.
+#
+# The fractions are unit-agnostic. The floors are SI (m/s); their historical
+# mph values are shown so the tuning history in RR-021/RR-022 stays traceable.
 SPREAD_LIMIT_FRACTION = 0.20
-SPREAD_LIMIT_FLOOR_MPH = 6.0
+SPREAD_LIMIT_FLOOR_MPS = mph_to_mps(6.0)            # 6.0 mph
 OVER_BRAKING_LIMIT_FRACTION = 0.07
-OVER_BRAKING_LIMIT_FLOOR_MPH = 1.5
+OVER_BRAKING_LIMIT_FLOOR_MPS = mph_to_mps(1.5)      # 1.5 mph
 APEX_STD_LIMIT_FRACTION = 0.08
-APEX_STD_LIMIT_FLOOR_MPH = 2.0
+APEX_STD_LIMIT_FLOOR_MPS = mph_to_mps(2.0)          # 2.0 mph
 
 
 def _empty_apex_result():
@@ -1569,12 +1588,12 @@ def _extract_apex_consistency(df, valid_laps, braking_zones, best_lap=None,
             ]
             if zone_data.empty:
                 continue
-            min_speed_mph = float(zone_data['Speed'].min()) * 2.237
-            per_lap.append({'lap': int(lap_num), 'apex_speed_mph': round(min_speed_mph, 1)})
+            min_speed = float(zone_data['Speed'].min())
+            per_lap.append({'lap': int(lap_num), 'apex_speed_mph': min_speed})
             if lap_num in clean_laps:
-                apex_speeds.append(min_speed_mph)
+                apex_speeds.append(min_speed)
             if best_lap is not None and lap_num == best_lap:
-                best_lap_min = min_speed_mph
+                best_lap_min = min_speed
 
         if len(apex_speeds) >= 2:
             slowest_min = float(min(apex_speeds))
@@ -1592,27 +1611,35 @@ def _extract_apex_consistency(df, valid_laps, braking_zones, best_lap=None,
             # Speed-relative trigger levels. A flat 10mph spread is 25% of a
             # 40mph hairpin but only 11% of a 90mph sweeper, so a fixed figure
             # fires constantly on fast corners where that variation is normal.
-            reference_speed = max(avg, 1.0)
+            # reference_speed is m/s; the fractions are unit-agnostic and the
+            # floors are SI, so the trigger levels are unchanged in real terms.
+            reference_speed = max(avg, mph_to_mps(1.0))
             spread_limit = max(SPREAD_LIMIT_FRACTION * reference_speed,
-                              SPREAD_LIMIT_FLOOR_MPH)
+                              SPREAD_LIMIT_FLOOR_MPS)
             over_braking_limit = max(OVER_BRAKING_LIMIT_FRACTION * reference_speed,
-                                    OVER_BRAKING_LIMIT_FLOOR_MPH)
+                                    OVER_BRAKING_LIMIT_FLOOR_MPS)
             apex_std_limit = max(APEX_STD_LIMIT_FRACTION * reference_speed,
-                                APEX_STD_LIMIT_FLOOR_MPH)
+                                APEX_STD_LIMIT_FLOOR_MPS)
 
+            # Stored unrounded in m/s. Both consumers round at their own display
+            # boundary (report and notes to 1dp mph, summary.py to 1dp mph), so
+            # rounding here would only discard precision — and rounding a limit
+            # can push it below the constant it was derived from.
+            # float() rather than round() keeps NumPy scalars out of the contract
+            # (RR-002) now that rounding no longer does that incidentally.
             result = {
-                'avg_apex_mph': round(avg, 1),
-                'std_apex_mph': round(std, 1),
-                'spread_limit_mph': round(spread_limit, 1),
-                'over_braking_limit_mph': round(over_braking_limit, 1),
-                'apex_std_limit_mph': round(apex_std_limit, 1),
+                'avg_apex_mph': float(avg),
+                'std_apex_mph': float(std),
+                'spread_limit_mph': float(spread_limit),
+                'over_braking_limit_mph': float(over_braking_limit),
+                'apex_std_limit_mph': float(apex_std_limit),
                 'per_lap_apex': per_lap,
-                'min_speed_best_mph': round(best_lap_min, 1) if best_lap_min is not None else None,
-                'min_speed_worst_mph': round(slowest_min, 1),
-                'min_speed_typical_low_mph': round(band_low, 1),
-                'min_speed_typical_high_mph': round(band_high, 1),
-                'min_speed_spread_mph': round(band_high - band_low, 1),
-                'over_braking_mph': round(best_lap_min - avg, 1) if best_lap_min is not None else None,
+                'min_speed_best_mph': float(best_lap_min) if best_lap_min is not None else None,
+                'min_speed_worst_mph': float(slowest_min),
+                'min_speed_typical_low_mph': float(band_low),
+                'min_speed_typical_high_mph': float(band_high),
+                'min_speed_spread_mph': float(band_high - band_low),
+                'over_braking_mph': float(best_lap_min - avg) if best_lap_min is not None else None,
             }
             results.append(result)
         else:
@@ -1674,7 +1701,7 @@ def _extract_per_lap_brake_points(df, valid_laps, braking_zones):
                 'entry_pct': float(first_brake['LapDistPct']),
                 'lat': float(first_brake['Lat']),
                 'lon': float(first_brake['Lon']),
-                'speed_mph': float(first_brake['Speed'] * 2.237),
+                'speed_mph': float(first_brake['Speed']),
             })
 
         if not entries:
@@ -1721,7 +1748,7 @@ def _extract_gps_trace(df, lap_num, dense=True):
                 'pct': round(pct_target, 1),
                 'lat': row['Lat'],
                 'lon': row['Lon'],
-                'speed_mph': row['Speed'] * 2.237,
+                'speed_mph': row['Speed'],
             }
             if has_dist:
                 point['dist'] = row['LapDist']

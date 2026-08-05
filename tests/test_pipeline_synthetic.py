@@ -19,6 +19,16 @@ import pytest
 from synthetic_ibt import INCONSISTENT_APEX_SPEEDS_MPS, INCONSISTENT_CORNER_INDEX
 
 MPH_PER_MPS = 2.237
+
+
+def _apex_mph(data):
+    """apex_consistency converted from the analyzer's SI storage to mph.
+
+    Ground truth here is in m/s and the assertions below express tolerances in
+    mph, so the actual values are converted rather than the expectations.
+    """
+    from unit_helpers import apex_results_to_mph
+    return apex_results_to_mph(data["apex_consistency"])
 SYNTHETIC_APEX_SPEEDS_MPS = INCONSISTENT_APEX_SPEEDS_MPS
 INCONSISTENT_CORNER = INCONSISTENT_CORNER_INDEX
 
@@ -117,7 +127,7 @@ class TestMinSpeedGroundTruth:
 
     def test_inconsistent_corner_spread_matches_configuration(self, synthetic_data):
         """Spread must equal the configured fastest-minus-slowest apex speed."""
-        apex = synthetic_data["apex_consistency"][INCONSISTENT_CORNER]
+        apex = _apex_mph(synthetic_data)[INCONSISTENT_CORNER]
         expected = (max(SYNTHETIC_APEX_SPEEDS_MPS) - min(SYNTHETIC_APEX_SPEEDS_MPS)) * MPH_PER_MPS
         assert apex["min_speed_spread_mph"] == pytest.approx(expected, abs=1.0)
 
@@ -125,18 +135,18 @@ class TestMinSpeedGroundTruth:
         """min_speed_best_mph must be the apex speed actually driven on the best lap."""
         best_lap = synthetic_session["best_lap"]
         expected_mps = synthetic_session["apex_speeds"][best_lap][INCONSISTENT_CORNER]
-        apex = synthetic_data["apex_consistency"][INCONSISTENT_CORNER]
+        apex = _apex_mph(synthetic_data)[INCONSISTENT_CORNER]
         assert apex["min_speed_best_mph"] == pytest.approx(expected_mps * MPH_PER_MPS, abs=1.0)
 
     def test_slowest_lap_reported_as_worst(self, synthetic_data):
-        apex = synthetic_data["apex_consistency"][INCONSISTENT_CORNER]
+        apex = _apex_mph(synthetic_data)[INCONSISTENT_CORNER]
         expected = min(SYNTHETIC_APEX_SPEEDS_MPS) * MPH_PER_MPS
         assert apex["min_speed_worst_mph"] == pytest.approx(expected, abs=1.0)
 
     def test_apex_speeds_are_corner_specific(self, synthetic_data, synthetic_session):
         """Each corner must report its own apex speed, not a neighbour's."""
         for i, (apex, corner) in enumerate(
-                zip(synthetic_data["apex_consistency"], synthetic_session["corners"])):
+                zip(_apex_mph(synthetic_data), synthetic_session["corners"])):
             if i == INCONSISTENT_CORNER:
                 continue
             expected = corner.apex_speed_for(0) * MPH_PER_MPS
@@ -299,7 +309,7 @@ class TestQualcommRegression:
     def test_apex_speeds_are_not_a_neighbours(self, qualcomm_data):
         """Each corner must report its own configured apex speed."""
         data, truth = qualcomm_data
-        for i, (apex, corner) in enumerate(zip(data["apex_consistency"], truth["corners"])):
+        for i, (apex, corner) in enumerate(zip(_apex_mph(data), truth["corners"])):
             expected = corner.apex_speed_for(0) * MPH_PER_MPS
             assert apex["min_speed_best_mph"] == pytest.approx(expected, abs=3.0), (
                 f"corner {i} expected ~{expected:.1f}mph, "
