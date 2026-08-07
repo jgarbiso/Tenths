@@ -96,6 +96,7 @@ Right-click the Tenths tray icon:
 | **Open Last Report** | Opens your most recent session report (also the default double-click action) |
 | **Browse Sessions** | Opens the session index — browse all your processed sessions by car/track |
 | **Pause Processing** | Temporarily stops watching for new sessions |
+| **Metric Units (km/h)** | Switch reports between mph/°F and km/h/°C — applies to your next session |
 | **Start with Windows** | Toggle auto-launch on boot |
 | **Exit** | Stops Tenths |
 
@@ -131,15 +132,17 @@ To show your finishing position and iRating change on race reports, export the r
 
 ## Units (optional)
 
-Reports use mph and °F by default. To switch to km/h and °C:
+Reports use mph and °F by default. To switch to km/h and °C, right-click the tray icon and tick **Metric Units (km/h)**. A notification confirms the change, and it applies to the next session you drive — no restart needed.
+
+There's also a command-line equivalent, which does need a restart:
 
 ```cmd
 tenths config --units metric
+tenths config --units imperial
+tenths config                     # shows which is active
 ```
 
-**Restart Tenths afterwards** — like the other settings, it's read when Tenths starts. Use `tenths config --units imperial` to switch back, and `tenths config` to see which is active.
-
-The setting applies to the HTML report, session notes, generated track maps and CLI output. Reports are static files, so it affects sessions processed after the restart; existing reports keep the units they were generated with.
+The setting applies to the HTML report, session notes, generated track maps and CLI output. Reports are static files, so existing ones keep the units they were generated with; only new sessions use the new setting.
 
 ---
 

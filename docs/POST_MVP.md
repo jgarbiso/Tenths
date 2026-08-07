@@ -346,6 +346,16 @@ Lap times, percentages, and brake pressures stay the same regardless of unit sys
 
 **Global (recommended for MVP).** The setting lives in `settings.json` and applies to all future reports. Old reports stay in whatever unit they were generated with. A per-report toggle in the HTML would require client-side conversion logic in JavaScript — doable but adds complexity.
 
+### Design decision: the tray owns the user-facing switch
+
+The CLI (`tenths config --units metric`) is not a usable path for the audience this feature exists for. The installer places Tenths in `%LOCALAPPDATA%\Tenths` without adding it to `PATH`, so an installed tester has no `tenths` command — they would have to type the full exe path and then restart the app.
+
+The switch is therefore a checkable **"Metric Units (km/h)"** item in the tray, matching the existing `Pause Processing` and `Start with Windows` pattern. It persists via `save_settings()` and then assigns `config.UNITS` in the running process, so the next processed session uses it with no restart. That works because every display boundary calls `config.is_metric()` at format time, and it is the reason they must continue to.
+
+This makes the tray the only sanctioned runtime writer of `config.UNITS`; the invariant is recorded in the `tenths/units.py` contract. Persisting happens *before* the in-process assignment, so a settings file that cannot be written leaves both halves unchanged and the menu tick can never disagree with disk.
+
+Still deliberately not solved: switching units does not retroactively change reports already on disk. They are static HTML. A client-side toggle inside the report would fix that but needs the payload to carry SI and the JavaScript to convert, which is a materially larger change than this one.
+
 ### Design decision: store SI internally
 
 **Store SI (m/s, °C) throughout the pipeline. Convert only at display time.** This makes stored data unit-agnostic and removes the conversion-on-read problem: if a user switches units after accumulating sessions, progression comparisons against earlier best-lap speeds still work because nothing stored ever changed unit.

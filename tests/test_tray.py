@@ -199,6 +199,147 @@ class TestTrayPause:
         assert "Paused" in tray._icon.title
 
 
+class TestTrayUnitsToggle:
+    """The tray is the only way an installed user can switch units.
+
+    The installer puts Tenths in %LOCALAPPDATA% without adding it to PATH, so
+    `tenths config --units metric` is not a command a tester has. These tests pin
+    down both halves of the toggle: it must persist, and it must take effect in
+    the running process, because the whole point is not needing a restart.
+    """
+
+    def _tray(self, tmp_path, monkeypatch, start='imperial'):
+        monkeypatch.setattr('tenths.config.SETTINGS_PATH',
+                            str(tmp_path / 'settings.json'), raising=False)
+        monkeypatch.setattr('tenths.config.UNITS', start, raising=False)
+        # A toast needs a real Windows shell; assert on the call, not the pixels.
+        monkeypatch.setattr(TenthsTray, '_notify_units',
+                            lambda self, title, message: None)
+        tray = TenthsTray()
+        tray._icon = MagicMock()
+        return tray
+
+    def test_menu_exposes_the_toggle(self):
+        tray = TenthsTray()
+        assert callable(tray._toggle_units)
+        assert callable(tray._is_metric)
+
+    def test_menu_contains_a_checkable_units_item(self, monkeypatch):
+        """The menu is built at runtime, so its construction needs a test of its
+        own — a broken item would otherwise only fail in front of a user."""
+        monkeypatch.setattr('tenths.config.UNITS', 'metric', raising=False)
+        tray = TenthsTray()
+        items = list(tray._build_menu())
+        labels = [i.text for i in items if i.text]
+
+        assert "Metric Units (km/h)" in labels
+        units_item = next(i for i in items if i.text == "Metric Units (km/h)")
+        assert units_item.checked is True, "tick must follow the active setting"
+
+        monkeypatch.setattr('tenths.config.UNITS', 'imperial', raising=False)
+        units_item = next(i for i in list(tray._build_menu())
+                          if i.text == "Metric Units (km/h)")
+        assert units_item.checked is False
+
+    def test_units_item_sits_with_the_other_toggles(self):
+        """Grouped with Pause / Start with Windows, not with the open actions."""
+        tray = TenthsTray()
+        labels = [i.text for i in tray._build_menu() if i.text]
+        assert labels.index("Metric Units (km/h)") == labels.index("Pause Processing") + 1
+        assert labels.index("Metric Units (km/h)") == labels.index("Start with Windows") - 1
+
+    def test_is_metric_reads_at_call_time(self, monkeypatch):
+        """A cached value would leave the menu tick disagreeing with the reports."""
+        tray = TenthsTray()
+        monkeypatch.setattr('tenths.config.UNITS', 'imperial', raising=False)
+        assert tray._is_metric() is False
+        monkeypatch.setattr('tenths.config.UNITS', 'metric', raising=False)
+        assert tray._is_metric() is True
+
+    def test_toggle_applies_in_process(self, tmp_path, monkeypatch):
+        """No restart: config.UNITS must change for the next report."""
+        import tenths.config as config
+        tray = self._tray(tmp_path, monkeypatch)
+
+        tray._toggle_units()
+        assert config.UNITS == 'metric'
+        assert config.is_metric() is True
+
+        tray._toggle_units()
+        assert config.UNITS == 'imperial'
+        assert config.is_metric() is False
+
+    def test_toggle_persists_to_settings(self, tmp_path, monkeypatch):
+        """It must survive a restart, not just this process."""
+        import json
+        settings = tmp_path / 'settings.json'
+        tray = self._tray(tmp_path, monkeypatch)
+
+        tray._toggle_units()
+        assert json.loads(settings.read_text(encoding='utf-8'))['units'] == 'metric'
+
+        tray._toggle_units()
+        assert json.loads(settings.read_text(encoding='utf-8'))['units'] == 'imperial'
+
+    def test_toggle_preserves_other_settings(self, tmp_path, monkeypatch):
+        """save_settings merges; the toggle must not clobber telemetry_root."""
+        import json
+        settings = tmp_path / 'settings.json'
+        settings.write_text(json.dumps({'telemetry_root': 'D:/iRacing/telemetry'}),
+                            encoding='utf-8')
+        tray = self._tray(tmp_path, monkeypatch)
+
+        tray._toggle_units()
+        written = json.loads(settings.read_text(encoding='utf-8'))
+        assert written['units'] == 'metric'
+        assert written['telemetry_root'] == 'D:/iRacing/telemetry'
+
+    def test_unwritable_settings_changes_nothing(self, tmp_path, monkeypatch):
+        """If it cannot persist, the menu tick must not start lying about disk."""
+        import tenths.config as config
+        tray = self._tray(tmp_path, monkeypatch)
+
+        def boom(*args, **kwargs):
+            raise OSError("read-only volume")
+
+        monkeypatch.setattr('tenths.config.save_settings', boom)
+        tray._toggle_units()
+        assert config.UNITS == 'imperial', "in-process value changed despite a failed write"
+
+    def test_failed_notification_does_not_break_the_toggle(self, tmp_path, monkeypatch):
+        """A missing toast must not take the tray down or block the switch."""
+        import tenths.config as config
+        monkeypatch.setattr('tenths.config.SETTINGS_PATH',
+                            str(tmp_path / 'settings.json'), raising=False)
+        monkeypatch.setattr('tenths.config.UNITS', 'imperial', raising=False)
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("no shell available")
+
+        monkeypatch.setattr('tenths.service.notifier.SessionNotifier.notify_info', boom)
+        tray = TenthsTray()
+        tray._icon = MagicMock()
+        tray._toggle_units()
+        assert config.UNITS == 'metric'
+
+    def test_toggle_changes_rendered_report_units(self, tmp_path, monkeypatch,
+                                                  winton_race_data,
+                                                  winton_file_info,
+                                                  winton_track_map):
+        """End to end: the point of the toggle is that reports change."""
+        import re
+        from tenths.report import generate_report
+        tray = self._tray(tmp_path, monkeypatch)
+
+        imperial = generate_report(winton_race_data, winton_file_info, winton_track_map)
+        assert re.search(r'\bmph\b', imperial)
+
+        tray._toggle_units()
+        metric = generate_report(winton_race_data, winton_file_info, winton_track_map)
+        assert 'km/h' in metric
+        assert not re.findall(r'\bmph\b', metric)
+
+
 class TestFrozenEntryPointDispatch:
     """The packaged build ships one exe, so tray.main() is also the CLI entry.
 

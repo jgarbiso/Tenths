@@ -50,9 +50,17 @@ THREE TRAPS, ALL OF WHICH HAVE BEEN HIT BEFORE
     need no unit handling.
 
 READING THE SETTING
-    `config.is_metric()` — never `from tenths.config import UNITS`, which binds a
-    copy that tests cannot patch. The value is resolved once at process start, so
-    a change requires restarting Tenths.
+    `config.is_metric()`, called at the moment you format a value — never
+    `from tenths.config import UNITS`, which binds a copy that tests cannot patch
+    and that stops tracking the live value.
+
+    `config.UNITS` is resolved once at process start, so changing it via the CLI
+    or the settings file needs a Tenths restart. The one exception is the tray's
+    units toggle, which assigns `config.UNITS` in the running process after
+    persisting it. That works precisely because the boundaries read
+    `is_metric()` at format time, and it is why they must keep doing so. The tray
+    is the only sanctioned runtime writer; anything else should treat the value as
+    read-only.
 
 THE CONVERSION FACTOR
 The factor is deliberately 2.237, matching what the analyzer used inline before

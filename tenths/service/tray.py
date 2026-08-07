@@ -20,8 +20,12 @@ import winreg
 import pystray
 from PIL import Image
 
+import tenths.config as cfg
+from tenths.applog import get_logger
 from tenths.service.watcher import TelemetryWatcher
 from tenths.config import ICON_PATH, TELEMETRY_ROOT
+
+log = get_logger(__name__)
 
 # Registry key for startup
 STARTUP_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -43,23 +47,12 @@ class TenthsTray:
         # Load icon
         icon_image = self._load_icon()
 
-        # Create menu
-        menu = pystray.Menu(
-            pystray.MenuItem("Open Last Report", self._open_last_report, default=True),
-            pystray.MenuItem("Browse Sessions", self._open_index),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Pause Processing", self._toggle_pause, checked=lambda item: self._paused),
-            pystray.MenuItem("Start with Windows", self._toggle_startup, checked=lambda item: self._is_startup_registered()),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Exit", self._exit),
-        )
-
         # Create tray icon
         self._icon = pystray.Icon(
             name="Tenths",
             icon=icon_image,
             title="Tenths — Watching for sessions",
-            menu=menu,
+            menu=self._build_menu(),
         )
 
         # Start watcher in background thread
@@ -67,6 +60,27 @@ class TenthsTray:
 
         # Run the tray icon (blocks on main thread)
         self._icon.run()
+
+    def _build_menu(self):
+        """Build the tray menu.
+
+        Separated from `run()` so tests can construct it without starting the
+        icon, which blocks. Nothing here is checked by Python at import time, so
+        an unverified menu is a menu that only fails in front of a user.
+        """
+        return pystray.Menu(
+            pystray.MenuItem("Open Last Report", self._open_last_report, default=True),
+            pystray.MenuItem("Browse Sessions", self._open_index),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Pause Processing", self._toggle_pause,
+                             checked=lambda item: self._paused),
+            pystray.MenuItem("Metric Units (km/h)", self._toggle_units,
+                             checked=lambda item: self._is_metric()),
+            pystray.MenuItem("Start with Windows", self._toggle_startup,
+                             checked=lambda item: self._is_startup_registered()),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Exit", self._exit),
+        )
 
     def _load_icon(self):
         """Load the tray icon image."""
@@ -131,6 +145,56 @@ class TenthsTray:
             # Restart watcher
             self._start_watcher()
             self._icon.title = "Tenths — Watching for sessions"
+
+    def _is_metric(self):
+        """Whether metric display units are active.
+
+        Read at call time rather than cached, so the menu tick always reflects
+        what the next generated report will use.
+        """
+        return cfg.is_metric()
+
+    def _toggle_units(self, icon=None, item=None):
+        """Switch display units between imperial and metric.
+
+        The tray is the one sanctioned runtime writer of `config.UNITS`. That
+        value is normally resolved once at process start, but every display
+        boundary calls `config.is_metric()` at the moment it formats a value, so
+        assigning it here means the next processed session picks the change up
+        without restarting Tenths. The watcher runs in a thread of this process,
+        so there is nothing else to notify. See the units contract in
+        `tenths/units.py`.
+
+        Persist before applying. If the settings file cannot be written, nothing
+        changes at all, so the menu tick can never disagree with what is on disk.
+        """
+        target = cfg.UNITS_IMPERIAL if cfg.is_metric() else cfg.UNITS_METRIC
+        try:
+            cfg.save_settings({'units': target})
+        except OSError as exc:
+            log.error("Could not save display units to %s: %s", cfg.SETTINGS_PATH, exc)
+            self._notify_units("Units unchanged",
+                               "Tenths could not write its settings file, so display "
+                               "units were left as they are.")
+            return
+
+        cfg.UNITS = target
+        labels = "km/h and °C" if target == cfg.UNITS_METRIC else "mph and °F"
+        log.info("Display units set to %s (%s)", target, labels)
+        self._notify_units(f"Units switched to {target}",
+                           f"New reports will use {labels}. Reports already "
+                           f"generated keep the units they were made with.")
+
+    def _notify_units(self, title, message):
+        """Confirm a units change. Nothing else visibly changes until the next
+        session is processed, so silence would look like the click did nothing.
+        """
+        try:
+            from tenths.service.notifier import SessionNotifier
+            SessionNotifier().notify_info(title, message)
+        except Exception as exc:
+            # A missing toast must never take the tray down with it.
+            log.warning("Could not show units notification: %s", exc)
 
     def _toggle_startup(self, icon=None, item=None):
         """Toggle 'Start with Windows' registry entry."""

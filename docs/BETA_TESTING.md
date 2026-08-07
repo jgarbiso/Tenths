@@ -15,7 +15,12 @@ reporting things I already know about.
 3. Leave **"Start Tenths with Windows"** checked.
 
 Tenths lives in your system tray. Right-click it for Open Last Report, Browse
-Sessions, Pause Processing, Start with Windows, and Exit.
+Sessions, Pause Processing, Metric Units, Start with Windows, and Exit.
+
+Reports are in mph and °F by default. **If you'd rather have km/h and °C, tick
+"Metric Units (km/h)"** — it takes effect on your next session. Metric is newly
+implemented, so if anything still shows the wrong unit or an odd number, that's
+exactly the kind of thing worth reporting.
 
 ## Turn on iRacing telemetry
 
