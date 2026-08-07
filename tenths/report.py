@@ -380,7 +380,8 @@ def _build_html(data_json, car, track, date, best_time, race_data):
                     <div class="focus-cards" id="focus-cards"></div>
                 </div>
                 <div class="summary-right">
-                    <canvas id="mini-map" width="280" height="280"></canvas>
+                    <canvas id="mini-map"></canvas>
+                    <div class="mini-map-caption">Numbered markers match the cards on the left</div>
                 </div>
             </div>
         </div>
@@ -2363,6 +2364,25 @@ def _get_summary_css():
     gap: 12px;
 }
 
+/* Priority number, repeated inside the matching mini-map marker so a reader can
+   tell two nearby corners apart without tracing the outline. */
+.focus-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+    border-radius: 50%;
+    background: var(--accent-red);
+    color: #fff;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+}
+
 /* Summary two-column layout */
 .summary-body {
     display: flex;
@@ -2373,22 +2393,36 @@ def _get_summary_css():
     flex: 1;
     min-width: 0;
 }
+/* The map column is wide enough for corner labels to sit outside the circuit
+   without being clipped. Its height is set by renderMiniMap() from the track's
+   real proportions, so a wide circuit no longer draws small inside a square. */
 .summary-right {
-    flex: 0 0 280px;
+    flex: 0 0 clamp(360px, 34vw, 560px);
     position: sticky;
     top: 80px;
 }
 #mini-map {
-    width: 280px;
-    height: 280px;
+    display: block;
+    width: 100%;
+    height: 300px;   /* placeholder until renderMiniMap() measures the track */
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg-surface);
 }
+.mini-map-caption {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-top: 8px;
+    letter-spacing: 0.02em;
+}
+@media (max-width: 1100px) {
+    .summary-right { flex: 0 0 340px; }
+}
 @media (max-width: 900px) {
     .summary-body { flex-direction: column-reverse; }
     .summary-right { flex: none; width: 100%; position: static; }
-    #mini-map { width: 100%; height: 200px; }
 }
 .focus-card {
     background: var(--bg-surface);
@@ -2729,9 +2763,11 @@ def _get_summary_js():
             ? `<span class="next-focus-speed">${Math.round(focus.entry_mph)}→${Math.round(focus.min_mph)}${U.speed}</span>`
             : '';
 
+        // The badge is always 1: this is the top-priority corner, and the number
+        // is what ties it to its marker on the mini-map.
         container.innerHTML = `
             <div class="next-focus-header">Next Race Focus</div>
-            <div class="next-focus-turn">${focus.turn_name} ${speedCtx}</div>
+            <div class="next-focus-turn"><span class="focus-rank">1</span>${focus.turn_name} ${speedCtx}</div>
             <div class="next-focus-loss">${focus.loss.toFixed(3)}s</div>
             <div class="next-focus-sentence">${sentence}</div>
         `;
@@ -2757,7 +2793,9 @@ def _get_summary_js():
 
         if (filtered.length === 0) return;
 
-        container.innerHTML = filtered.map(corner => {
+        // Ranks continue from the Next Race Focus, which is always 1, so the
+        // badges here line up with the numbered markers on the mini-map.
+        container.innerHTML = filtered.map((corner, i) => {
             const sentence = generateCoachingSentence(corner);
             const diagType = getDiagnosisType(corner);
             const speedCtx = corner.entry_mph && corner.min_mph
@@ -2766,7 +2804,7 @@ def _get_summary_js():
             return `
                 <div class="focus-card" data-turn="${corner.turn_name}" data-diag="${diagType}">
                     <div class="focus-card-header">
-                        <span class="focus-card-turn">${corner.turn_name} ${speedCtx}</span>
+                        <span class="focus-card-turn"><span class="focus-rank">${i + 2}</span>${corner.turn_name} ${speedCtx}</span>
                         <span class="focus-card-loss">${corner.loss.toFixed(3)}s</span>
                     </div>
                     <div class="focus-card-sentence">${sentence}</div>
@@ -2831,11 +2869,6 @@ def _get_summary_js():
 
         const ctx = canvas.getContext('2d');
         const dpr = window.devicePixelRatio || 1;
-        const w = canvas.clientWidth;
-        const h = canvas.clientHeight;
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
-        ctx.scale(dpr, dpr);
 
         // Extract lat/lon from GPS trace
         const points = DATA.gps_trace;
@@ -2843,19 +2876,37 @@ def _get_summary_js():
         const lons = points.map(p => p.lon);
         const minLat = Math.min(...lats), maxLat = Math.max(...lats);
         const minLon = Math.min(...lons), maxLon = Math.max(...lons);
-
-        // Scale to canvas with padding
-        const pad = 30;
-        const scaleX = (w - pad * 2) / (maxLon - minLon || 1);
-        const scaleY = (h - pad * 2) / (maxLat - minLat || 1);
-        const scale = Math.min(scaleX, scaleY);
-
-        const cx = w / 2;
-        const cy = h / 2;
         const midLon = (minLon + maxLon) / 2;
         const midLat = (minLat + maxLat) / 2;
 
-        function toX(lon) { return cx + (lon - midLon) * scale; }
+        // A degree of longitude covers cos(latitude) as much ground as a degree
+        // of latitude. Scaling both axes identically stretched every circuit
+        // horizontally — about 16% at COTA — so the mini-map disagreed with the
+        // Leaflet map on the Detailed tab and the shape was harder to recognise.
+        const lonSquash = Math.cos(midLat * Math.PI / 180) || 1;
+        const spanX = (maxLon - minLon) * lonSquash || 1;
+        const spanY = (maxLat - minLat) || 1;
+
+        // Height follows the circuit's real proportions. A fixed square canvas
+        // wasted most of its area on a wide track like COTA, which is why the
+        // drawing came out small and the corner labels collided.
+        const pad = 34;
+        const w = canvas.clientWidth || 420;
+        const usableW = Math.max(w - pad * 2, 1);
+        let h = usableW * (spanY / spanX) + pad * 2;
+        h = Math.round(Math.max(240, Math.min(h, 560)));
+        canvas.style.height = h + 'px';
+
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        const scale = Math.min(usableW / spanX, Math.max(h - pad * 2, 1) / spanY);
+        const cx = w / 2;
+        const cy = h / 2;
+
+        function toX(lon) { return cx + (lon - midLon) * lonSquash * scale; }
         function toY(lat) { return cy - (lat - midLat) * scale; }
 
         // Draw track outline
@@ -2873,35 +2924,135 @@ def _get_summary_js():
         // Highlight problem corners from coaching data
         const bz = DATA.braking_zones || [];
         const focusPcts = coachingData.map(c => c.pct);
+        const focus = [];
 
-        // Draw all braking zones as small dots
+        // Ranks are read back from what was actually rendered rather than from
+        // coachingData order. renderNextFocus() applies its own selection rules
+        // and fallbacks, so its corner is not always coachingData[0]; deriving the
+        // numbers from the DOM keeps the markers and the cards in agreement no
+        // matter which corner it picked.
+        const rankByTurn = {};
+        const nextTurn = document.getElementById('next-focus')?.dataset?.turn;
+        if (nextTurn) rankByTurn[nextTurn] = 1;
+        document.querySelectorAll('#focus-cards .focus-card').forEach((card, i) => {
+            if (card.dataset.turn) rankByTurn[card.dataset.turn] = i + 2;
+        });
+
+        // Every braking zone gets a dot; the coached ones get a marker and a
+        // label, collected first so their labels can be placed as a set.
         for (const zone of bz) {
             const pct = zone.pct;
             const idx = Math.round((pct / 100) * (points.length - 1));
             if (idx < 0 || idx >= points.length) continue;
             const pt = points[idx];
             const isFocus = focusPcts.some(fp => Math.abs(fp - pct) < 3);
+            const x = toX(pt.lon), y = toY(pt.lat);
 
-            ctx.beginPath();
-            ctx.arc(toX(pt.lon), toY(pt.lat), isFocus ? 8 : 4, 0, Math.PI * 2);
-            ctx.fillStyle = isFocus ? '#ff1744' : '#448aff40';
-            ctx.fill();
-
-            // Label focus corners
             if (isFocus) {
                 const label = zone.turn_name || 'T?';
-                ctx.font = '11px Inter, system-ui, sans-serif';
-                ctx.fillStyle = '#e8eaf0';
-                ctx.textAlign = 'center';
-                ctx.fillText(label, toX(pt.lon), toY(pt.lat) - 12);
+                const rank = rankByTurn[label]
+                    || focusPcts.findIndex(fp => Math.abs(fp - pct) < 3) + 1;
+                focus.push({ x, y, rank, label });
+                continue;
             }
+
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#448aff40';
+            ctx.fill();
         }
+
+        // ── Label placement ──────────────────────────────────────────────────
+        // Two coached corners can sit a few hundred metres apart — T12 and T13 at
+        // COTA do — and a fixed offset above the marker put their labels on top of
+        // each other with no way to tell which belonged to which. Labels are
+        // pushed outward from the circuit's centre, then separated from each
+        // other, and joined to their marker by a leader line.
+        ctx.font = '600 12px Inter, system-ui, sans-serif';
+        const chipH = 20;
+        for (const f of focus) {
+            f.textW = ctx.measureText(f.label).width;
+            f.chipW = f.textW + 16;
+            const dx = f.x - cx, dy = f.y - cy;
+            const len = Math.hypot(dx, dy) || 1;
+            const reach = 26;
+            f.lx = f.x + (dx / len) * reach;
+            f.ly = f.y + (dy / len) * reach;
+        }
+
+        // Relax overlaps. Few labels and a bounded iteration count, so this is
+        // cheap and always terminates.
+        for (let iter = 0; iter < 80; iter++) {
+            let moved = false;
+            for (let i = 0; i < focus.length; i++) {
+                for (let j = i + 1; j < focus.length; j++) {
+                    const a = focus[i], b = focus[j];
+                    const needX = (a.chipW + b.chipW) / 2 + 6;
+                    const needY = chipH + 6;
+                    const dx = b.lx - a.lx, dy = b.ly - a.ly;
+                    if (Math.abs(dx) < needX && Math.abs(dy) < needY) {
+                        // Separate along whichever axis needs the least movement.
+                        const pushY = (needY - Math.abs(dy)) / 2 + 0.5;
+                        const dir = dy === 0 ? (i % 2 ? 1 : -1) : Math.sign(dy);
+                        a.ly -= dir * pushY;
+                        b.ly += dir * pushY;
+                        moved = true;
+                    }
+                }
+            }
+            for (const f of focus) {
+                f.lx = Math.max(f.chipW / 2 + 2, Math.min(w - f.chipW / 2 - 2, f.lx));
+                f.ly = Math.max(chipH / 2 + 2, Math.min(h - chipH / 2 - 2, f.ly));
+            }
+            if (!moved) break;
+        }
+
+        for (const f of focus) {
+            // Leader line from marker to chip
+            ctx.beginPath();
+            ctx.moveTo(f.x, f.y);
+            ctx.lineTo(f.lx, f.ly);
+            ctx.strokeStyle = 'rgba(255, 23, 68, 0.55)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Marker, with its rank so it ties back to the Focus Cards
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, 9, 0, Math.PI * 2);
+            ctx.fillStyle = '#ff1744';
+            ctx.fill();
+            ctx.font = '700 10px Inter, system-ui, sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(f.rank), f.x, f.y + 0.5);
+
+            // Chip, opaque so the track line cannot run through the text
+            ctx.font = '600 12px Inter, system-ui, sans-serif';
+            const x0 = f.lx - f.chipW / 2, y0 = f.ly - chipH / 2;
+            ctx.beginPath();
+            // roundRect is recent enough that a missing implementation would
+            // throw and take the whole summary render down with it.
+            if (ctx.roundRect) {
+                ctx.roundRect(x0, y0, f.chipW, chipH, 5);
+            } else {
+                ctx.rect(x0, y0, f.chipW, chipH);
+            }
+            ctx.fillStyle = 'rgba(10, 10, 15, 0.94)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 23, 68, 0.7)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = '#e8eaf0';
+            ctx.fillText(f.label, f.lx, f.ly + 0.5);
+        }
+        ctx.textBaseline = 'alphabetic';
 
         // Draw S/F line indicator
         if (points.length > 0) {
             const sf = points[0];
             ctx.beginPath();
-            ctx.arc(toX(sf.lon), toY(sf.lat), 4, 0, Math.PI * 2);
+            ctx.arc(toX(sf.lon), toY(sf.lat), 5, 0, Math.PI * 2);
             ctx.fillStyle = '#00e676';
             ctx.fill();
         }

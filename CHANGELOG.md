@@ -10,7 +10,27 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **The Summary map is larger and its corner labels no longer collide.** The
+  canvas was a fixed 280×280 square, so a wide circuit drew small with most of the
+  height unused. It now sizes itself from the track's real proportions inside a
+  wider column. Labels were drawn at a fixed offset above their marker, which put
+  T12 and T13 at COTA — 4.9% of a lap apart — directly on top of each other. They
+  are now placed as a set, separated where they would overlap, clamped inside the
+  canvas, joined to their marker by a leader line, and drawn on an opaque chip so
+  the track outline no longer runs through the text.
+- Focus corners carry a priority number, repeated inside the matching map marker,
+  so two nearby corners can be told apart without tracing the outline. The number
+  is read back from the rendered cards rather than from analysis order, because
+  the Next Race Focus applies its own selection rules and is not always the
+  highest-loss corner.
+
+### Fixed
+
+- The Summary map scaled longitude and latitude identically, stretching every
+  circuit horizontally — about 16% at COTA — so its shape disagreed with the
+  Leaflet map on the Detailed tab. Longitude is now scaled by `cos(latitude)`.
 
 ## [v0.9.0-beta.3] — 2026-08-07
 
