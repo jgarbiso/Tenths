@@ -50,6 +50,30 @@ def get_next_tag():
     return f"{VERSION_PREFIX}.{next_num}"
 
 
+def sync_error(ahead, behind):
+    """Return a message if local and origin/main disagree, or None if in sync.
+
+    Pure, so the invariant is testable without a remote. Both directions matter
+    and only one of them used to be checked:
+
+      behind  the installer would be built without commits that are already
+              public, silently shipping older code than the repository shows.
+      ahead   the tag would be pushed and a release published from commits absent
+              from origin/main. Testers download a build whose source is not in
+              the repository, and `main` sits behind its own latest release. This
+              is the more damaging case and was the one that went unchecked.
+    """
+    if behind > 0:
+        return (f"Local is {behind} commit(s) behind origin/main. Pull first:"
+                "\n\n      git pull origin main")
+    if ahead > 0:
+        return (f"Local is {ahead} commit(s) ahead of origin/main.\n"
+                "  Releasing now would publish an installer built from commits that\n"
+                "  are not on the public branch. Push first:"
+                "\n\n      git push origin main")
+    return None
+
+
 def sha256(filepath):
     """Compute SHA256 hash of a file."""
     h = hashlib.sha256()
@@ -99,14 +123,21 @@ def main():
         sys.exit(1)
     print(f"  Branch: {branch}")
 
-    # Must be up to date with remote
+    # Must be in sync with the remote, in BOTH directions.
+    #
+    # Behind means the build would miss commits that are already public. Ahead is
+    # the more damaging case and was previously unchecked: the tag would be
+    # pushed and an installer published from commits absent from origin/main, so
+    # testers would download a build whose source is not in the repository and
+    # `main` would sit behind its own latest release.
     run("git fetch origin main", capture=True)
-    result = run("git rev-list HEAD..origin/main --count", capture=True)
-    behind = int(result.stdout.strip())
-    if behind > 0:
-        print(f"\n  ERROR: Local is {behind} commit(s) behind origin/main. Pull first.")
+    behind = int(run("git rev-list HEAD..origin/main --count", capture=True).stdout.strip())
+    ahead = int(run("git rev-list origin/main..HEAD --count", capture=True).stdout.strip())
+    problem = sync_error(ahead, behind)
+    if problem:
+        print(f"\n  ERROR: {problem}")
         sys.exit(1)
-    print("  Up to date with origin")
+    print("  In sync with origin (0 ahead, 0 behind)")
 
     # gh CLI must be available
     result = run("gh auth status", capture=True, check=False)

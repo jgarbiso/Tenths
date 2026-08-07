@@ -155,16 +155,31 @@ Environment overrides (mainly for development, these take precedence over the se
 See `installer/` — `tenths.spec` (PyInstaller) and `tenths_setup.iss` (Inno Setup). Run `python installer/build.py` (add `--full` to also build the installer, requires Inno Setup).
 
 ### Documentation
+
+**Start here to pick up development:** `docs/POST_MVP.md` for what is deliberately
+deferred and why, then `docs/RELEASE_REMEDIATION_PLAN.md` for the issue history and
+the release gate. The test suite is the only executable statement of current
+behaviour.
+
+- `CHANGELOG.md` — what shipped in each release
 - `docs/GETTING_STARTED.md` — user onboarding
 - `docs/BETA_TESTING.md` — beta known limitations and how to report issues
+- `docs/RELEASING.md` — cutting a release; `release.py` automates it
+- `docs/POST_MVP.md` — deferred work, with the reasoning behind each deferral
 - `docs/ARCHITECTURE_VISION.md` — product vision & roadmap
 - `docs/HTML_REPORT_DESIGN.md` — report design & theme
 - `docs/COACHING_METRICS_DESIGN.md` — metrics → coaching mapping
 - `docs/WATCHER_ARCHITECTURE.md` — watcher design
-- `docs/OUTSTANDING_ISSUES.md` — **start here to pick up development**: build sheet for the remaining open issues, in dependency order
 - `docs/RELEASE_REMEDIATION_PLAN.md` — canonical release blockers, why each is a defect, and the resolution record
-- `docs/DISTRIBUTION_READINESS.md` — historical first distribution review
+- `docs/PACKAGING.md` — bundle contents and measured size
 - `docs/TECH_DEBT.md` — known issues and historical plans
+
+Historical, kept for context but **not instructions to follow** — each opens with
+a banner saying so:
+
+- `docs/OUTSTANDING_ISSUES.md` — 2026-07-30 build sheet; 8 of its 9 issues are resolved
+- `docs/DISTRIBUTION_READINESS.md` — first distribution review
+- `docs/HANDOFF.md` — superseded handoff notes
 
 ---
 

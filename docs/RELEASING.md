@@ -6,10 +6,25 @@ Quick reference for cutting a new release after changes are merged to main.
 
 ## Prerequisites
 
-- All changes committed and pushed to `main`
+- All changes committed **and pushed** to `main`. `release.py` refuses to run if
+  local is ahead of `origin/main`, because tagging unpushed commits publishes an
+  installer whose source is not in the repository.
 - Suite passing: `python -m pytest tests/ -q`
 - `gh` CLI installed and authenticated (`gh auth status`)
 - Inno Setup installed (verified: `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`)
+
+---
+
+## Before you start: update the CHANGELOG
+
+Move whatever is under `## [Unreleased]` in `CHANGELOG.md` into a new section for
+the tag you are about to cut, dated today. The tag message and GitHub release
+notes come from the one-line description you pass to `release.py`, so
+`CHANGELOG.md` is the only durable record of what actually shipped.
+
+`tests/test_release.py::TestChangelog` fails if a released tag has no entry, so
+this cannot be skipped silently — but it is easier to write now than to
+reconstruct later.
 
 ---
 
