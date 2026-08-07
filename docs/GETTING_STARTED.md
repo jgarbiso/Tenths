@@ -129,6 +129,20 @@ To show your finishing position and iRating change on race reports, export the r
 
 ---
 
+## Units (optional)
+
+Reports use mph and °F by default. To switch to km/h and °C:
+
+```cmd
+tenths config --units metric
+```
+
+**Restart Tenths afterwards** — like the other settings, it's read when Tenths starts. Use `tenths config --units imperial` to switch back, and `tenths config` to see which is active.
+
+The setting applies to the HTML report, session notes, generated track maps and CLI output. Reports are static files, so it affects sessions processed after the restart; existing reports keep the units they were generated with.
+
+---
+
 ## Troubleshooting
 
 **No report appeared after my session.**

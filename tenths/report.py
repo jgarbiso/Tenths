@@ -22,7 +22,40 @@ import os
 from tenths.config import PACKAGE_ROOT, is_metric
 from tenths.jsonio import dumps_json
 from tenths.track_map import get_turn_name
-from tenths.units import to_display_units
+from tenths.units import mph_to_mps, speed_display, temp_display, to_display_units
+
+
+# Absolute apex-speed-consistency colouring bands, calibrated in mph. They are
+# absolute rather than speed-relative, which is the defect RR-021 fixed for the
+# spread rule and RR-022 for over-braking; retuning them is tracked separately in
+# docs/POST_MVP.md. Until then they must at least be expressed in whichever unit
+# the report is rendered in.
+_APEX_STD_BAD_MPH = 5.0
+_APEX_STD_WARN_MPH = 2.0
+
+
+def _units_payload(metric):
+    """Unit labels and unit-dependent JS thresholds for the embedded payload.
+
+    `to_display_units()` has already converted the report data, so the browser
+    receives mph or km/h rather than SI. Every label and every absolute speed
+    threshold in the JavaScript therefore has to come from here instead of being
+    written as a literal. See the note at the top of `_get_js()`.
+    """
+    _, speed_label = speed_display(0.0, metric=metric)
+    _, temp_label = temp_display(0.0, metric=metric)
+    bad, _ = speed_display(mph_to_mps(_APEX_STD_BAD_MPH), metric=metric)
+    warn, _ = speed_display(mph_to_mps(_APEX_STD_WARN_MPH), metric=metric)
+    return {
+        'metric': bool(metric),
+        'speed': speed_label,
+        'temp': temp_label,
+        # Rounded only to keep the embedded payload legible. These are colouring
+        # bands compared against a value displayed to 1dp, so 3dp is far finer
+        # than anything that can change a cell's colour.
+        'apex_std_bad': round(bad, 3),
+        'apex_std_warn': round(warn, 3),
+    }
 
 
 # ── Vendor asset inlining ─────────────────────────────────────────────────────
@@ -253,6 +286,7 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
         'tire_temps': data.get('tire_temps', {}),
         'race_result': race_data,
         'progression': progression,
+        'units': _units_payload(is_metric()),
     }
 
     # Normalised rather than default=str, so NumPy bools reach the browser as
@@ -481,6 +515,9 @@ def _build_html(data_json, car, track, date, best_time, race_data):
     </script>
     <script>
 const DATA = {data_json};
+// Display-unit labels and unit-dependent thresholds. Declared once here because
+// the two script blocks below share one global lexical scope.
+const U = DATA.units;
     </script>
     <script>
 {_get_js()}
@@ -1075,7 +1112,21 @@ tr:hover td {
 
 
 def _get_js():
-    """Return the complete JavaScript for the report."""
+    """Return the complete JavaScript for the report.
+
+    UNITS: this JavaScript receives display units, not SI. `generate_report()`
+    has already run the data through `to_display_units()`, so DATA holds mph or
+    km/h depending on the user's setting, and the `*_mph` key names do not tell
+    you which. Therefore, in here:
+
+      * Never write a unit label as a literal — use `U.speed` / `U.temp`.
+      * Never compare a DATA speed against a numeric literal — add the threshold
+        to `_units_payload()` so Python converts it, as `U.apex_std_bad` does.
+
+    Full rules and the reasoning behind them: the module docstring in
+    `tenths/units.py`. Both rules are enforced by source-level tests in
+    `tests/test_units.py`, so a violation fails the suite rather than shipping.
+    """
     return '''
 // ─── State ───────────────────────────────────────────────────────────────
 let hoverPct = null;
@@ -1287,7 +1338,7 @@ function renderBrakingTable() {
         const thrLag = z.thr_lag != null ? z.thr_lag.toFixed(2) + 's' : '—';
         const thrLagClass = z.thr_lag != null && z.thr_lag > 0.5 ? 'warn' : '';
         const apexStd = z.apex_std_mph != null ? '±' + z.apex_std_mph.toFixed(1) : '—';
-        const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > 5 ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > 2 ? 'warn' : '');
+        const apexStdClass = z.apex_std_mph != null && z.apex_std_mph > U.apex_std_bad ? 'bad' : (z.apex_std_mph != null && z.apex_std_mph > U.apex_std_warn ? 'warn' : '');
         // Min Speed Spread — flag when the average lap gives up speed vs the best lap
         const overBrk = z.over_braking_mph;
         const overBrkLimit = z.over_braking_limit_mph;
@@ -1299,8 +1350,8 @@ function renderBrakingTable() {
         return `<tr>
             <td>${z.pct.toFixed(1)}%</td>
             <td>${escHtml(z.turn_name)}</td>
-            <td class="num">${Math.round(z.entry_mph)} mph</td>
-            <td class="num ${minClass}">${Math.round(z.min_mph)} mph${minAvg}</td>
+            <td class="num">${Math.round(z.entry_mph)} ${U.speed}</td>
+            <td class="num ${minClass}">${Math.round(z.min_mph)} ${U.speed}${minAvg}</td>
             <td class="num ${apexStdClass}">${apexStd}</td>
             <td class="num ${absClass}">${z.abs}</td>
             <td class="num ${t2pClass}">${t2p}</td>
@@ -1380,7 +1431,7 @@ function renderLapTable() {
             <td>${l.lap}${isBest ? ' ★' : ''}</td>
             <td class="num${isBest ? ' good' : ''}">${time}</td>
             <td class="num">${l.abs}</td>
-            <td class="num">${Math.round(l.max_speed_mph)} mph</td>
+            <td class="num">${Math.round(l.max_speed_mph)} ${U.speed}</td>
         </tr>`;
     }).join('');
 
@@ -1774,7 +1825,7 @@ function initChart() {
     // Shared options factory
     function makeOpts(showXAxis, max, tickSuffix) {
         // For percentage axes (0-100), show every 25%
-        // For speed, show every 10 mph
+        // For speed, show every 10 in whichever unit is being displayed
         const stepSize = max === 100 ? 25 : 10;
         return {
             responsive: true,
@@ -2078,7 +2129,7 @@ function renderBrakePoints() {
                 weight: 1.5,
                 pane: 'brakePointsPane',
             }).bindTooltip(
-                `Lap ${entry.lap} — ${entry.entry_pct.toFixed(1)}% — ${Math.round(entry.speed_mph)} mph`,
+                `Lap ${entry.lap} — ${entry.entry_pct.toFixed(1)}% — ${Math.round(entry.speed_mph)} ${U.speed}`,
                 { direction: 'top', className: 'corner-label', offset: [0, -6] }
             );
             markers.push(marker);
@@ -2145,7 +2196,7 @@ function startHoverLoop() {
 
                 // Update info bar
                 info.classList.add('visible');
-                info.innerHTML = `${hoverPct.toFixed(1)}% — ${Math.round(closest.speed_mph)} mph — Brake: ${Math.round(closest.brake || 0)}% — Throttle: ${Math.round(closest.throttle || 0)}%`;
+                info.innerHTML = `${hoverPct.toFixed(1)}% — ${Math.round(closest.speed_mph)} ${U.speed} — Brake: ${Math.round(closest.brake || 0)}% — Throttle: ${Math.round(closest.throttle || 0)}%`;
 
             } else {
                 if (cursor) cursor.setStyle({ opacity: 0, fillOpacity: 0 });
@@ -2522,23 +2573,23 @@ def _get_summary_js():
         // more fundamental error than how the brake is released.
         if (corner.over_braking_mph !== null && corner.over_braking_limit_mph !== null && corner.over_braking_mph > corner.over_braking_limit_mph) {
             const delta = Math.round(corner.over_braking_mph);
-            return truncate(`${turn}: Over-slowing ~${delta}mph vs your best lap — brake lighter and carry more speed`);
+            return truncate(`${turn}: Over-slowing ~${delta}${U.speed} vs your best lap — brake lighter and carry more speed`);
         }
         if (corner.min_speed_spread_mph !== null && corner.min_speed_spread_mph > corner.spread_limit_mph) {
             const spreadMph = Math.round(corner.min_speed_spread_mph);
             if (corner.min_speed_typical_low_mph !== null && corner.min_speed_typical_high_mph !== null) {
                 const lo = Math.round(corner.min_speed_typical_low_mph);
                 const hi = Math.round(corner.min_speed_typical_high_mph);
-                return truncate(`${turn}: Min speed varies ${lo}-${hi}mph — commit to the higher speed you already proved`);
+                return truncate(`${turn}: Min speed varies ${lo}-${hi}${U.speed} — commit to the higher speed you already proved`);
             }
-            return truncate(`${turn}: Min speed varies ${spreadMph}mph lap to lap — commit to a consistent apex speed`);
+            return truncate(`${turn}: Min speed varies ${spreadMph}${U.speed} lap to lap — commit to a consistent apex speed`);
         }
         if (corner.brake_linearity !== null && corner.brake_linearity < 0.6) {
             return truncate(`${turn}: Release brake progressively — losing ${loss}s to stepped release`);
         }
         if (corner.apex_std_mph !== null && corner.apex_std_mph > corner.apex_std_limit_mph) {
             const std = Math.round(corner.apex_std_mph);
-            return truncate(`${turn}: Apex speed varies \\u00b1${std}mph — find a consistent visual reference`);
+            return truncate(`${turn}: Apex speed varies \\u00b1${std}${U.speed} — find a consistent visual reference`);
         }
         if (corner.thr_lag !== null && corner.thr_lag > 0.5) {
             const lag = corner.thr_lag.toFixed(1);
@@ -2675,7 +2726,7 @@ def _get_summary_js():
         const sentence = generateCoachingSentence(focus);
         const diagType = getDiagnosisType(focus);
         const speedCtx = focus.entry_mph && focus.min_mph
-            ? `<span class="next-focus-speed">${Math.round(focus.entry_mph)}→${Math.round(focus.min_mph)}mph</span>`
+            ? `<span class="next-focus-speed">${Math.round(focus.entry_mph)}→${Math.round(focus.min_mph)}${U.speed}</span>`
             : '';
 
         container.innerHTML = `
@@ -2710,7 +2761,7 @@ def _get_summary_js():
             const sentence = generateCoachingSentence(corner);
             const diagType = getDiagnosisType(corner);
             const speedCtx = corner.entry_mph && corner.min_mph
-                ? `<span class="focus-card-speed">${Math.round(corner.entry_mph)}\u2192${Math.round(corner.min_mph)}mph</span>`
+                ? `<span class="focus-card-speed">${Math.round(corner.entry_mph)}\u2192${Math.round(corner.min_mph)}${U.speed}</span>`
                 : '';
             return `
                 <div class="focus-card" data-turn="${corner.turn_name}" data-diag="${diagType}">

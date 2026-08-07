@@ -6,6 +6,8 @@ tests pin that contract down so a future change cannot silently reintroduce an
 inline conversion in the analysis path or drop one at a display boundary.
 """
 
+import re
+
 import pytest
 
 from tenths import units
@@ -227,3 +229,181 @@ class TestSummaryContractStaysImperial:
         from tenths.summary import CURRENT_SCHEMA_VERSION
         assert CURRENT_SCHEMA_VERSION == "1.0.0", (
             "summary content did not change, so the schema version must not move")
+
+
+# ── Display-boundary labelling ────────────────────────────────────────────────
+#
+# `to_display_units()` converts values but cannot relabel them. These tests are
+# the guard that caught the toggle shipping with metric values under imperial
+# labels: the conversion was right and every label still said "mph".
+#
+# `\bmph\b` is deliberate. It matches a rendered label but not a `*_mph` dict key
+# or JS property, because `_` is a word character.
+
+MPH_LABEL = re.compile(r'\bmph\b')
+KPH_LABEL = re.compile(r'km/h')
+
+
+def _render_report(metric, monkeypatch, data, file_info, track_map):
+    from tenths.report import generate_report
+    monkeypatch.setattr('tenths.config.UNITS',
+                        'metric' if metric else 'imperial', raising=False)
+    return generate_report(data, file_info, track_map)
+
+
+def _render_notes(metric, monkeypatch, data, file_info, track_map):
+    from tenths.process import generate_notes
+    monkeypatch.setattr('tenths.config.UNITS',
+                        'metric' if metric else 'imperial', raising=False)
+    # Mirrors the production call site, which converts before formatting.
+    return generate_notes(to_display_units(data, metric=metric),
+                          file_info, track_map, None)
+
+
+def _render_track_map(metric, monkeypatch, data):
+    from tenths.track_map_generator import generate_skeleton_track_map
+    monkeypatch.setattr('tenths.config.UNITS',
+                        'metric' if metric else 'imperial', raising=False)
+    return generate_skeleton_track_map(data, data.get('session_info', {}))
+
+
+class TestReportLabelsFollowTheToggle:
+
+    def test_imperial_report_says_mph(self, monkeypatch, winton_race_data,
+                                      winton_file_info, winton_track_map):
+        html = _render_report(False, monkeypatch, winton_race_data,
+                              winton_file_info, winton_track_map)
+        assert MPH_LABEL.search(html), "imperial report should carry mph labels"
+        assert not KPH_LABEL.search(html), "imperial report must not say km/h"
+
+    def test_metric_report_says_kph_and_never_mph(self, monkeypatch,
+                                                  winton_race_data,
+                                                  winton_file_info,
+                                                  winton_track_map):
+        html = _render_report(True, monkeypatch, winton_race_data,
+                              winton_file_info, winton_track_map)
+        assert KPH_LABEL.search(html), "metric report should carry km/h labels"
+        leaked = MPH_LABEL.findall(html)
+        assert not leaked, (
+            f"metric report renders km/h values under {len(leaked)} mph label(s)")
+
+    def test_metric_report_carries_kph_values(self, monkeypatch,
+                                              winton_race_data,
+                                              winton_file_info,
+                                              winton_track_map):
+        """The payload must actually be converted, not just relabelled."""
+        imperial = _render_report(False, monkeypatch, winton_race_data,
+                                  winton_file_info, winton_track_map)
+        metric = _render_report(True, monkeypatch, winton_race_data,
+                                winton_file_info, winton_track_map)
+        pattern = re.compile(r'"entry_mph":\s*([0-9.]+)')
+        imp = float(pattern.search(imperial).group(1))
+        met = float(pattern.search(metric).group(1))
+        assert met == pytest.approx(imp * 3.6 / units.MPS_TO_MPH, rel=1e-9)
+
+    def test_units_payload_is_embedded(self, monkeypatch, winton_race_data,
+                                       winton_file_info, winton_track_map):
+        html = _render_report(True, monkeypatch, winton_race_data,
+                              winton_file_info, winton_track_map)
+        assert '"speed": "km/h"' in html or '"speed":"km/h"' in html
+        assert 'const U = DATA.units;' in html
+
+
+class TestNotesLabelsFollowTheToggle:
+
+    def test_imperial_notes(self, monkeypatch, winton_race_data,
+                            winton_file_info, winton_track_map):
+        md = _render_notes(False, monkeypatch, winton_race_data,
+                           winton_file_info, winton_track_map)
+        assert MPH_LABEL.search(md)
+        assert '\u00b0F' in md and '\u00b0C' not in md
+
+    def test_metric_notes(self, monkeypatch, winton_race_data,
+                          winton_file_info, winton_track_map):
+        md = _render_notes(True, monkeypatch, winton_race_data,
+                           winton_file_info, winton_track_map)
+        assert KPH_LABEL.search(md)
+        assert not MPH_LABEL.findall(md)
+        assert '\u00b0C' in md and '\u00b0F' not in md, (
+            "tire temp heading must follow the toggle, not stay hardcoded")
+
+
+class TestTrackMapLabelsFollowTheToggle:
+
+    def test_imperial_track_map(self, monkeypatch, winton_race_data):
+        text = _render_track_map(False, monkeypatch, winton_race_data)
+        assert MPH_LABEL.search(text)
+        assert not KPH_LABEL.search(text)
+
+    def test_metric_track_map(self, monkeypatch, winton_race_data):
+        text = _render_track_map(True, monkeypatch, winton_race_data)
+        assert KPH_LABEL.search(text)
+        assert not MPH_LABEL.findall(text)
+
+
+class TestNoHardcodedUnitsInReportJs:
+    """The JS receives display units, so a literal label or threshold there is a
+    latent metric bug. Keep them in `_units_payload()` instead."""
+
+    def test_js_has_no_literal_unit_labels(self):
+        from tenths.report import _get_js, _get_summary_js
+        for name, js in (('_get_js', _get_js()),
+                         ('_get_summary_js', _get_summary_js())):
+            leaked = MPH_LABEL.findall(js)
+            assert not leaked, f"{name} still hardcodes {leaked}"
+            assert not KPH_LABEL.findall(js), f"{name} still hardcodes km/h"
+
+    def test_apex_std_colouring_uses_the_payload(self):
+        from tenths.report import _get_js
+        js = _get_js()
+        assert 'U.apex_std_bad' in js and 'U.apex_std_warn' in js
+        assert 'apex_std_mph > 5' not in js, "absolute mph literal is back"
+        assert 'apex_std_mph > 2' not in js, "absolute mph literal is back"
+
+    def test_apex_std_thresholds_scale_with_the_unit(self):
+        from tenths.report import _units_payload
+        imperial = _units_payload(False)
+        metric = _units_payload(True)
+        assert imperial['apex_std_bad'] == pytest.approx(5.0)
+        assert imperial['apex_std_warn'] == pytest.approx(2.0)
+        # Same physical speed, expressed in km/h, rounded to 3dp so the embedded
+        # payload stays legible. 3dp is far finer than the 1dp the compared value
+        # is displayed at, so it cannot change which cells are coloured.
+        assert metric['apex_std_bad'] == round(mph_to_mps(5.0) * units.MPS_TO_KPH, 3)
+        assert metric['apex_std_warn'] == round(mph_to_mps(2.0) * units.MPS_TO_KPH, 3)
+        assert metric['apex_std_bad'] > imperial['apex_std_bad']
+
+    def test_units_payload_labels(self):
+        from tenths.report import _units_payload
+        assert _units_payload(False)['speed'] == 'mph'
+        assert _units_payload(True)['speed'] == 'km/h'
+        assert _units_payload(False)['temp'] == '\u00b0F'
+        assert _units_payload(True)['temp'] == '\u00b0C'
+
+
+class TestIncidentsThresholdsAreUnitAware:
+    """`tenths incident` compares against absolute speeds, so its thresholds have
+    to be expressed in the unit it is printing."""
+
+    def test_thresholds_convert(self, monkeypatch):
+        from tenths.incidents import _display_units
+
+        monkeypatch.setattr('tenths.config.UNITS', 'imperial', raising=False)
+        imperial = _display_units()
+        assert imperial['label'] == 'mph'
+        assert imperial['drop'] == pytest.approx(30.0)
+        assert imperial['stopped'] == pytest.approx(5.0)
+
+        monkeypatch.setattr('tenths.config.UNITS', 'metric', raising=False)
+        metric = _display_units()
+        assert metric['label'] == 'km/h'
+        # Same physical speed, so the numeric threshold must grow.
+        assert metric['drop'] == pytest.approx(mph_to_mps(30.0) * units.MPS_TO_KPH)
+        assert metric['stopped'] == pytest.approx(mph_to_mps(5.0) * units.MPS_TO_KPH)
+
+    def test_no_inline_conversion_left(self):
+        import inspect
+        from tenths import incidents
+        src = inspect.getsource(incidents)
+        assert '2.237' not in src, "inline conversion factor is back"
+        assert "'Speed_mph'" not in src, "column should be unit-neutral"

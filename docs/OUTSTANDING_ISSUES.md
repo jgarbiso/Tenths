@@ -1,4 +1,57 @@
-# Tenths — Outstanding Issues Worklog
+# Tenths — Outstanding Issues Worklog (HISTORICAL — DO NOT EXECUTE)
+
+> ## STOP. This document is a historical record, not a work queue.
+>
+> **Do not execute any task in this file.** It was written on 2026-07-30 against
+> commit `d2c16a8` as a build sheet for 9 open issues. Eight of those nine are now
+> resolved and the ninth is deliberately deferred. Acting on the instructions
+> below would re-do finished work or revert current behaviour.
+>
+> **Status as of 2026-08-07:** 22 of 23 issues resolved. The only open item is
+> **RR-011**, and only its code-signing half — version metadata is done, signing
+> is deferred to `docs/POST_MVP.md` and is not a beta blocker. `v0.9.0-beta.2` is
+> released and the repo is public.
+>
+> | Issue in this file | Actual status |
+> |---|---|
+> | RR-001 landmark provenance | Resolved — data is MIT, see `THIRD_PARTY_NOTICES.md` |
+> | RR-006 per-session artifacts | Resolved |
+> | RR-007 isolate manual failures | Resolved |
+> | RR-009 Detailed report offline | Resolved — Option A, assets inlined |
+> | RR-011 artifact metadata + signing | **Metadata done; signing deferred** |
+> | RR-017 docs match production | Resolved |
+> | RR-018 uninstall / data retention | Resolved |
+> | RR-019 bundle size | Resolved — measured in `docs/PACKAGING.md` |
+> | RR-022 over-braking never fires | Resolved — retuned to 7% / 1.5 mph |
+>
+> **Facts in this file that are now wrong.** Do not rely on any figure here
+> without re-measuring:
+> - The test baseline is quoted as **467**. It is **595**.
+> - The bundle is quoted at **90.5 MB**. It is **85.5 MB**.
+> - The threshold constants are named `SPREAD_LIMIT_FLOOR_MPH`,
+>   `OVER_BRAKING_LIMIT_FLOOR_MPH` and `APEX_STD_LIMIT_FLOOR_MPH`. Those names no
+>   longer exist. The analyzer now stores SI, and they are
+>   `SPREAD_LIMIT_FLOOR_MPS`, `OVER_BRAKING_LIMIT_FLOOR_MPS` and
+>   `APEX_STD_LIMIT_FLOOR_MPS`, expressed as `mph_to_mps(...)` of the same
+>   calibrated values.
+> - `OVER_BRAKING_LIMIT_FRACTION` is quoted as `0.20`. It is `0.07`.
+>
+> **Where the truth lives instead:**
+> - `docs/RELEASE_REMEDIATION_PLAN.md` — the authoritative issue list with a
+>   resolution paragraph per item and the release-gate checklist.
+> - `docs/POST_MVP.md` — everything deliberately deferred, including code signing.
+> - `.kiro/steering/tenths-development.md` — the standards that currently apply.
+> - The test suite — the only executable statement of current behaviour.
+>
+> **Why it is kept.** Sections 0 (working rules) and 1 (environment, commands,
+> the report-inspection and JavaScript-verification procedures) are still
+> accurate and useful, and the per-issue root-cause analysis explains *why*
+> decisions were made. Read it for background; take instructions from the
+> documents listed above.
+
+**Everything below this line is preserved as written on 2026-07-30.**
+
+---
 
 **Purpose:** This is a build sheet for the 9 issues still open before public release. Every task below is written to be executed without prior knowledge of the project and without re-deriving facts. All measurements quoted here were taken on 2026-07-30 against commit `d2c16a8`.
 

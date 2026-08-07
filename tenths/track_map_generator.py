@@ -13,7 +13,7 @@ Usage:
 import os
 
 from tenths.config import is_metric
-from tenths.units import to_display_units
+from tenths.units import speed_display, to_display_units
 
 
 def generate_skeleton_track_map(data, session_info):
@@ -26,8 +26,13 @@ def generate_skeleton_track_map(data, session_info):
     Returns:
         String containing the complete markdown track map file content.
     """
-    # The analyzer works in SI; the generated map shows display units.
-    data = to_display_units(data, metric=is_metric())
+    # UNITS: display boundary. Convert once here, then format with `spd_unit`
+    # rather than a literal label. Rules: docstring in `tenths/units.py`.
+    # The label is written into the .md alongside the value, so a map generated
+    # in one unit system stays readable after the user switches.
+    metric = is_metric()
+    data = to_display_units(data, metric=metric)
+    _, spd_unit = speed_display(0.0, metric=metric)
 
     # Track metadata
     track_name = session_info.get('track_display_name', 'Unknown Track')
@@ -86,7 +91,7 @@ def generate_skeleton_track_map(data, session_info):
         # Generic turn name
         turn_label = f"T{i}" if len(braking_zones) <= 12 else f"T{i:02d}"
 
-        desc = f"Braking zone ({entry_mph:.0f}→{min_mph:.0f}mph)"
+        desc = f"Braking zone ({entry_mph:.0f}→{min_mph:.0f}{spd_unit})"
 
         lines.append(f"| ~{pct_start}-{pct_end}% | **{turn_label}** | — | — | {desc} |")
 
@@ -115,7 +120,7 @@ def generate_skeleton_track_map(data, session_info):
         lon_str = f"{lon:.6f}" if lon != 0 else "—"
         dist_str = f"{dist_m:.0f}m" if dist_m > 0 else "—"
 
-        lines.append(f"| {pct:.1f}% | {dist_str} | {lat_str} | {lon_str} | {entry_mph:.0f} mph | {min_mph:.0f} mph | **{turn_label}** |")
+        lines.append(f"| {pct:.1f}% | {dist_str} | {lat_str} | {lon_str} | {entry_mph:.0f} {spd_unit} | {min_mph:.0f} {spd_unit} | **{turn_label}** |")
 
     lines.append("")
     lines.append("---")

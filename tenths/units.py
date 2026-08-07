@@ -1,18 +1,60 @@
 """
-Unit conversion helpers
-========================
-All internal data is SI; convert only at display time.
+Unit conversion helpers — AUTHORITATIVE UNITS CONTRACT
+======================================================
+This module docstring is the single source of truth for how units work in
+Tenths. Code elsewhere points here rather than restating the rules, so if you
+change the contract, change it here.
 
-Internal (pipeline, JSON summaries):
+THE RULE
+    Store SI. Convert exactly once, at the boundary that renders the value.
+
+Internal — the analyzer and everything it feeds:
     speed        m/s
     temperature  °C
     distance     metres
+    angle        radians
 
-Display (report HTML, notes, CLI):
+Display — what a human sees:
     speed        mph (imperial, default) or km/h (metric)
     temperature  °F (imperial, default) or °C (metric)
     distance     miles (imperial, default) or km (metric)
 
+THE FOUR DISPLAY BOUNDARIES
+Each calls `to_display_units()` (or a scalar helper) exactly once, then works in
+display units from that point on:
+    tenths/report.py                 session_report.html
+    tenths/process.py                session_notes.md (via `generate_notes`)
+    tenths/track_map_generator.py    generated track-map .md files
+    tenths/incidents.py              `tenths incident` console output
+
+NOT a display boundary:
+    tenths/summary.py    `session_summary.json` is a machine contract read by
+                         `index_generator.py` and the progression logic. It is
+                         always mph regardless of the user's setting, so its
+                         shape never depends on a display preference.
+    tenths/analyzer.py   Emits SI. Its legacy `print`-based CLI paths format for
+                         display, but the data dict it returns must stay SI.
+
+THREE TRAPS, ALL OF WHICH HAVE BEEN HIT BEFORE
+ 1. Key names lie. `entry_mph`, `apex_std_mph` and friends hold m/s inside the
+    analyzer and km/h in a metric report. The `*_mph` suffix is historical.
+    Never infer a unit from a key name; renaming them is tracked in POST_MVP.md.
+ 2. A unit label must never be a literal. Once data is converted, a hardcoded
+    "mph" prints km/h values under an imperial label. This shipped once and is
+    now guarded by source-level tests in `tests/test_units.py`.
+ 3. An absolute threshold must never be a literal compared against display
+    units. `x > 5` means 5 mph in imperial and 3.1 mph in metric. Convert the
+    threshold too — see `report._units_payload()`. Comparing two display-unit
+    values against each other is always safe, which is why the spread and
+    over-braking rules, which compare a measurement to its own persisted limit,
+    need no unit handling.
+
+READING THE SETTING
+    `config.is_metric()` — never `from tenths.config import UNITS`, which binds a
+    copy that tests cannot patch. The value is resolved once at process start, so
+    a change requires restarting Tenths.
+
+THE CONVERSION FACTOR
 The factor is deliberately 2.237, matching what the analyzer used inline before
 speeds moved to SI. The physically exact value is 2.2369362920544; adopting it
 here would shift every displayed speed by ~3e-5 relative, which is invisible

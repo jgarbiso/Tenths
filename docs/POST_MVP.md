@@ -70,6 +70,32 @@ The retuned 7%/1.5 mph threshold fires on genuinely over-slowed corners in testi
 
 ---
 
+## Brake Point Spread Outliers at Near-Flat Corners
+
+**Priority:** Low — investigate if beta feedback flags odd brake-reference advice
+**Effort:** Half a day to diagnose
+
+Found during the metric review of COTA practice (`ferrari296gt3_cota gp 2026-08-03 17-45-44`). Per-zone `spread_meters` across the six braking zones:
+
+| Zone | Turn | Spread |
+|---|---|---|
+| 10.5% | T1 | 17.5 m |
+| 44.6% | T11 | 13.9 m |
+| 66.4% | T12 | 22.9 m |
+| 77.4% | T15 | 8.5 m |
+| **90.4%** | **T19** | **128.5 m** |
+| 95.9% | T20 | 7.3 m |
+
+T19 is an order of magnitude above every other zone, and it produced the coaching line "T19: Brake reference drifting ±129m — pick a fixed board marker". The attribution is correct — the value really is on the T19 zone, verified against `zone_pct` — so this is not a join bug.
+
+The likely cause is that T19 is near-flat for a GT3: on some laps the driver brushes the brake and on others does not, so "first brake application in the zone" lands in completely different places lap to lap and the spread measures two different behaviours rather than one drifting reference. If so, the advice is misleading — the fix is not a fixed board marker.
+
+Worth checking: whether `spread_meters` should be suppressed, or computed differently, when the zone's peak brake pressure is low or the brake application is intermittent across laps. Note the diagnosis threshold is a flat `spread_meters > 15`, another absolute limit that does not scale with zone length or entry speed — the same class of issue RR-021 and RR-022 addressed elsewhere.
+
+Unrelated to the unit refactor; `spread_meters` is metres in both unit systems.
+
+---
+
 ## Class-Specific Physics Profiles
 
 **Priority:** After beta feedback
@@ -279,7 +305,7 @@ Designed from real data: Ferrari 296 GT3 @ COTA GP practice (2:13.502 best) vs G
 
 **Priority:** High — before wider international beta
 **Effort:** 1–2 days. The original "half day" estimate was wrong. Measured surface: **293 `mph` references across 8 modules plus 249 across 10 test files** — `report.py` 133, `analyzer.py` 74, `summary.py` 32, `track_map_generator.py` 15, `process.py` 14, `incidents.py` 13. `index_generator.py` displays no speeds and is not involved.
-**Status:** groundwork committed (`tenths/units.py`, `config.UNITS`, `config.is_metric()`, `tenths config --units`). The refactor itself is specified and pending.
+**Status:** implemented. `tenths/units.py`, `config.UNITS` / `config.is_metric()`, `tenths config --units`, the analyzer emitting SI, and label plumbing at all four display boundaries (report, notes, generated track maps, `tenths incident`) are all in place. The follow-ups listed at the end of this section remain open.
 
 Currently all user-facing speeds are MPH and temperatures are °F (hardcoded US units per the original steering file). International drivers expect KPH/°C. iRacing itself supports both unit systems, and the sim racing community outside the US overwhelmingly uses metric.
 
@@ -367,10 +393,15 @@ Two extra invariants were added to the harness after scoping found gaps in the o
 
 Byte-identity was only reachable by **keeping the factor at 2.237** rather than adopting the exact 2.23694 — see the follow-up below.
 
+**Independent re-verification (2026-08-07), and one correction.** The comparison was re-run from a `git worktree` at the pre-refactor commit across the 13 analysable sessions. Imperial output is *effectively* but not literally byte-identical: 10 of 13 sessions match by SHA256, and the 3 that differ do so in a single field, `tire_temps.<corner>.avg`, by ±2.8e-14 °F. `to_display_units()` converts each corner then averages, where the analyzer previously averaged then converted; the code comment claiming that ordering is bit-identical is wrong. The magnitude cannot change a rendered digit, so no output moved, but the claim should not be repeated as exact.
+
+The same comparison independently confirms the flag-decision invariance: the report's `DATA` payload carries all three metrics and all three computed per-corner limits, and none of them differed on any session.
+
+**Label plumbing verified separately (2026-08-07).** Because the label fix rewrites the JS template, raw HTML hashes necessarily move. Verification therefore compared *semantic* content: the `DATA` payload canonicalised with the new `units` key removed, and the template with the unit indirection substituted back to its imperial literal. Both match the pre-refactor tree on all 13 sessions, and notes and generated track maps match by SHA256, which proves the template edits are label plumbing and nothing else. Metric mode was then rendered end to end (`221 km/h` where imperial shows `137 mph`, tire-temp heading following the toggle) and every script block in the generated report was syntax-checked with `node --check` in both modes.
+
 ### Follow-ups deliberately excluded from the refactor
 
 - **Correct the mph conversion factor.** `units.MPS_TO_MPH` is pinned to `2.237`, the value the analyzer used inline, because adopting the exact `2.2369362920544` shifts every displayed speed by ~2.7e-5 relative. Measured on the Winton fixture that moved 1247 values in the DATA blob by ~0.003 mph and pushed one corner's `spread_limit` across a 1dp rounding boundary (9.2 → 9.1 mph) — no flag decision changed, but the report was no longer byte-identical. Pinning it kept this refactor provably behaviour-preserving. Correcting the constant is a one-line change that should ship on its own so any output movement is attributable to it. Guarded by `TestConversionFactorIsPinned` in `tests/test_units.py`.
 - **Rename summary keys to SI** (`*_mph` → `*_mps`) with a schema bump and a migration for existing archived files.
-- **Absolute apex-std colouring thresholds.** `report.py` (~line 1282) colours the apex-std cell with hardcoded `> 5` and `> 2` mph rather than the per-corner computed `apex_std_limit_mph`. This is the same absolute-threshold defect RR-021 fixed for the spread rule and RR-022 fixed for over-braking; it survived in the colouring path. **The literals were left untouched.** Conversion happens in Python before the data is serialised into `DATA`, so the JavaScript still receives mph and these thresholds still compare mph against mph — behaviour is preserved by construction rather than by transcribing new constants. Retuning them to use `apex_std_limit_mph` belongs in its own change with its own validation.
-- **Metric mode is wired but unexercised.** `config.UNITS`, `is_metric()` and `to_display_units(metric=True)` all work and are unit-tested, but no consumer has been visually checked in metric, and the report's axis labels, `mph` suffixes and Summary-view copy are still hardcoded strings in the JS. Rendering actual km/h labels is the remaining work for the toggle; this refactor only made it possible.
+- **Apex-std colouring is still an absolute threshold.** `report.py` colours the apex-std cell against fixed bands (5 and 2 mph) rather than the per-corner computed `apex_std_limit_mph`. This is the same absolute-threshold defect RR-021 fixed for the spread rule and RR-022 fixed for over-braking; it survived in the colouring path. The *unit* half is now handled — the bands come from `_units_payload()` as `U.apex_std_bad` / `U.apex_std_warn`, so they scale with the display unit instead of meaning 3.1 mph in metric. Making them speed-relative is the part still outstanding, and it needs its own validation because it changes which cells light up.
 - **Stale unit labels in generated track maps.** `track_map_generator.py` bakes speeds and their label into the `.md` files it writes to `%LOCALAPPDATA%\Tenths\tracks`. A map generated in imperial keeps imperial labels after a switch to metric. Because the label is written alongside the value the file is never wrong, only inconsistent with the current setting. Regenerating on unit change is not worth building yet.

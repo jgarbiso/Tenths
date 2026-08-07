@@ -32,7 +32,9 @@ from tenths.config import (
     TELEMETRY_ROOT, ARCHIVE_DIR, MIN_SESSION_SIZE, DOWNLOADS_DIR,
     REQUIRED_ARTIFACTS, session_output_dir, is_metric,
 )
-from tenths.units import to_display_units
+from tenths.units import (
+    distance_display, speed_display, temp_display, to_display_units,
+)
 
 FILENAME_PATTERN = re.compile(
     r'^(.+?)_(.+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}-\d{2}-\d{2})(.*?)(\.\w+)$'
@@ -178,7 +180,17 @@ def select_display_laps(lap_results, best_lap, max_rows=12):
 
 # ── Markdown Generator ────────────────────────────────────────────────────────
 def generate_notes(data, file_info, track_map, baseline, dry_run=False):
-    """Generate the complete session_notes.md content."""
+    """Generate the complete session_notes.md content.
+
+    UNITS: this is a display boundary. `data` must already have been through
+    `to_display_units()` — the caller does that — so its `*_mph` values are in
+    whichever unit `spd_unit` names. Never hardcode a unit label here. Full rules:
+    the module docstring in `tenths/units.py`.
+    """
+    metric = is_metric()
+    _, spd_unit = speed_display(0.0, metric=metric)
+    _, temp_unit = temp_display(0.0, metric=metric)
+
     # Use session_info from .ibt header for proper display names
     si = data.get('session_info', {})
     car_display = si.get('car_screen_name') or file_info['car'].replace('_', ' ')
@@ -241,7 +253,7 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
         abs_cell = f"**{r['abs']}**" if r == cleanest_result else str(r['abs'])
         notes_str = ", ".join(notes) if notes else ""
 
-        lines.append(f"| {r['lap']} | {time_cell} | {abs_cell} | {r['max_speed_mph']:.0f} mph | {notes_str} |")
+        lines.append(f"| {r['lap']} | {time_cell} | {abs_cell} | {r['max_speed_mph']:.0f} {spd_unit} | {notes_str} |")
 
     lines.append("")
     lines.append(f"**Best:** {fmt_time(best_result['time'])} (Lap {best_result['lap']})")
@@ -270,7 +282,7 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
             coast = f"{z['coast_time']:.2f}s" if z.get('coast_time') is not None else "N/A"
             turnin = f"{z['turnin_brake']:.0f}%" if z.get('turnin_brake') is not None else "N/A"
             notes = ", ".join(z['notes']) if z['notes'] else ""
-            lines.append(f"| {z['pct']:.1f}% | **{turn}** | {z['entry_mph']:.0f} mph | {z['min_mph']:.0f} mph | {z['abs']} | {t2p} | {coast} | {turnin} | {z['apex_brake']:.0f}% | {notes} |")
+            lines.append(f"| {z['pct']:.1f}% | **{turn}** | {z['entry_mph']:.0f} {spd_unit} | {z['min_mph']:.0f} {spd_unit} | {z['abs']} | {t2p} | {coast} | {turnin} | {z['apex_brake']:.0f}% | {notes} |")
     else:
         lines.append("| Zone | Turn | Entry | Min | ABS | Brk2Shft | MaxDS RPM | Apex RPM | Notes |")
         lines.append("|---|---|---|---|---|---|---|---|---|")
@@ -279,7 +291,7 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
             b2s = f"{z['brake_to_shift']:.2f}s" if z['brake_to_shift'] is not None and z['brake_to_shift'] >= 0 else "—"
             ds_rpm = f"{z['max_ds_rpm']:.0f}" if z['max_ds_rpm'] > 0 else "N/A"
             notes = ", ".join(z['notes']) if z['notes'] else ""
-            lines.append(f"| {z['pct']:.1f}% | **{turn}** | {z['entry_mph']:.0f} mph | {z['min_mph']:.0f} mph | {z['abs']} | {b2s} | {ds_rpm} | {z['apex_rpm']:.0f} | {notes} |")
+            lines.append(f"| {z['pct']:.1f}% | **{turn}** | {z['entry_mph']:.0f} {spd_unit} | {z['min_mph']:.0f} {spd_unit} | {z['abs']} | {b2s} | {ds_rpm} | {z['apex_rpm']:.0f} | {notes} |")
 
     lines.append("")
     lines.append("---")
@@ -319,7 +331,8 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
         lines.append(f"## Track Position Map (GPS — Best Lap {data['best_lap']})")
         lines.append("")
         if data['track_length_m'] > 0:
-            lines.append(f"Track length: {data['track_length_m']:.0f}m ({data['track_length_m']/1609.34:.2f}mi)")
+            dist_val, dist_unit = distance_display(data['track_length_m'], metric=metric)
+            lines.append(f"Track length: {data['track_length_m']:.0f}m ({dist_val:.2f}{dist_unit})")
             lines.append("")
         lines.append("### Braking Zone GPS Coordinates")
         lines.append("")
@@ -328,14 +341,14 @@ def generate_notes(data, file_info, track_map, baseline, dry_run=False):
         for z in data['braking_zones']:
             if z['lat'] != 0:
                 turn = get_turn_name(track_map, z['pct'])
-                lines.append(f"| {z['entry_pct']:.1f}% | **{turn}** | {z['dist_m']:.0f}m | {z['lat']:.6f} | {z['lon']:.6f} | {z['entry_mph']:.0f} mph | {z['min_mph']:.0f} mph |")
+                lines.append(f"| {z['entry_pct']:.1f}% | **{turn}** | {z['dist_m']:.0f}m | {z['lat']:.6f} | {z['lon']:.6f} | {z['entry_mph']:.0f} {spd_unit} | {z['min_mph']:.0f} {spd_unit} |")
         lines.append("")
         lines.append("---")
         lines.append("")
 
     # ── Tire Temps ────────────────────────────────────────────────────────────
     if data['tire_temps']:
-        lines.append(f"## Tire Temps (Best Lap, under-load, °F)")
+        lines.append(f"## Tire Temps (Best Lap, under-load, {temp_unit})")
         lines.append("")
         lines.append("| Corner | Inner | Mid | Outer | Avg |")
         lines.append("|---|---|---|---|---|")

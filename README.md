@@ -138,13 +138,17 @@ Settings live in `%LOCALAPPDATA%\Tenths\settings.json`:
 ```cmd
 tenths config --telemetry-root "D:\iRacing\telemetry"
 tenths config --reset-telemetry-root
+tenths config --units metric        # km/h and °C; default is imperial
 ```
+
+Settings are read at startup, so restart Tenths after changing one. Display units affect the report, session notes, generated track maps and CLI output; `session_summary.json` stays mph as a stable machine contract.
 
 The Documents folder is resolved via the Windows Known Folder API, the same way iRacing does, so OneDrive folder redirection is handled automatically.
 
 Environment overrides (mainly for development, these take precedence over the settings file):
 - `TENTHS_TELEMETRY_ROOT` — iRacing telemetry directory
 - `TENTHS_TRACKS_DIR` — override for track-map `.md` files
+- `TENTHS_UNITS` — `imperial` or `metric` display units
 - `TENTHS_LOG_DIR` / `TENTHS_SETTINGS` — relocate the log or settings file
 
 ### Building the installer
