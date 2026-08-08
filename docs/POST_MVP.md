@@ -21,6 +21,138 @@ Windows SmartScreen shows an "unrecognized app" warning for unsigned executables
 
 ---
 
+## Track Data Integrity — Validate Landmark Data on Load
+
+**Priority:** Next patch. Not a beta blocker, but do it before building anything else on this data.
+**Effort:** ~1 hour including tests
+**Found:** 2026-08-07, while assessing whether track sections could be derived from bundled data.
+
+Four tracks in `tenths/data/trackLandmarksData.json` carry corrupt corner records, and
+`tenths/track_map.py` has **no validation of any kind** — checked for `raise`, `warn`,
+`validate` and `log`, none are present. Bad upstream data reaches the report silently.
+
+### What is actually wrong
+
+A corner whose `distanceRoundLapEnd` precedes its `distanceRoundLapStart` produces a
+reversed `pct_range`, and `get_turn_name()`'s phase-1 test `low <= pct <= high` can then
+never be true — the corner becomes unreachable at every position on the lap.
+
+| Track | Bad record | Effect |
+|---|---|---|
+| `barcelona gp` | T9 `2800 → 2005 m` | T9 unreachable; range `(61.2, 43.8)` |
+| `aragon gp` | T10 `2236 → 473 m` | T10 unreachable; range `(42.3, 8.9)` |
+| `aragon moto` | T10 `2236 → 473 m` | T10 unreachable; range `(44.5, 9.4)` |
+| `martinsville` | T3 `481 → 474 m` | T3 collapses to a 7 m sliver |
+
+**The failure mode is a wrong name, not a missing one.** Phase 2 of `get_turn_name()`
+falls back to the nearest zone centre within tolerance, so the stretch T9 should own gets
+labelled with its neighbours. Measured on `barcelona gp`:
+
+```
+ 42%  ->  'T4'
+ 45%  ->  'T5'     <- T9 territory
+ 50%  ->  'T6'     <- T9 territory
+ 55%  ->  'T7'     <- T9 territory
+ 58%  ->  'T8'     <- T9 territory
+ 61%  ->  'T8'     <- T9 territory
+ 63%  ->  '(63.0%)'
+```
+
+A driver is told to work on T7 when the measurement came from T9.
+
+### Two systemic issues behind it
+
+**The fuzzy tolerance is a percentage, so it means wildly different distances.**
+`get_turn_name(track_map, pct, tolerance=5.0)` is 5% of a lap:
+
+| Track | 5% tolerance |
+|---|---|
+| `nurburgring nordschleifetourist` | 946 m |
+| `roadamerica full` | 321 m |
+| `cota gp` | 271 m |
+| `martinsville` | 39 m |
+| `limaland` | 21 m |
+
+At the Nordschleife a corner name can be applied to a point 946 m away. This is the
+mechanism that converts "no match" into a confidently wrong answer.
+
+**Duplicate names can corrupt the report's internal joins.** At Barcelona both 58% and
+61% return `'T8'`. `report.py`'s `buildCorner()` joins corner data on turn name:
+
+```javascript
+const zone = (bz || []).find(z => z.turn_name === c.turn_name);
+```
+
+`.find()` silently takes the first match, so two braking zones sharing a name would show
+one zone's telemetry under two different corners. **Not confirmed on a real session** — no
+Barcelona `.ibt` was available to test — but it is the same duplicate-key class of defect
+that the independent coaching review found with the T12/T13 throttle values.
+
+### What is NOT wrong
+
+The metres-to-percentage conversion is sound. `_load_from_landmarks()` divides corner
+distances by the bundled `approximateTrackLength`, so a disagreement there would offset
+every turn on every track. Measured against real telemetry lengths:
+
+| Track | Bundled | Real | Error |
+|---|---|---|---|
+| `okayama full` | 3655 | 3654.2 | 0.02% |
+| `roadamerica full` | 6414 | 6412.9 | 0.02% |
+| `cota gp` | 5414 | 5413.3 | 0.01% |
+| `coronado` | 5409 | 5409.2 | 0.00% |
+| `oran gp` | 2601 | 2601.1 | 0.00% |
+
+Worst-case displacement is 0.02% of a lap. That mechanism needs no change.
+
+Also **benign, despite appearances:** `montreal` and `nurburgring nordschleifetourist` list
+corners out of lap order in the JSON, but every range is valid. `get_turn_name()` iterates
+all zones, so ordering does not matter. An earlier assessment called these broken; they are
+not.
+
+### Why this was not a beta blocker
+
+Turn names are applied at display time. Lap times, braking-zone detection, loss
+calculations, apex consistency and every coaching threshold run off `LapDistPct` and brake
+pressure, none of which touch the name. The defect corrupts the label, not the
+measurement. Four affected tracks out of 457, and beta already ships with much larger
+documented gaps — 197 of 457 tracks have no corner names at all, and only corners above
+the 50% brake threshold are analysed regardless.
+
+### Required work
+
+1. **Validate at load in `_load_from_landmarks()`.** Drop any corner where
+   `end <= start`, or where `end` exceeds the track length. A dropped corner degrades to
+   `(43.8%)`, which the report already renders and users have seen. Absent beats wrong.
+2. **Log what was dropped**, with track and corner name. `track_map.py` currently has no
+   logger; the rest of the package uses `tenths.applog.get_logger`.
+3. **Change the tolerance to a distance in metres** so behaviour is consistent from a 427 m
+   bullring to the 18.9 km Nordschleife. Converting at the call site needs the track
+   length, which `_load_from_landmarks()` already reads.
+4. **Guarantee unique turn names within a track** so the JavaScript joins cannot collide —
+   suffix duplicates, or fall back to a percentage.
+
+### Required tests
+
+- A fixture with a reversed corner range is rejected, and the surrounding percentages
+  return a percentage fallback rather than a neighbour's name.
+- A fixture with a corner beyond track length is rejected.
+- `barcelona gp`, `aragon gp`, `aragon moto` and `martinsville` each load without an
+  unreachable corner. Assert against the production data file, so a future CrewChief update
+  that reintroduces the problem fails the suite.
+- No two zones in a loaded track share a `full` name.
+- Tolerance behaves equivalently in metres across a short oval and a long road course.
+- `montreal` and `nordschleifetourist` still load all their corners — they are valid and
+  must not be caught by the new validation.
+
+### Separate upstream track
+
+The four bad records are in CrewChief's community-maintained, MIT-licensed landmark file.
+Fixing them upstream helps every tool that consumes it. That is a data contribution, not a
+code change, and does not remove the need for the validation guard — the file is updated
+periodically and a future revision could introduce new bad records with no signal.
+
+---
+
 ## Documentation Final Pass (RR-017)
 
 **Priority:** Before public release
@@ -96,12 +228,340 @@ Unrelated to the unit refactor; `spread_meters` is metres in both unit systems.
 
 ---
 
-## Class-Specific Physics Profiles
+## Track Sections — Cover the Whole Lap, Not Just the Braking Zones
 
-**Priority:** After beta feedback
-**Effort:** Multi-session validation per class
+**Priority:** High. This is the structural fix for the biggest coaching gap.
+**Effort:** 1–2 days, plus a decision on the fallback
+**Blocked by:** Track Data Integrity above. Do not build on unvalidated landmark data.
 
-Currently only GT4 has validated coaching thresholds. GT3, prototypes, formula cars, and stock cars all use the Generic profile. Adding a class means validating braking shape targets, shift timing, and trail-braking rules against real sessions in that class.
+Only corners above the 50% brake threshold produce a braking zone, so at COTA six of
+twenty turns are analysed and roughly half the lap is invisible to the coaching. An
+independent coaching review put it plainly: the tool confidently ranks the least important
+third of the circuit while the esses, where COTA lap time is classically won, produce no
+data at all. Sections that cover 100% of the lap are the fix.
+
+### What "sector" means, and why we should avoid the word
+
+Three different things get called sectors, and they do not agree:
+
+| | Available? | Verified how |
+|---|---|---|
+| **iRacing timing sectors** (S1/S2/S3 in the F-bar and on results pages) | Live SDK only, via `SplitTimeInfo` | Absent from `/data/track/get` — 60 fields, none of them sectors. Absent from the `.ibt` file: no sector channels, no `SplitTimeInfo` section in the header. |
+| **Real-life circuit sectors** (broadcast timing splits) | Would need its own dataset | Not investigated. Whether iRacing's sectors match real-life sectors is **unconfirmed**. |
+| **Landmark-derived sections** | Bundled data we already ship | Corner positions in metres, per track |
+
+Anything we derive is a fourth thing and will reconcile with none of the above. Calling it
+"Sector 1" when it does not match the driver's F-bar is a self-inflicted credibility bug.
+**Name sections after the track**, which is also better coaching:
+
+```
+The Esses (T2-T9)        18.4s   0.62s off your best
+Back Straight (T11-T12)  21.1s   0.08s off
+Stadium (T13-T18)        19.8s   0.48s off
+```
+
+This also fixes the mislabelling the review caught, where a 19.76 s loss window spanning
+T13 to T18 — 15% of the lap — was attributed to "T13 throttle application".
+
+### The data supports it, but not universally
+
+Measured across the 457 iRacing tracks keyed in `trackLandmarksData.json`:
+
+| | Count | Share |
+|---|---|---|
+| Usable — 4 or more corners and a track length | **257** | 56% |
+| No corner landmarks at all | **197** | 43% |
+| Fewer than 4 corners | 3 | `pocono 2016`, `monza junior`, `pocono oval` |
+| Landmarks but no track length | 0 | — |
+
+Corner gaps identify natural boundaries cleanly. At COTA the 1070 m gap between T11's exit
+(2600 m) and T12's entry (3670 m) is unmistakably the back straight.
+
+**Owner's own tracks: 16 of 23 would work.** Missing: `barber_2026`,
+`daytona_rallycross_short`, `fuji_nochicane`, `navarra_speedlong`, `okayama`,
+`summit_summit_raceway`. Note `okayama` has no corners while `okayama_full` has 11, so part
+of the gap is slug matching rather than absent data.
+
+### The open decision: what to do about the other 43%
+
+The gap is not random — it is whole venues. A driver who mostly runs Barber or Summit would
+never see the feature.
+
+- **Derive from the driver's own telemetry.** Braking-zone detection and the GPS trace
+  already exist, so sections can be inferred from where the car actually brakes and turns.
+  Works on every track including ones iRacing adds tomorrow. Costs the naming: you get
+  "Section 2 (28–45%)" rather than "the esses".
+- **Show nothing.** Honest, leaves the coaching gap open on 43% of tracks.
+- **Contribute the missing data upstream.** Permanent fix for every CrewChief consumer, but
+  an ongoing data project rather than a code change.
+
+The computation is identical either way — convert positions to `LapDistPct`, time between
+boundaries. Landmark data only supplies better names when present. That argues for the
+telemetry-derived fallback with landmark naming layered on top when available.
+
+**Unresolved requirements question:** is a section without a real name still worth showing?
+That determines whether this ships for 56% of tracks or all of them.
+
+### Deliberately out of scope for a first pass
+
+Matching iRacing's official sector boundaries. It requires reading `SplitTimeInfo` from the
+live SDK during a session, which breaks the offline, self-contained guarantee — a feature
+that only works after you have driven a track once is a poor fit. If it is ever added it
+should be a *separate* "Sector Times" panel that genuinely reconciles with the F-bar, shown
+alongside coaching sections rather than replacing them.
+
+---
+
+## Self-Calibrating Thresholds — RPM and Shifting Diagnostics
+
+**Priority:** Next patch — fires wrongly today on every car whose redline isn't ~7000.
+**Effort:** ~2 hours including tests
+**Found:** 2026-08-07, while auditing the car-class system.
+
+### The live defect
+
+The Generic profile's RPM thresholds are **absolute numbers**, not relative to the car:
+
+```python
+# analyzer.py, braking_analysis()
+if max_ds_rpm > 7000:                          # "Aggressive Shift"
+    notes.append("Aggressive Shift")
+if apex_rpm < 3500:                            # "Lugging"
+    notes.append("Lugging")
+```
+
+What those mean depends entirely on the car being driven:
+
+| Car | Redline | 7000 rpm is | Effect |
+|---|---|---|---|
+| `bmwm2g87` | 7000 | 100% of redline | never fires |
+| `ferrari296gt3` | 8000 | 88% | fires on 4 of 6 COTA zones |
+| `porsche992rgt3` | 9500 | 74% | fires on everything |
+
+On the Ferrari 296 GT3, downshifting to 7100 rpm with an 8000 rpm redline is ordinary
+driving. The report tells the driver "Aggressive Shift" at four corners every session.
+Same for GT4: `> 7500 rpm` means redline-plus on a BMW M4 GT4 (7200 rpm), so it can only
+fire under error conditions rather than being a graduated warning.
+
+This is the same root cause as RR-021 (speed thresholds), RR-022 (over-braking), and the
+`spread_meters > 15` brake-point issue: **absolute limits that should be fractions**.
+
+### The fix needs zero new telemetry
+
+Every `.ibt` already carries:
+
+```
+driver_car_redline     8000.0
+driver_car_idle_rpm    2950.0
+driver_gearbox_type    'Sequential'
+```
+
+So `max_ds_rpm > 7000` becomes something like `max_ds_rpm > 0.88 × redline`, and lugging
+becomes a fraction of the idle→redline band rather than a constant. The existing 30 files
+across six distinct cars (redlines 7000–9500) are enough to validate it immediately.
+
+### Proposed thresholds (needs validation, not a decision)
+
+| Rule | Current | Proposed |
+|---|---|---|
+| Aggressive Shift | `> 7000` (Generic) / `> 7500` (GT4) | `> 0.90 × redline` |
+| Over-rev Risk | `> 7500` (GT4 only) | `> 0.97 × redline` |
+| Lugging | `< 3500` (Generic) / `< 4000` (GT4) | `< idle + 0.15 × (redline - idle)` |
+| Early Shift | `< 0.2 s` / `< 0.15 s` | unchanged (time-based, not RPM) |
+
+Validation: re-run the existing 30 `.ibt` files with both old and new thresholds. The
+Ferrari should stop firing "Aggressive Shift" on normal downshifts; the M2 (which sits at
+its own redline) should continue to fire. If the Porsche stops firing on everything, the
+fraction is correctly calibrated.
+
+### Impact on the profile system
+
+Once RPM is self-calibrating, the remaining GT4-only rules are:
+
+- Lazy Initial Brake (`t2peak > 0.4 s`) — probably belongs in Generic too
+- Late Brake Squeeze (ABS in 2nd half of zone) — probably belongs in Generic too
+- Over-slowing — already speed-relative
+
+The case for GT4 as a separate profile weakens considerably. Whether to keep it or fold
+everything into one self-calibrating profile is a design call for after validation.
+
+---
+
+## Car Class Detection — Reliability Fixes
+
+**Priority:** Next patch — same timeline as the RPM fix since they share the same module.
+**Effort:** ~1 hour
+**Found:** 2026-08-07
+
+### Three defects in the existing detection
+
+**1. The GT4 slug list is incomplete.** Five slugs cover perhaps half the GT4 cars on
+iRacing. Eight known GT4 cars are not in the list: `mclaren570sgt4`,
+`astonmartinvantagegt4`, `audir8gt4`, `camarogt4`, `mustanggt4`, `supragt4`,
+`toyotagr86`, and `amgt4` (our `amg_gt4` wouldn't match the common `amgt4` slug either).
+
+They are saved by the `"gt4" in class_short.lower()` check — but only when iRacing reports
+a class name. When it reports a slug instead (see below), they get Generic silently.
+
+**2. iRacing's `CarClassShortName` is unreliable.** Observed in production summaries:
+
+```
+porsche992rgt3   class_short = 'porsche992rgt3'   ← raw slug, not a class
+porsche992rgt3   class_short = 'Touring'          ← wrong class entirely
+ferrari296gt3    class_short = 'GT3 Class'        ← correct
+ferrari296gt3    class_short = 'ferrari296gt3'    ← slug again, different session
+```
+
+A GT3 reported as `"Touring"` won't match `"gt3"`. Any future GT3 profile keyed purely on
+the class string would miss that car in some sessions.
+
+**3. A Test session sometimes sends `car_class_id = 0` and the slug as the class name.**
+Session 2026-08-07 12-42-20 arrived with `car_class_short = 'ferrari296gt3'`, which is why
+the report shows "Generic" as the car class — it's the slug, `_is_human_readable_class`
+returned False, and `display_car_class()` fell through.
+
+### Required fix
+
+Cross-check slug and class string. Priority order:
+
+1. `car_class_short` matches a known class name (case-insensitive, e.g. "GT4 Class") → use that
+2. The *slug* matches the GT4 slug list → use GT4 regardless of what class_short says
+3. Otherwise → Generic, and display whatever iRacing called it if it's human-readable
+
+The slug check ensures detection works even when iRacing sends garbage in `class_short`,
+which it demonstrably does.
+
+### The `GT4_CARS` slug list should also be extended
+
+Use `"gt4" in slug` as a catch-all alongside the explicit list, since every GT4 car's slug
+contains the substring. The explicit list then only matters for cars whose slug doesn't
+(none currently known, but defensive).
+
+---
+
+## Class-Specific Physics Profiles — Rearchitected
+
+**Priority:** After the self-calibrating thresholds are validated
+**Effort:** Potentially zero if self-calibration covers everything meaningful
+**Previous framing:** "Multi-session validation per class." That framing was wrong.
+
+### Why fewer profiles is better than more
+
+The instinct is "add GT3, then LMP2, then Cup." That path requires:
+- Access to every car class (costs real money, or iRacing AI workarounds)
+- Multi-session validation per class (the GT4 rules came from dedicated testing)
+- Ongoing maintenance as cars are added each season
+
+Meanwhile, **most of what the profile actually gates is already expressible relative to
+values the car reports about itself** — redline, idle RPM, the driver's own session
+distribution. Making the thresholds self-calibrating removes the need for class-specific
+overrides on most diagnoses, and means the 200+ iRacing cars nobody will ever hand-tune get
+sensible coaching instead of Generic.
+
+### What is genuinely class-specific (short list)
+
+After self-calibrating RPM, the remaining differences are aero and suspension:
+
+- **Braking shape.** High-downforce cars (GT3, LMP) want the brake spiked immediately
+  because grip decays as speed falls. Low-downforce cars (touring, GT4 to some extent) want
+  a progressive build. The measure is `t2peak` (time to peak brake) — currently gated on
+  GT4 with a 0.4 s target. Whether that target applies to GT3 is unvalidated.
+- **Trail braking tolerance.** A stiff GT3 rotates on trail brake; a softer touring car may
+  not. Currently GT4 flags `Over-slowing (Trust GT4 Grip)` when apex brake > 15 — implying
+  the car has enough mechanical grip to roll off the brake earlier. Whether GT3 should say
+  the same thing at the same threshold is unconfirmed.
+
+Both of these need real validation against real sessions. An AI race produces a clean
+`.ibt` without needing to be fast in the car — useful for expanding coverage beyond what
+the owner drives, if it ever proves necessary.
+
+### What to do about this NOW
+
+Nothing, beyond the RPM fix. The framing "GT3 is missing" makes it sound like a gap. The
+honest reality is that Generic + self-calibrating thresholds is probably sufficient for beta
+and possibly for v1.0, and that adding profiles without validation would just be
+confidently wrong in a new way. **Wait for beta feedback** that says "your coaching is wrong
+on my car, here is what it should say" before designing a class system.
+
+### Also: the notes table hides data from Generic users
+
+GT4 sessions display: `T2Peak | Coast | TIn Brk | ApxBrk`
+Generic sessions display: `Brk2Shft | MaxDS RPM | Apex RPM`
+
+Both sets of data exist for all cars. The independent coaching reviewer flagged
+`apex_brake_pct = 0.0` across every COTA zone as clinically significant — the driver's
+brake is fully released at the apex, which matters for rotation and implies trailable brake
+is being wasted. But the Generic table doesn't show it, so the insight is invisible. At
+minimum, a unified table that shows all columns regardless of profile would surface this
+without needing per-class coaching rules to interpret it.
+
+---
+
+## End-of-Session Tire Wear Report
+
+**Priority:** Medium — valuable for race sessions, low effort
+**Effort:** ~half day
+
+Show how well the driver managed their tires over the session. Answers: did I flat-spot?
+Did I abuse one corner of the car? Is my wear even across the tread? How much life is left?
+
+### Data available
+
+The `.ibt` carries 12 wear channels at 60 Hz:
+
+```
+LFwearL, LFwearM, LFwearR    (left-front: left/middle/right tread)
+RFwearL, RFwearM, RFwearR
+LRwearL, LRwearM, LRwearR
+RRwearL, RRwearM, RRwearR
+```
+
+Values are 0.0–1.0 where 1.0 is new rubber. Reading the final sample of the last valid lap
+gives end-of-session remaining life. Reading first-lap vs last-lap shows the total wear
+accumulated during the session.
+
+### What to show
+
+**Summary level:**
+- Overall wear percentage per corner (average of L/M/R)
+- Highlight any corner below 50% remaining or significantly worse than the others
+- Flag flat-spotting: large L/M/R imbalance within a single corner (e.g., LF left tread at
+  0.4 while middle is 0.7 → localized wear from a lockup)
+
+**Detailed level:**
+- Per-corner breakdown: L / M / R remaining
+- Wear rate per lap (total wear / valid laps) — tells you whether the tires would have
+  lasted a longer stint
+- Wear delta across corners: "RF wore 2× faster than LR" → alignment issue or driving
+  imbalance
+- Wear curve across the session (first lap → last lap) — shows whether wear was linear
+  (steady driving) or accelerating (degradation spiral)
+
+**Coaching sentence (Summary Focus Card level):**
+- "Right-front wore 40% faster than the average corner — check entry aggression into
+  right-handers"
+- "Left-front flat spot detected (0.31 vs 0.68 tread) — likely a lockup at T1"
+- "Even wear across all four corners — good tire management"
+
+### Session type context
+
+Most useful for races (longer stints, tire conservation matters). For short practice
+sessions, end-of-session wear is less meaningful — but a flat-spot is always worth flagging.
+Gate the coaching messages on session length: full wear analysis for races and long tests
+(>10 laps), flat-spot detection always.
+
+### Display
+
+- Session notes: new "Tire Wear" section with a 4-corner table
+- HTML report: a tire wear card on the Detailed tab, similar to the existing Tire Temps
+  card but showing remaining % instead of temperature
+- Summary: only surfaces if something is notable (flat spot, one corner significantly worse)
+
+### Also available but lower priority
+
+`TireSetsUsed`, `TireSetsAvailable`, `PlayerTireCompound` — for multi-stint races, knowing
+which tire set you're on and how many remain. Useful later for race strategy features but
+not needed for the MVP tire-wear display.
 
 ---
 
@@ -141,11 +601,140 @@ When comparing two laps in the Detailed view (via the Compare button), the trace
 
 ---
 
+## Findings from the Independent Coaching Review (2026-08-07)
+
+A sim-racing coach reviewed a real COTA session
+(`ferrari296gt3_cota gp 2026-08-07 12-42-20`, best 2:11.585, 16 valid laps) against the raw
+telemetry and assessed whether the tool's top-three priorities were where the driver should
+actually be spending practice time.
+
+Methodology note worth preserving: the review was run **clean-room**. It was given the
+files, the session context and the raw numbers, but no hypotheses. A separate list of
+pre-existing suspicions was withheld until afterwards, then compared. The two agreed on
+every major point, which is far stronger evidence than a review told what to look for.
+`cota_coaching_review_prompt.md` and `..._followup.md` in the parent repo preserve both
+prompts.
+
+### Verdict on the tool's own three priorities
+
+| Rank | Turn | Loss | Verdict |
+|---|---|---|---|
+| 1 | T12 | 0.713 s | **Real.** Genuinely the most inconsistent corner. But "brake lighter" is the wrong advice — 59 ABS hits means the driver is already at the limit. The problem is repeatability, not pressure. |
+| 2 | T13 | 0.481 s | **Artefact.** The variance window is 19.76 s, 15% of the lap, spanning T13 through T18. The "1.37 s throttle delay after apex" is measuring the approach to the *next* corner. |
+| 3 | T3 | 0.478 s | **Real loss, inverted advice.** "Commit to the higher speed you already proved" points at a 91 mph outlier; the actual best lap used 75 mph through there. The outlier probably wrecked the rest of the esses. |
+
+### Wrong numbers
+
+- **T12 and T13 report identical throttle metrics** — `thr_on` 1.57 and `thr_lag` 1.37 on
+  both, to the digit. Two different corners cannot produce byte-identical values. The
+  rank-2 recommendation rests entirely on that number. Suspected zone-boundary bleed in
+  `_extract_exit_metrics`; needs confirming against the raw `.ibt`.
+- **`min_speed_mph` and `apex_avg_mph` disagree by 21–47 mph on every zone.** T12 reports a
+  zone minimum of 85.1 mph and an apex average of 37.8. The Detailed table shows one, the
+  coaching sentence quotes the other, and a coach cannot reconcile them. They measure
+  different windows; at minimum the naming has to say so.
+- **A 3:36.025 lap sits inside the 16 "valid laps"** — 164% of the best. Whether it reaches
+  the corner-variance averages is unconfirmed. If it does, every loss figure and the whole
+  ranking is contaminated.
+
+### Right numbers, wrong emphasis
+
+- **Loss windows are not corners and are not comparable.** They range from 5.7% of the lap
+  (T12) to 15.0% (T13). Ranking corners by loss is not meaningful when the windows differ
+  threefold in length. Either narrow them per turn or label them honestly as sections — see
+  Track Sections above.
+- **Ranking ignores repeatability.** T20 shows 0.390 s loss with 0.490 s std dev — one bad
+  lap inflating an average. T1 shows 0.352 s with 0.188 s std dev — consistent, repeatable,
+  and a far more reliable improvement target. The report ranks the first higher.
+- **"Total recoverable" is presented as achievable.** 2.641 s assumes assembling the best
+  T1, T3, T11, T12, T13 and T20 onto one lap, but some of those bests come from aggressive
+  laps that were fast in one corner and slow in the next. A realistic figure is 40–50% of
+  the stated total. Suggested reframe: show the assembled-best lap and the consistency gap
+  explicitly.
+- **The ABS trade-off is listed but never interpreted.** The best lap used 515 ABS samples
+  (8.6 s of ABS); the cleanest lap used 222 and was **2.5 s slower**. That single comparison
+  is the clearest statement of the driver's actual problem — speed currently requires
+  overdriving — and the report leaves the reader to spot it.
+- **No blind-zone warning.** The report ranks six corners without ever saying that fourteen
+  were not analysed. A reader reasonably assumes the top-three list is exhaustive.
+
+### Cross-session regression detection (new feature request)
+
+`thr_on` at T11 was 0.85 s in the PB session and 1.73 s in this one — the driver lost
+almost a second of throttle commitment at the corner leading onto the longest straight on
+the circuit, over four days, and nothing surfaced it. Progression tracking currently
+compares lap times and ABS counts only.
+
+Worth flagging per-corner metrics that have moved materially since the best session:
+*"T11 throttle application has slowed by 0.88 s since your best session. You used to commit
+earlier here — what changed?"*
+
+### Plateau diagnosis (new feature request)
+
+Four sessions inside a 0.6 s band: 2:11.446, 2:11.007, 2:11.212, 2:11.585. The coach's read
+was a **consistency ceiling**, not a pace ceiling — best corners assembled come to roughly
+2:10.2 against an actual best of 2:11.6. The evidence was already in the data; the report
+did not draw the conclusion.
+
+This overlaps the Theoretical Best item in Batch 1 below, and gives it a sharper purpose:
+the number matters less than the sentence it enables — *you already have the speed, you are
+not delivering it on one lap.*
+
+---
+
 ## Enhanced Coaching Features (Post-MVP Feature Pass)
 
 Identified from a coaching review of the COTA practice session (2026-08-03) using professional racing methodology as a reference framework. All features use generic coaching language. Internal development references ARA methodology for prioritization and message quality, but the user-facing output remains neutral and data-driven.
 
 ### Batch 1 — High Value, Low Effort (data already exists)
+
+#### Turn-in Brake Ratio
+
+**Priority:** Highest in Batch 1. Directly diagnoses the #1 technique issue identified by
+the independent coaching review (progressive brake release into trail braking) and is
+computationally simple — a lookup of two values at 60 Hz.
+**Full spec:** `SimCoach/turnin_brake_ratio_feature.md`
+
+The existing report showed T12 had 59 ABS hits and said "brake lighter." The coaching
+reviewer said the fix is "release earlier" — the driver's peak pressure is fine, but they
+carry it too deep into the corner. This metric makes that visible and actionable.
+
+**The metric:**
+
+```
+turn_in_ratio = brake_at_turn_in / peak_brake_in_zone
+```
+
+Where `brake_at_turn_in` is the brake pressure at the first sample where the driver begins
+adding steering. Computed per lap, not just best lap, so the comparison "your best lap was
+28%, your average is 71%" works.
+
+**What it connects:** `high ratio → fronts saturated → ABS → understeer → low apex speed →
+over-braking`. This is the causal chain the existing metrics each measure a piece of but
+never assemble. The turn-in ratio is the single number at the top of the chain.
+
+**What exists today:** `turnin_brake_pct` is already computed for the best lap in every
+braking zone. This extends it to per-lap, expresses it as a ratio against peak, compares
+against best-lap baseline, and surfaces it with coaching.
+
+**Two open questions before implementation:**
+
+1. **Turn-in detection method.** The spec proposes "10% of peak steering angle in the
+   zone" — which auto-adapts to corner speed. The alternative is steering *rate of change*
+   exceeding a threshold (detects the event rather than a position). The rate approach is
+   probably more robust but noisier. Needs a prototype on 2–3 corners of different speeds
+   before committing. A wrong turn-in detection makes the ratio meaningless.
+
+2. **Absolute thresholds need validation.** The spec states `< 0.35 = Good` based on one
+   session. The RR-021/RR-022 saga demonstrated the cost of shipping calibrated thresholds
+   from a single session. **Ship with the comparison logic only** — "your best was X, your
+   average is Y" — and leave the fixed green/amber/red bands out of user-facing output
+   until validated across more sessions and car classes. The comparison message is actionable
+   without knowing whether 35% or 45% is the universal "good" line.
+
+**Where it shows up:** session notes (new table), Detailed braking zones (new column),
+Summary Focus Cards when ratio > 0.65, and the brake-release curve visualisation gains a
+vertical "turn-in" marker.
 
 #### Throttle Hesitation on Summary
 
