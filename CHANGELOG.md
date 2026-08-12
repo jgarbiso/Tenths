@@ -25,6 +25,13 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
   is read back from the rendered cards rather than from analysis order, because
   the Next Race Focus applies its own selection rules and is not always the
   highest-loss corner.
+- **The Detailed track map now labels all known corners**, not just detected
+  braking zones. Corners from the bundled landmark database that did not trigger
+  zone detection are shown as passive grey labels, so the driver can orient
+  themselves on the full circuit. At Mid-Ohio this adds 9 corner names (T1, T3,
+  T5 Madness, T6 Esses, T7 Thunder Valley, T10, T11, T10 Carousel, T13) where
+  previously only the 2–3 heavy-braking corners were labelled. Labels within 5%
+  of an existing braking-zone label are suppressed to avoid duplicates.
 
 ### Fixed
 

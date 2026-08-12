@@ -287,6 +287,15 @@ def generate_report(data, file_info, track_map, race_result=None, progression=No
         'race_result': race_data,
         'progression': progression,
         'units': _units_payload(is_metric()),
+        # All known corners from the landmark database, so the map can label the
+        # full circuit rather than only the detected braking zones. Each entry
+        # carries its pct_center; the JS resolves the GPS coordinate from the
+        # trace at runtime. `track_map` is a list of zone dicts from
+        # load_track_map(), or occasionally a dict or None from tests/fallbacks.
+        'track_landmarks': [
+            {'pct': z['pct_center'], 'turn': z['turn'], 'name': z.get('full') or z['turn']}
+            for z in (track_map if isinstance(track_map, list) else [])
+        ],
     }
 
     # Normalised rather than default=str, so NumPy bools reach the browser as
@@ -738,6 +747,20 @@ body {
     white-space: nowrap !important;
 }
 .corner-label::before { display: none !important; }
+.landmark-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #5a6178 !important;
+    font-size: 9px !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-weight: 500 !important;
+    text-shadow: 0 0 3px #000, 0 0 6px #000 !important;
+    padding: 0 !important;
+    white-space: nowrap !important;
+    opacity: 0.85;
+}
+.landmark-label::before { display: none !important; }
 .sf-label {
     background: transparent !important;
     border: none !important;
@@ -2045,7 +2068,7 @@ function rebuildMap() {
         radius: 7, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 1, weight: 2, opacity: 0,
     }).addTo(map);
 
-    // Corner labels
+    // Corner labels — braking zones (red dot + white label)
     rotatedBraking.forEach(z => {
         if (z.rlat && z.rlon) {
             L.circleMarker([z.rlat, z.rlon], {
@@ -2056,6 +2079,30 @@ function rebuildMap() {
             label.setLatLng([z.rlat, z.rlon]);
             label.addTo(map);
         }
+    });
+
+    // Passive landmark labels — all known corners from the track database, so the
+    // driver can orient themselves even where no braking zone was detected. Grey
+    // and smaller than the braking-zone labels; no dot marker.
+    const brakingPcts = new Set(rotatedBraking.map(z => Math.round(z.pct)));
+    (DATA.track_landmarks || []).forEach(lm => {
+        // Skip landmarks that already have a braking-zone label (avoid duplicates)
+        if (brakingPcts.has(Math.round(lm.pct))) return;
+        // Also skip if a braking zone is within 5% (close enough to share a label)
+        if (rotatedBraking.some(z => Math.abs(z.pct - lm.pct) < 5)) return;
+
+        const idx = Math.round((lm.pct / 100) * (rotatedTrace.length - 1));
+        if (idx < 0 || idx >= rotatedTrace.length) return;
+        const pt = rotatedTrace[idx];
+        if (!pt.rlat || !pt.rlon) return;
+
+        const label = L.tooltip({
+            permanent: true, direction: 'top',
+            className: 'landmark-label', offset: [0, -6],
+        });
+        label.setContent(lm.name);
+        label.setLatLng([pt.rlat, pt.rlon]);
+        label.addTo(map);
     });
 
     // Direction arrow
