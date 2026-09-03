@@ -25,6 +25,36 @@ Items identified during development that are acceptable for current use but shou
 | A4 | Corner sectors cover ~88% of the lap, not 100% | "Total recoverable" is the sum of corner sectors, not a true lap total. Honest but easy to misread as a full-lap figure. | Either label it explicitly in the UI or move to full Voronoi coverage |
 | A5 | Lap numbering differs from official iRacing results by one | Tenths called the fastest lap #3; the result CSV called it #2. Times match exactly, only the label differs. | Align numbering, or note the offset where laps are displayed |
 | A6 | ~~Spread/std thresholds are absolute mph~~ | ~~Misfires on fast corners~~ | **RESOLVED 2026-07-30 (RR-021)** — now speed-relative with a floor |
+| A7 | ~~"High yaw — oversteer risk" fires on normal high-speed cornering~~ | ~~False-positive flags controlled trail braking at fast corners as oversteer.~~ | **RESOLVED 2026-09-02** — diagnosis reframed around lateral G in `analyzer.diagnose_trail_zone`; see the resolution record below |
+
+### A7 Details — Trail Braking "High Yaw" False Positive — RESOLVED 2026-09-02
+
+**Resolution:** The diagnosis now lives in one place, `analyzer.diagnose_trail_zone(brake_pct, lateral_g, yaw_rate)`, called by both `trail_braking_analysis` (console) and `_extract_trail_braking` (report). The authoritative explanation — thresholds, their measured provenance, and why each branch reads the way it does — is the block comment above that function. Do not restate it here; read it there.
+
+**What changed, in brief:**
+- High yaw at high lateral G is reported as controlled rotation ("High-speed rotation — normal for this corner speed" / "Good — combined load"), not oversteer. This is the ARA neutral-steer / three-tools-of-rotation case (see `SimCoach/CONTEXT.md`).
+- The oversteer warning is kept only for the genuine signature: abnormal rotation, or high yaw with the brake on but *without* cornering load.
+- Thresholds were calibrated against 469 trail zones from 40+ archived sessions across four car models. The old rule fired on 19% of them; every one was a false positive. The new classifier fires on zero.
+- Guard tests: `tests/test_trail_zone_diagnosis.py`.
+
+**Note on the earlier proposal:** the fix in `SimCoach/speed_delta_feature.md` Feature 4 proposed a yaw-to-steering-*rate* ratio. That signal was measured and rejected — raw steering rate at 60 Hz is dominated by single-sample spikes (20-67 rad/s) that make the ratio meaningless. The shipped fix uses lateral G instead, which is robust. `diagnose_trail_zone` deliberately takes no steering argument.
+
+<details><summary>Original investigation (historical — the bug this resolved)</summary>
+
+The old logic in `analyzer.py` was:
+```python
+if lat > 1.2 and brk > 30:
+    diag = "Good"
+elif brk > 60 and lat < 0.5:
+    diag = "Braking straight"
+elif yaw > 0.5 and brk > 20:
+    diag = "High yaw — oversteer risk"
+else:
+    diag = "Light trail"
+```
+The "Good" check required brake > 30%. Once the driver had progressively released below 30% (the *correct* technique), the zone fell through to the yaw check, and at high-speed corners (2.0-2.7 G) normal cornering forces produce yaw > 0.5 with no oversteer — so textbook trail braking was flagged as "oversteer risk." Verified on Watkins Glen T1 (2026-08-26 practice, lap 7): brake 23%, 2.72 G, yaw 0.63, actively steering — controlled rotation flagged as oversteer. The same corner in the race read "Light trail" only because yaw was 0.48, just under the threshold. This produced a false narrative of persistent "T1 oversteer" across Tsukuba, Sonoma and VIR sessions.
+
+</details>
 
 ## Report (`tenths/report.py`)
 

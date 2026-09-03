@@ -48,6 +48,95 @@ LUGGING_MIN_SPEED_MPS = mph_to_mps(40.0)        # 40 mph — "Lugging"
 # Below this apex speed, full throttle is trivial, so exit metrics are skipped.
 EXIT_METRICS_MIN_APEX_MPS = mph_to_mps(30.0)    # 30 mph
 
+# Trail-braking zone diagnostic (see diagnose_trail_zone). Thresholds validated
+# against 469 trail zones from 40+ archived sessions across four car models
+# (Mustang GT3, Ferrari 296 GT3/Challenge, BMW M4 GT3), 2026-09.
+#
+# The old rule `yaw > 0.5 and brake > 20 -> "High yaw — oversteer risk"` fired on
+# 87 of those 469 zones (19%), and every one was a false positive: an advanced
+# driver rotating the car on the brake at high lateral load, which the ARA
+# framework (SimCoach/CONTEXT.md) calls neutral steer / the three tools of
+# rotation — good technique, not instability. High yaw at high lateral G is a
+# consequence of corner speed, not the rear stepping out. Raw yaw rate alone was
+# never a valid oversteer signal, and steering *rate* (the signal the earlier
+# spec proposed to rescue it) is too noisy at 60 Hz to use — single-sample spikes
+# of 20-67 rad/s made the yaw/steering ratio meaningless. So the diagnosis is
+# reframed around lateral G, which is robust:
+#   - high lat-G + high yaw + brake on -> controlled high-speed rotation (good)
+#   - LOW lat-G + high yaw + brake on  -> genuine oversteer signature (rear out
+#     below the grip limit). None occurred on the clean best laps measured, so
+#     this is a rare-event guard, kept conservative.
+COMBINED_LOAD_LAT_G = 1.0       # lateral load that confirms the car is cornering,
+                                # not braking in a straight line. Set at 1.0 G so
+                                # the two ~1.1 G clean-lap zones that would
+                                # otherwise read as "oversteer" are correctly
+                                # treated as loaded rotation; a genuine low-speed
+                                # spin sits well below this.
+# Minimum brake % for a zone to count as still braking. The old rule required
+# 30% before it would call a zone well-driven, so a driver releasing the brake
+# progressively into the corner — correct technique — fell through to the yaw
+# check and got flagged. 15% keeps light trail-brake pressure in the loaded case.
+TRAIL_BRAKE_MIN_PCT = 15.0
+# Chooses the LABEL for a loaded zone: at or above this lateral G a high yaw
+# reading is described as high-speed rotation rather than plain combined load.
+# It does not gate the oversteer branch — any zone at or above
+# COMBINED_LOAD_LAT_G is already treated as loaded and never called oversteer.
+HIGH_G_ROTATION_LAT_G = 1.3
+# Yaw that counts as high for labelling purposes (p50 of measured zones is
+# 0.53 rad/s, so this is "more rotation than the typical corner").
+OVERSTEER_YAW_RATE = 0.5        # rad/s
+# Rotation this fast is abnormal for a clean lap at any lateral load, so it is
+# checked before the load and braking-straight branches — otherwise a genuine
+# spin under heavy braking reads as "Braking straight", and a big moment in the
+# 1.0-1.3 G band reads as "Good". Measured ceiling across the 469 zones is
+# 1.03 rad/s (p99 = 0.88), so 1.2 fires on none of them and only catches
+# genuinely abnormal rotation.
+ABNORMAL_YAW_RATE = 1.2         # rad/s
+BRAKING_STRAIGHT_BRAKE_PCT = 60.0
+BRAKING_STRAIGHT_LAT_G = 0.5
+
+
+def diagnose_trail_zone(brake_pct, lateral_g, yaw_rate):
+    """Classify one trail-braking zone from its brake %, peak lateral G and peak
+    yaw rate. Single source of truth for both the console dump
+    (trail_braking_analysis) and the report data (_extract_trail_braking).
+
+    Units: brake_pct is 0-100, lateral_g is |LatAccel| in G, yaw_rate is
+    |YawRate| in rad/s. All three are per-zone aggregates (brake mean, lat/yaw
+    peak) computed by the callers.
+
+    Returns a short diagnosis string. See the constants above for the validation
+    behind each branch and why steering rate is deliberately not used.
+    """
+    # Missing or non-finite telemetry must never manufacture a warning. Without
+    # this, NaN fails every comparison, falls through to the oversteer branch and
+    # reports instability for a zone we have no lateral data for.
+    if not (np.isfinite(brake_pct) and np.isfinite(lateral_g)
+            and np.isfinite(yaw_rate)):
+        return "Light trail"
+
+    # Abnormally fast rotation, regardless of lateral load. Checked first so a
+    # spin is not absorbed by the "braking straight" or "combined load" branches
+    # below. See ABNORMAL_YAW_RATE for the measured ceiling this sits above.
+    if yaw_rate >= ABNORMAL_YAW_RATE and brake_pct > TRAIL_BRAKE_MIN_PCT:
+        return "Oversteer risk — rear rotating beyond corner load"
+
+    # Loaded and braking: the car is cornering with the brake on. High yaw here
+    # is rotation, not instability — reported as such rather than "oversteer".
+    if lateral_g >= COMBINED_LOAD_LAT_G and brake_pct > TRAIL_BRAKE_MIN_PCT:
+        if lateral_g >= HIGH_G_ROTATION_LAT_G and yaw_rate > OVERSTEER_YAW_RATE:
+            return "High-speed rotation — normal for this corner speed"
+        return "Good — combined load"
+    # Hard braking with almost no lateral load: braking in a straight line.
+    if brake_pct > BRAKING_STRAIGHT_BRAKE_PCT and lateral_g < BRAKING_STRAIGHT_LAT_G:
+        return "Braking straight"
+    # High yaw with the brake on but WITHOUT cornering load — the rear is
+    # rotating beyond what corner speed accounts for. This is the real oversteer
+    # signature and the only case that keeps the warning.
+    if yaw_rate > OVERSTEER_YAW_RATE and brake_pct > TRAIL_BRAKE_MIN_PCT:
+        return "Oversteer risk — rear rotating beyond corner load"
+    return "Light trail"
+
 # Car class detection — GT4 cars have high-downforce physics requiring
 # different braking shape (spike initial brake) and faster downshifts
 GT4_CARS = ["bmwm4evogt4", "bmwm4gt4", "amg_gt4", "porsche718gt4", "mclarengt4"]
@@ -578,14 +667,7 @@ def trail_braking_analysis(df, lap_num):
         brk = grp['Brake'].mean()
         lat = grp['LatAccel'].abs().max()
         yaw = grp['YawRate'].abs().max()
-        if lat > 1.2 and brk > 30:
-            diag = "GOOD — combined load"
-        elif brk > 60 and lat < 0.5:
-            diag = "Braking straight"
-        elif yaw > 0.5 and brk > 20:
-            diag = "High yaw — oversteer risk"
-        else:
-            diag = "Light trail"
+        diag = diagnose_trail_zone(brk, lat, yaw)
         print(f"  {pos:5.1f}% {brk:>6.0f}% {lat:>6.2f}G {yaw:>6.2f}  {diag}")
 
 def abs_trend(df, valid_laps):
@@ -1072,14 +1154,7 @@ def _extract_trail_braking(df, lap_num, track_length_m=None):
         brk = grp['Brake'].mean()
         lat = grp['LatAccel'].abs().max()
         yaw = grp['YawRate'].abs().max()
-        if lat > 1.2 and brk > 30:
-            diag = "Good"
-        elif brk > 60 and lat < 0.5:
-            diag = "Braking straight"
-        elif yaw > 0.5 and brk > 20:
-            diag = "High yaw — oversteer risk"
-        else:
-            diag = "Light trail"
+        diag = diagnose_trail_zone(brk, lat, yaw)
         results.append({'pct': pos, 'brake': brk, 'lat_g': lat, 'yaw': yaw, 'diagnosis': diag})
     return results
 
