@@ -751,14 +751,17 @@ body {
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
-    color: #5a6178 !important;
-    font-size: 9px !important;
+    /* Muted next to the white braking-zone labels, but bright enough to read
+       against the near-black map — the old #5a6178 vanished on the #0a0a0f
+       background, especially in VR. */
+    color: #aab2c5 !important;
+    font-size: 10px !important;
     font-family: 'Inter', system-ui, sans-serif !important;
     font-weight: 500 !important;
-    text-shadow: 0 0 3px #000, 0 0 6px #000 !important;
+    text-shadow: 0 0 3px #000, 0 0 6px #000, 0 1px 2px #000 !important;
     padding: 0 !important;
     white-space: nowrap !important;
-    opacity: 0.85;
+    opacity: 0.95;
 }
 .landmark-label::before { display: none !important; }
 .sf-label {
@@ -1561,6 +1564,71 @@ function renderBrakeRelease() {
 }
 
 // ─── Track Map (Leaflet) ─────────────────────────────────────────────────
+
+// Single source of truth for the corner labels drawn on the Detailed map.
+// BOTH initMap() (first render) and rebuildMap() (rotate / lap change) must call
+// this. It previously lived inline in each, and the passive-landmark pass was
+// added to rebuildMap() only — so a freshly opened report showed labels for the
+// detected braking zones and nothing else until the user rotated the map. Keep
+// the two label passes here so they cannot drift apart again.
+//
+// Two kinds of label:
+//   1. Braking zones — red dot + bright white label at the zone's GPS point.
+//   2. Passive landmarks — every other corner from the track database, grey and
+//      dotless, so the whole circuit is oriented even where no braking zone was
+//      detected. A landmark is skipped only when a braking zone already carries
+//      the same turn name (same corner), never merely because one is nearby.
+function drawCornerLabels(rotatedTrace, rotatedBraking) {
+    // Braking-zone labels (red dot + white label)
+    rotatedBraking.forEach(z => {
+        if (z.rlat && z.rlon) {
+            L.circleMarker([z.rlat, z.rlon], {
+                radius: 6, color: '#ff1744', fillColor: '#ff1744', fillOpacity: 0.9, weight: 2,
+            }).addTo(map);
+            const label = L.tooltip({ permanent: true, direction: 'top', className: 'corner-label', offset: [0, -12] });
+            label.setContent(z.turn_name);
+            label.setLatLng([z.rlat, z.rlon]);
+            label.addTo(map);
+        }
+    });
+
+    // Passive landmark labels — every known corner not already shown as a
+    // braking zone. get_turn_name() gives a braking zone its full label (e.g.
+    // 'T5 Canada Corner'), while a landmark carries both the short turn ('T5')
+    // and the full name; match on either so the same corner is never labelled
+    // twice, without suppressing a distinct neighbour.
+    const brakingNames = new Set();
+    rotatedBraking.forEach(z => {
+        if (z.turn_name) brakingNames.add(String(z.turn_name).trim());
+    });
+    const brakingHasTurn = (turn) => {
+        if (!turn) return false;
+        const t = String(turn).trim();
+        for (const n of brakingNames) {
+            // n is the full label ('T5 Canada Corner'); match its leading token.
+            if (n === t || n.split(' ')[0] === t) return true;
+        }
+        return false;
+    };
+
+    (DATA.track_landmarks || []).forEach(lm => {
+        if (brakingNames.has(String(lm.name).trim()) || brakingHasTurn(lm.turn)) return;
+
+        const idx = Math.round((lm.pct / 100) * (rotatedTrace.length - 1));
+        if (idx < 0 || idx >= rotatedTrace.length) return;
+        const pt = rotatedTrace[idx];
+        if (!pt.rlat || !pt.rlon) return;
+
+        const label = L.tooltip({
+            permanent: true, direction: 'top',
+            className: 'landmark-label', offset: [0, -6],
+        });
+        label.setContent(lm.name);
+        label.setLatLng([pt.rlat, pt.rlon]);
+        label.addTo(map);
+    });
+}
+
 function initMap() {
     const trace = getSelectedTrace();
     if (!trace.length) {
@@ -1624,28 +1692,8 @@ function initMap() {
         opacity: 0,
     }).addTo(map);
 
-    // Corner labels + brake markers
-    rotatedBraking.forEach(z => {
-        if (z.rlat && z.rlon) {
-            L.circleMarker([z.rlat, z.rlon], {
-                radius: 6,
-                color: '#ff1744',
-                fillColor: '#ff1744',
-                fillOpacity: 0.9,
-                weight: 2,
-            }).addTo(map);
-
-            const label = L.tooltip({
-                permanent: true,
-                direction: 'top',
-                className: 'corner-label',
-                offset: [0, -12],
-            });
-            label.setContent(z.turn_name);
-            label.setLatLng([z.rlat, z.rlon]);
-            label.addTo(map);
-        }
-    });
+    // Corner labels (braking zones + all other known corners) — see drawCornerLabels
+    drawCornerLabels(rotatedTrace, rotatedBraking);
 
     // Direction arrow
     if (rotatedTrace.length > 10) {
@@ -2068,42 +2116,8 @@ function rebuildMap() {
         radius: 7, color: '#ffffff', fillColor: '#ffffff', fillOpacity: 1, weight: 2, opacity: 0,
     }).addTo(map);
 
-    // Corner labels — braking zones (red dot + white label)
-    rotatedBraking.forEach(z => {
-        if (z.rlat && z.rlon) {
-            L.circleMarker([z.rlat, z.rlon], {
-                radius: 6, color: '#ff1744', fillColor: '#ff1744', fillOpacity: 0.9, weight: 2,
-            }).addTo(map);
-            const label = L.tooltip({ permanent: true, direction: 'top', className: 'corner-label', offset: [0, -12] });
-            label.setContent(z.turn_name);
-            label.setLatLng([z.rlat, z.rlon]);
-            label.addTo(map);
-        }
-    });
-
-    // Passive landmark labels — all known corners from the track database, so the
-    // driver can orient themselves even where no braking zone was detected. Grey
-    // and smaller than the braking-zone labels; no dot marker.
-    const brakingPcts = new Set(rotatedBraking.map(z => Math.round(z.pct)));
-    (DATA.track_landmarks || []).forEach(lm => {
-        // Skip landmarks that already have a braking-zone label (avoid duplicates)
-        if (brakingPcts.has(Math.round(lm.pct))) return;
-        // Also skip if a braking zone is within 5% (close enough to share a label)
-        if (rotatedBraking.some(z => Math.abs(z.pct - lm.pct) < 5)) return;
-
-        const idx = Math.round((lm.pct / 100) * (rotatedTrace.length - 1));
-        if (idx < 0 || idx >= rotatedTrace.length) return;
-        const pt = rotatedTrace[idx];
-        if (!pt.rlat || !pt.rlon) return;
-
-        const label = L.tooltip({
-            permanent: true, direction: 'top',
-            className: 'landmark-label', offset: [0, -6],
-        });
-        label.setContent(lm.name);
-        label.setLatLng([pt.rlat, pt.rlon]);
-        label.addTo(map);
-    });
+    // Corner labels (braking zones + all other known corners) — see drawCornerLabels
+    drawCornerLabels(rotatedTrace, rotatedBraking);
 
     // Direction arrow
     if (rotatedTrace.length > 10) {
