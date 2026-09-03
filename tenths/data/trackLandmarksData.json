@@ -40413,7 +40413,73 @@
     {
       "irTrackName": "sonoma 2025 sportscar",
       "approximateTrackLength": 4016,
-      "isOval": true
+      "trackLandmarks": [
+        {
+          "landmarkNames": ["turn1"],
+          "distanceRoundLapStart": 295,
+          "distanceRoundLapEnd": 440
+        },
+        {
+          "landmarkNames": ["the_esses", "turn2"],
+          "distanceRoundLapStart": 580,
+          "distanceRoundLapEnd": 680
+        },
+        {
+          "landmarkNames": ["turn3"],
+          "distanceRoundLapStart": 700,
+          "distanceRoundLapEnd": 810
+        },
+        {
+          "landmarkNames": ["turn3a"],
+          "distanceRoundLapStart": 880,
+          "distanceRoundLapEnd": 1020
+        },
+        {
+          "landmarkNames": ["the_carousel", "turn4"],
+          "distanceRoundLapStart": 1085,
+          "distanceRoundLapEnd": 1250
+        },
+        {
+          "landmarkNames": ["turn5"],
+          "distanceRoundLapStart": 1310,
+          "distanceRoundLapEnd": 1440
+        },
+        {
+          "landmarkNames": ["turn6"],
+          "distanceRoundLapStart": 1500,
+          "distanceRoundLapEnd": 1680
+        },
+        {
+          "landmarkNames": ["turn7"],
+          "distanceRoundLapStart": 1940,
+          "distanceRoundLapEnd": 2150
+        },
+        {
+          "landmarkNames": ["turn8"],
+          "distanceRoundLapStart": 2250,
+          "distanceRoundLapEnd": 2430
+        },
+        {
+          "landmarkNames": ["turn9"],
+          "distanceRoundLapStart": 2540,
+          "distanceRoundLapEnd": 2720
+        },
+        {
+          "landmarkNames": ["turn10"],
+          "distanceRoundLapStart": 2800,
+          "distanceRoundLapEnd": 2990
+        },
+        {
+          "landmarkNames": ["turn11"],
+          "distanceRoundLapStart": 3160,
+          "distanceRoundLapEnd": 3360
+        },
+        {
+          "landmarkNames": ["turn12"],
+          "distanceRoundLapStart": 3430,
+          "distanceRoundLapEnd": 3650
+        }
+      ]
     },
     {
       "irTrackName": "sonoma 2025 sportscaralt",
