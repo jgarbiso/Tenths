@@ -13,9 +13,11 @@ Requirements:
 """
 
 import os
+import re
 import sys
 import glob
 import irsdk
+import yaml
 import pandas as pd
 import numpy as np
 
@@ -148,14 +150,60 @@ def fmt_time(s):
     return f"{int(s//60)}:{s%60:06.3f}"
 
 
+# Bytes iRacing emits in the session-info header that are not valid in its
+# declared cp1252 text and break YAML scanning; pyirsdk maps them to spaces.
+_YAML_TRANSLATER = bytes.maketrans(b'\x81\x8D\x8F\x90\x9D', b'     ')
+
+
+def _load_session_yaml(raw_bytes):
+    """Parse iRacing's session-info YAML header, tolerating the free-text
+    driver fields that break a naive yaml.safe_load.
+
+    iRacing writes driver-supplied values (names, team, initials) into the
+    header UNQUOTED. A value that starts with a YAML indicator character — most
+    commonly a non-ASCII name mojibake'd to something like ``UserName: ? ?`` —
+    makes the scanner raise "mapping keys are not allowed here" and the whole
+    session fails to process. This is a long-standing iRacing quirk, not a
+    format change.
+
+    The sanitisation mirrors pyirsdk's own `_parse_yaml` (which the binary
+    telemetry path already benefits from via irsdk.IBT): translate the known
+    bad bytes to spaces, strip non-printables, then wrap the known free-text
+    fields in escaped quotes before parsing. Reusing that proven approach keeps
+    this reader consistent with the SDK rather than inventing a second one.
+    """
+    from yaml.reader import Reader as _YamlReader
+
+    text = raw_bytes.translate(_YAML_TRANSLATER).rstrip(b'\x00').decode('cp1252')
+    # Drop control/non-printable characters PyYAML rejects outright.
+    text = re.sub(_YamlReader.NON_PRINTABLE, '', text)
+
+    def _quote_free_text(m):
+        # m.group(1) is "Field: "; the value is group(2) (already quoted) or (3).
+        value = m.group(2) if m.group(2) is not None else m.group(3)
+        return m.group(1) + '"%s"' % re.sub(r'(["\\])', r'\\\1', value)
+
+    text = re.sub(
+        r'((?:DriverSetupName|UserName|TeamName|AbbrevName|Initials): )'
+        r'(?:"(.*)"$|(.+))',
+        _quote_free_text, text, flags=re.M)
+    # A value beginning with a comma (e.g. an initials-only field) also trips
+    # the scanner; quote it. Mirrors pyirsdk.
+    text = re.sub(r'(\w+: )(,.*)', r'\1"\2"', text)
+
+    return yaml.safe_load(text)
+
+
 def parse_session_info(filepath):
     """
     Parse the session info YAML header from an .ibt file.
     Returns metadata dict with car name, track name, event type, etc.
     No pyirsdk needed — reads the raw binary header directly.
+
+    Free-text driver fields are sanitised before parsing; see
+    _load_session_yaml for why a raw yaml.safe_load is unsafe here.
     """
     import struct
-    import yaml
 
     with open(filepath, 'rb') as f:
         header = f.read(112)
@@ -164,8 +212,7 @@ def parse_session_info(filepath):
 
         f.seek(session_info_offset)
         session_info_raw = f.read(session_info_len)
-        session_info_str = session_info_raw.decode('latin-1').rstrip('\x00')
-        info = yaml.safe_load(session_info_str)
+        info = _load_session_yaml(session_info_raw)
 
     if not info:
         return {}
