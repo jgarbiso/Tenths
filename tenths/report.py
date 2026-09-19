@@ -3163,12 +3163,12 @@ def generate_report_cli():
         basename = os.path.splitext(os.path.basename(filepath))[0]
         file_info = {'car': 'Unknown', 'track': 'Unknown', 'date': 'Unknown', 'time': '00-00-00', 'filename': basename}
 
-    # Load track map
-    track_map = load_track_map(file_info['track'])
+    # Load track map, keyed on iRacing's canonical TrackID for corner overrides.
+    si = data.get('session_info', {})
+    track_map = load_track_map(file_info['track'], track_id=si.get('track_id'))
 
     # Try to find race result
     race_result = None
-    si = data.get('session_info', {})
     result_file = find_race_result(si)
     if result_file:
         from tenths.results import parse_result

@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0.0",
+  "source": "tenths/data/trackLandmarksData.json",
+  "generated_by": "tools/build_track_corner_overrides.py",
+  "note": "Sanitised sample used by tests/test_track_corner_overrides.py. Mirrors the real artifact schema. track_id 439 = winton national (real TrackID from a committed fixture).",
+  "tracks": [
+    {
+      "slug": "sample track",
+      "track_id": 439,
+      "approximateTrackLength": 1000,
+      "corrections": [
+        {
+          "names": ["turn2"],
+          "action": "set_range",
+          "start": 400,
+          "end": 460,
+          "reason": "corrupt end distance; anchored at known-good start"
+        }
+      ]
+    },
+    {
+      "slug": "swap track",
+      "track_id": null,
+      "approximateTrackLength": 800,
+      "corrections": [
+        {
+          "names": ["turn3"],
+          "action": "set_range",
+          "start": 474,
+          "end": 481,
+          "reason": "transposition — start/end were swapped; restored"
+        }
+      ]
+    }
+  ]
+}

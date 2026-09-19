@@ -21,9 +21,65 @@ Windows SmartScreen shows an "unrecognized app" warning for unsigned executables
 
 ---
 
-## Track Data Integrity — Validate Landmark Data on Load
+## Corner Data Source — iRacing API Investigated and Rejected — RESOLVED 2026-09-03
 
-**Priority:** Next patch. Not a beta blocker, but do it before building anything else on this data.
+> **RESOLVED 2026-09-03. This supersedes the "when the iRacing API provides
+> official turn positions" framing that appears in `docs/TECH_DEBT.md` (A1) and
+> the Phase 5 plan in `docs/ARCHITECTURE_VISION.md`.** The full investigation is
+> `docs/IRACING_TRACK_API_INVESTIGATION.md`; read it before proposing an API for
+> corner data again.
+>
+> **Finding, with evidence:** iRacing publishes **no per-corner turn positions**
+> anywhere a program can read them. The `.ibt` header carries a turn *count*
+> (`TrackNumTurns`) but no positions; the `/data` web API's entire `track` group
+> is two endpoints — `track/get` (metadata + `corners_per_lap`, a count) and
+> `track/assets` (a **rendered SVG image** of the turn labels, not machine-readable
+> coordinates). An API therefore cannot supply the corner spans this feature
+> needs, and wiring one up would also break the offline/zero-account promise for
+> no data gain.
+>
+> **What was done instead:** the community landmark file's turn *numbers* are
+> already iRacing-standard and correct; only a few corner *distance* records are
+> corrupt. A build-time generator (`tools/build_track_corner_overrides.py`,
+> developer-run, never in the end-user pipeline) emits
+> `tenths/data/track_corner_overrides.json`, which `track_map.py` applies at load
+> **before** the existing validation. The four corrupt tracks (barcelona gp T9,
+> aragon gp / aragon moto T10, martinsville T3) now resolve to their correct turn
+> numbers. Overrides are keyed on iRacing's canonical `TrackID` (from
+> `session_info['track_id']`) with the slug as fallback. Turn numbers are never
+> invented. Guard tests: `tests/test_track_corner_overrides.py`.
+>
+> **Honest limitation:** martinsville T3 is fully recovered (a clean
+> transposition). barcelona T9 and aragon T10 had only their *end* distance
+> corrupted; the true end is not recoverable from any authoritative source, so
+> those corners are anchored at their known-good *start* with a bounded span
+> rather than a fabricated one — correct location, conservative extent.
+
+## Track Data Integrity — Validate Landmark Data on Load — RESOLVED 2026-09-02
+
+> **RESOLVED 2026-09-02. Do not re-implement.** `_load_from_landmarks()` in
+> `tenths/track_map.py` now validates every corner at load. Across the 2296
+> corners in the production file this drops **exactly the four** reversed records
+> and nothing else; each drop is logged via `tenths.applog`.
+>
+> Two details that are easy to get wrong, both covered by tests:
+> - **A corner ending a metre or two past `approximateTrackLength` is valid, not
+>   corrupt** — the length is approximate. `nurburgring nordschleife` T13 (+1 m)
+>   and `virginia 2022 patriot` T1 (+2 m) are clamped to the line, not dropped.
+>   Only overruns beyond `_LENGTH_GRACE_FRACTION` are treated as corruption.
+> - **The metre tolerance is capped at `DEFAULT_TOLERANCE_PCT`.** A pure distance
+>   tolerance overcorrects on short tracks: 150 m is 76% of a lap at `iowa
+>   legends` (198 m). `_tolerance_pct()` takes the tighter of the metre-derived
+>   and legacy percentage values, so matching only ever narrows — verified zero
+>   of 261 tracks get a looser tolerance than before.
+>
+> Turn names are also de-duplicated within a track so `report.py`'s `.find()`
+> joins cannot collide. Guard tests in `tests/test_track_data_integrity.py`
+> assert against the production data file, so a future CrewChief refresh that
+> reintroduces a bad record fails the suite. The investigation below is retained
+> as the historical record of the bug.
+
+**Priority:** ~~Next patch. Not a beta blocker, but do it before building anything else on this data.~~
 **Effort:** ~1 hour including tests
 **Found:** 2026-08-07, while assessing whether track sections could be derived from bundled data.
 
@@ -232,7 +288,7 @@ Unrelated to the unit refactor; `spread_meters` is metres in both unit systems.
 
 **Priority:** High. This is the structural fix for the biggest coaching gap.
 **Effort:** 1–2 days, plus a decision on the fallback
-**Blocked by:** Track Data Integrity above. Do not build on unvalidated landmark data.
+**Blocked by:** ~~Track Data Integrity above. Do not build on unvalidated landmark data.~~ **Unblocked 2026-09-02** — landmark data is now validated at load; see the resolved section above.
 
 Only corners above the 50% brake threshold produce a braking zone, so at COTA six of
 twenty turns are analysed and roughly half the lap is invisible to the coaching. An

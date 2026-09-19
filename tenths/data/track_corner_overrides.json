@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0.0",
+  "source": "tenths/data/trackLandmarksData.json",
+  "generated_by": "tools/build_track_corner_overrides.py",
+  "note": "Build-time repairs for corrupt corner distance records in the community landmark file. Turn numbers come from the community file and are unchanged. See docs/IRACING_TRACK_API_INVESTIGATION.md.",
+  "tracks": [
+    {
+      "slug": "aragon gp",
+      "track_id": null,
+      "approximateTrackLength": 5285,
+      "corrections": [
+        {
+          "names": [
+            "turn10"
+          ],
+          "action": "set_range",
+          "start": 2236,
+          "end": 2296.0,
+          "reason": "corrupt end distance; start is in lap order so the corner is anchored at its known-good start with a bounded span (true end not recoverable)"
+        }
+      ]
+    },
+    {
+      "slug": "aragon moto",
+      "track_id": null,
+      "approximateTrackLength": 5024,
+      "corrections": [
+        {
+          "names": [
+            "turn10"
+          ],
+          "action": "set_range",
+          "start": 2236,
+          "end": 2296.0,
+          "reason": "corrupt end distance; start is in lap order so the corner is anchored at its known-good start with a bounded span (true end not recoverable)"
+        }
+      ]
+    },
+    {
+      "slug": "barcelona gp",
+      "track_id": null,
+      "approximateTrackLength": 4574,
+      "corrections": [
+        {
+          "names": [
+            "turn9"
+          ],
+          "action": "set_range",
+          "start": 2800,
+          "end": 2860.0,
+          "reason": "corrupt end distance; start is in lap order so the corner is anchored at its known-good start with a bounded span (true end not recoverable)"
+        }
+      ]
+    },
+    {
+      "slug": "martinsville",
+      "track_id": null,
+      "approximateTrackLength": 786,
+      "corrections": [
+        {
+          "names": [
+            "turn3"
+          ],
+          "action": "set_range",
+          "start": 474,
+          "end": 481,
+          "reason": "transposition — start/end were swapped; restored"
+        }
+      ]
+    }
+  ]
+}

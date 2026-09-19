@@ -640,17 +640,17 @@ def main():
 
             os.makedirs(session_dir, exist_ok=True)
 
-            # Load track map
-            track_map = load_track_map(track)
+            # Load track map, keyed on iRacing's canonical TrackID for overrides.
+            si = data.get('session_info', {})
+            track_map = load_track_map(track, track_id=si.get('track_id'))
             if not track_map and data.get('braking_zones'):
-                si = data.get('session_info', {})
                 try:
                     skeleton = generate_skeleton_track_map(data, si)
                     track_slug = track.lower().replace(' ', '_')
                     written = write_skeleton_track_map(skeleton, track_slug)
                     if written:
                         print(f"  Auto-generated track map: {os.path.basename(written)}")
-                        track_map = load_track_map(track)
+                        track_map = load_track_map(track, track_id=si.get('track_id'))
                 except Exception as e:
                     print(f"  Warning: track map generation failed: {e}")
 

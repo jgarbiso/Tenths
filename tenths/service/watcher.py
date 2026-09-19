@@ -547,16 +547,16 @@ class TelemetryWatcher:
         track = file_info['track']
         date = file_info['date']
 
-        # Track map (load or auto-generate)
-        track_map = load_track_map(track)
+        # Track map (load or auto-generate), keyed on TrackID for overrides.
+        si = data.get('session_info', {})
+        track_map = load_track_map(track, track_id=si.get('track_id'))
         if not track_map and data.get('braking_zones'):
-            si = data.get('session_info', {})
             try:
                 skeleton = generate_skeleton_track_map(data, si)
                 written = write_skeleton_track_map(skeleton, track.lower().replace(' ', '_'))
                 if written:
                     log.info("Auto-generated track map: %s", os.path.basename(written))
-                    track_map = load_track_map(track)
+                    track_map = load_track_map(track, track_id=si.get('track_id'))
             except Exception as exc:
                 # Cosmetic: turn names fall back to percentages.
                 log.warning("Could not auto-generate a track map for %s: %s", track, exc)

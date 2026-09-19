@@ -1,5 +1,32 @@
 # Tenths — Outstanding Issues Worklog (HISTORICAL — DO NOT EXECUTE)
 
+> ## Addendum 2026-09-03 — iRacing Data API terms/rate-limit facts (no conclusion)
+>
+> Recorded during the iRacing track-corner-data investigation
+> (`docs/IRACING_TRACK_API_INVESTIGATION.md`, the live authority on this topic).
+> These are **verifiable facts only**; **no license or permission conclusion is
+> drawn**, in the same discipline RR-001 demands. Owner decision required before
+> any programmatic API use.
+>
+> - Programmatic `/data` access is **not anonymous** — it requires an
+>   authenticated iRacing member session via **OAuth2** (legacy username/password
+>   was retired 2025-12-09). The live `/data/doc` endpoint returned **HTTP 401**
+>   unauthenticated during the investigation.
+> - Access tokens are short-lived (documented **600 s**); refresh tokens are
+>   single-use with a ~7-day life. The headless "password limited" flow requires
+>   **registering an OAuth2 client with iRacing** and is limited to **fewer than
+>   3 users** — not viable for a distributed tool.
+> - The API enforces **rate limits** signalled by HTTP `429` and `x-ratelimit-*`
+>   headers. A specific published numeric quota was **not** located and is **not
+>   asserted**.
+> - Whether iRacing's account terms permit **redistribution of API-returned
+>   data** was **not determined** and is left open for the owner.
+> - Practical outcome for the corner-data feature: moot. The API does **not**
+>   contain per-corner turn positions (only a turn *count* and an SVG image), so
+>   no data is sourced from it. Corner data continues to come from the bundled
+>   community file (RR-001 governs that dataset's terms), now with a build-time
+>   distance-repair layer. See the investigation doc.
+
 > ## STOP. This document is a historical record, not a work queue.
 >
 > **Do not execute any task in this file.** It was written on 2026-07-30 against

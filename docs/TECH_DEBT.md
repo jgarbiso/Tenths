@@ -19,7 +19,7 @@ Items identified during development that are acceptable for current use but shou
 
 | # | Issue | Impact | Fix When |
 |---|-------|--------|----------|
-| A1 | Braking zone detection only catches >50% brake pressure | Misses light-braking corners (e.g., 11 of 16 turns at Barber) | When iRacing API provides official turn positions (Phase 5) |
+| A1 | Braking zone detection only catches >50% brake pressure | Misses light-braking corners (e.g., 11 of 16 turns at Barber) | ~~When iRacing API provides official turn positions (Phase 5)~~ **Premise corrected 2026-09-03:** the iRacing API publishes **no** per-corner turn positions (only a count + an SVG image) — see `docs/IRACING_TRACK_API_INVESTIGATION.md`. The path to full-lap coverage is telemetry-derived sections (POST_MVP "Track Sections"), not an API. |
 | A2 | Schema downgrade not prevented in migration system | If a newer Tenths version's JSON is opened by older version, it stamps the older schema | Before multi-user distribution |
 | A3 | ~~Duplicate/near-identical braking zones~~ | **LARGELY RESOLVED 2026-07-29** by the distance-based zone split (`ZONE_GAP_METERS`). No duplicate turn labels remain on the Qualcomm, Mid-Ohio or Winton sessions. The unclamped-window fallback in `_apex_window` is retained as a guard. | Re-check if duplicates reappear |
 | A4 | Corner sectors cover ~88% of the lap, not 100% | "Total recoverable" is the sum of corner sectors, not a true lap total. Honest but easy to misread as a full-lap figure. | Either label it explicitly in the UI or move to full Voronoi coverage |
@@ -99,7 +99,7 @@ The "Good" check required brake > 30%. Once the driver had progressively release
 | # | Issue | Impact | Fix When |
 |---|-------|--------|----------|
 | TM1 | **Filename matching is fragile** — `load_track_map()` fuzzy matcher strips underscores from filenames but NOT from the search slug | iRacing slug `roadamerica_full` doesn't match file `road_america_full.md`. Silently falls through to no map or loads an auto-generated skeleton instead of the hand-tuned file. Affects any track where iRacing naming differs from our file naming. | **High priority** — fix before next release |
-| TM2 | **`get_turn_name()` uses closest-center with 4% tolerance** — when two turns are close together, the braking zone maps to the wrong one | At Road America, 76.9% (Canada Corner braking zone) matched to T11 Kink (center 72%) instead of T12 Canada Corner (center 81.5%) because it was closer to Kink's center. Any track with densely packed turns (>2 within 10%) is vulnerable. | **High priority** — fix before next release |
+| TM2 | ~~`get_turn_name()` uses closest-center with a percentage tolerance~~ — a lap-% tolerance meant wildly different distances per track (946 m at the Nordschleife vs 21 m at a bullring), turning "no match" into a confidently wrong neighbour | ~~Any track with densely packed turns is vulnerable.~~ | **PARTIALLY RESOLVED 2026-09-02** — tolerance is now a distance in metres (`DEFAULT_TOLERANCE_M`), consistent across track lengths; the exact-range match already handles the Road America Kink/Canada case (`test_boundary_no_ambiguity`) |
 | TM3 | **Auto-generated skeletons can shadow hand-tuned maps** — if both `roadamerica_full.md` (skeleton) and `road_america_full.md` (tuned) exist, exact match wins | User must manually delete the skeleton after building a proper map. No warning or conflict detection. **Changed 2026-08-01 (RR-023):** generated maps now live in `%LOCALAPPDATA%\Tenths\tracks`, searched *before* bundled maps — so a generated skeleton now deliberately wins over a shipped map. Shadowing within the user dir is still undetected. | Medium — add dedup check in `load_track_map()` |
 | TM4 | **No canonical slug registry** — the mapping from iRacing .ibt filename slugs to track map files is implicit via fuzzy matching | No way to guarantee a specific file will be loaded for a given slug. Renaming a file can silently break lookups for all sessions at that track. | Medium — implement alias table |
 
@@ -109,10 +109,11 @@ The bundled landmark integration is active in `tenths/track_map.py`:
 
 1. `load_track_map()` first calls `_load_from_landmarks()`.
 2. `_load_from_landmarks()` reads the bundled `tenths/data/trackLandmarksData.json`, converts the iRacing filename slug from underscores to spaces, and performs an exact `irTrackName` lookup.
-3. Landmark start/end distances are converted to percentages using `approximateTrackLength`; `get_turn_name()` still matches percentage ranges/centers rather than raw telemetry distance.
-4. If no bundled landmark entry is found, `_load_from_md_file()` uses a legacy `tracks/*.md` map.
-5. Frozen resource lookup uses `sys._MEIPASS`.
-6. CrewChief is not searched or required at runtime.
+3. **Corner-distance overrides are applied first (added 2026-09-03).** `_apply_corner_overrides()` patches the corrupt corner *distance* records in the community file from the bundled `tenths/data/track_corner_overrides.json` (generated by `tools/build_track_corner_overrides.py`), keyed on iRacing `TrackID` when the caller passes one, else the slug. This runs **before** validation, so a repaired corner still faces the same guards. It repairs distances only; turn numbers are unchanged. iRacing has no API for corner positions — see `docs/IRACING_TRACK_API_INVESTIGATION.md`.
+4. Landmark start/end distances are converted to percentages using `approximateTrackLength`. Records are validated at this step: a corner whose end is at or before its start, or well beyond the track length, is dropped and logged; a corner ending only marginally past the (approximate) length is clamped to the line rather than lost. `get_turn_name()` matches percentage ranges, then falls back to the nearest center within a **distance** tolerance (`DEFAULT_TOLERANCE_M`, converted per track and capped at `DEFAULT_TOLERANCE_PCT` so short tracks never loosen). See the resolved Track Data Integrity section in `POST_MVP.md`.
+5. If no bundled landmark entry is found, `_load_from_md_file()` uses a legacy `tracks/*.md` map.
+6. Frozen resource lookup uses `sys._MEIPASS`.
+7. CrewChief is not searched or required at runtime.
 
 This resolves most legacy slug/coverage problems for tracks present in the bundled data, but it does not make every old TM1-TM4 concern universally impossible. Legacy Markdown fallback matching remains fuzzy, generated maps can still need maintenance, and percentage conversion remains part of matching.
 
