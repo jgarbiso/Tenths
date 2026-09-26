@@ -1095,6 +1095,37 @@ From https://garage61.net/developer (the docs page needs JavaScript to render):
 - Unknown until an account exists: which channels the lap CSV contains, and
   whether any of this needs a paid tier.
 
+### Setups on Garage 61 (checked 2026-09-26)
+- Garage 61 members share **setup parameters** by default (privacy categories:
+  driving activity, telemetry, setups; each can be turned off, per team, per
+  event, or by car/track/event-type rules). Setups appear beside laps in the
+  lap-record pages. Source: https://garage61.net/docs/usage/privacy
+- **Commercial setups** (recognised setup-shop files) are forced private: others
+  see *which* setup is run but cannot download it. Many fast laps will therefore
+  have no usable setup.
+- API: setups fall under the `driving_data` permission. Default app scope is the
+  authenticated user and teammates; reading other drivers' laps (and so their
+  setups) needs Garage 61 to approve "search all visible data" for the app.
+- **Unverified until an account/token exists:** whether `GET /api/v1/laps/{id}`
+  returns setup parameter values or only a name, and which channels
+  `GET /laps/{id}/csv` contains. The only documented setup download is
+  `setup.sto` inside team data packs (encrypted format).
+- Plans: free core (lap recording, comparison, setup sync); Pro ~$7/mo adds
+  fuel/tyre stats and analysis notes. API tier requirements not documented.
+
+### Proposed use: reference setups and telemetry for the setup notebook
+If lap details expose setup values: fetch the fastest laps with visible,
+non-commercial setups for a car/track, cache them locally (never redistribute —
+Garage 61's privacy policy restricts passing data to third parties), and add to
+the notebook (a) a reference-setup table beside the driver's values, and (b) the
+reference laps' telemetry run through the same equal-g balance and per-corner
+analysis — same car, so steer demand compares directly. Treat reference setups
+as test candidates, not answers: they suit another driver's style.
+
+First step once the owner has a token (owner sets `TENTHS_G61_TOKEN` themselves;
+agents never handle the token): one `GET /laps/{id}` and one CSV export for a
+Mustang GT3 / Road Atlanta lap to confirm what is exposed.
+
 ### Design constraints
 - **Strictly optional.** Tenths' promise is no accounts and fully offline. The
   integration must be off by default, and everything must work without it.

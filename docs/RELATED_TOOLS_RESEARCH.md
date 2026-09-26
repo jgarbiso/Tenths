@@ -91,8 +91,17 @@ direction, ARB direction, ABS/TC semantics and aero targets, recorded in that
 car's `limits.json`. Cross-check against the in-game garage and its setup notes
 (garage Export `.htm`), which are more current than the manual.
 
+## Garage 61 setups (follow-up, 2026-09-26)
+
+Members' setup parameters are public by default; commercial (setup-shop) setups
+are forced private. The API reaches other drivers' laps only with Garage 61's
+approval, and it is unverified whether lap details include setup values. Full
+notes and the proposed integration: `POST_MVP.md` → Garage 61 Reference Laps.
+
 ## Decisions
 
 - 2026-09-25: Owner is not interested in Virtual Paddock (cloud, account,
   metered). Continue building the offline setup notebook.
 - 2026-09-25: Do not build on any open-source project; borrow ideas only (above).
+- 2026-09-26: Owner wants to explore Garage 61 public setups as reference
+  examples. Blocked on an account and API token (owner to set up).
