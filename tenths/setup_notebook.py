@@ -29,6 +29,13 @@ WHERE EACH VALUE COMES FROM
     Carcass temps and wear only update when the car enters the pits, so they are
     captured as a "pit-in snapshot" when present.
 
+A/B/A TESTS
+    A baseline / change / baseline sequence of comparable sessions is reported
+    as effect = B - mean(A, A2) with drift = A2 - A, so a change is judged
+    separately from track and driver drift. The two A runs also feed the noise
+    floor, which pairs each session with the latest earlier one on the same
+    setup (not just the previous session).
+
 WARM-UP LAPS
     Balance and platform are measured only on clean laps from the point the tyre
     pressures settled (< SETTLED_PRESSURE_FRACTION change per lap on every tyre).
@@ -1048,6 +1055,7 @@ def render_markdown(notebook, limits=None):
         out += _setup_table(effective_settings(latest), latest.get("computed", {}), limits)
 
     out += _repeatability_section(entries)
+    out += _aba_section(entries)
     out += ["## Session details (newest first)", ""]
     for i in range(len(entries) - 1, -1, -1):
         out += _session_section(entries, i, units)
@@ -1187,12 +1195,10 @@ def _repeatability_section(entries):
     """
     rows = []
     for i in range(1, len(entries)):
-        base = comparison_base(entries, i)
-        if base is None or not _comparable(entries[i]):
+        base = same_setup_base(entries, i)
+        if base is None:
             continue
         a, b = entries[base], entries[i]
-        if setup_diff(a, b):
-            continue
         ga, gb = _g_cells(a.get("balance")), _g_cells(b.get("balance"))
         deltas = []
         for band in gb:
@@ -1218,6 +1224,106 @@ def _repeatability_section(entries):
         *rows,
         "",
     ]
+
+
+def same_setup_base(entries, i):
+    """The latest earlier comparable session run on exactly the same setup as
+    session i, or None. Not necessarily the previous session: in an A/B/A test
+    the two A runs are separated by B."""
+    if not _comparable(entries[i]):
+        return None
+    for j in range(i - 1, -1, -1):
+        if _comparable(entries[j]) and not setup_diff(entries[j], entries[i]):
+            return j
+    return None
+
+
+def aba_tests(entries):
+    """A/B/A tests: three consecutive comparable sessions where the first and last
+    ran the same setup and the middle one changed it.
+
+    Returns [(a, b, c)] indices. The second baseline measures how far conditions
+    and the driver drifted during the test, so the change's effect can be
+    separated from that drift:  effect = B - (A + A2) / 2,  drift = A2 - A.
+    """
+    comparable = [i for i, e in enumerate(entries) if _comparable(e)]
+    tests = []
+    for a, b, c in zip(comparable, comparable[1:], comparable[2:]):
+        if setup_diff(entries[a], entries[b]) and not setup_diff(entries[a], entries[c]):
+            tests.append((a, b, c))
+    return tests
+
+
+def _aba_effect(va, vb, vc):
+    """(effect, drift) for one measurement, or None if any value is missing."""
+    if va is None or vb is None or vc is None:
+        return None
+    return vb - (va + vc) / 2.0, vc - va
+
+
+def _countersteer_total(entry):
+    cs = (entry.get("balance") or {}).get("countersteer_per_lap") or {}
+    return sum(cs.values()) if cs else None
+
+
+def _aba_section(entries):
+    tests = aba_tests(entries)
+    if not tests:
+        return []
+    out = [
+        "## A/B/A tests (drift-corrected)",
+        "",
+        "Baseline, change, baseline again. The repeat baseline shows how far track "
+        "conditions and the driver moved during the test; the effect of the change is "
+        "B minus the average of the two baselines. An effect smaller than the drift, or "
+        "than the noise floor, is not evidence. Steer demand: higher = more understeer.",
+        "",
+    ]
+    for a, b, c in tests:
+        A, B, C = entries[a], entries[b], entries[c]
+        changes = ", ".join(f"{key.rsplit('.', 1)[-1]} {display_setting(old)} → "
+                            f"{display_setting(new)}" for key, old, new in setup_diff(A, B))
+        out += [f"### Sessions {a + 1} / {b + 1} / {c + 1}: {changes}", ""]
+
+        pace = _aba_effect(*(e["pace"].get("measured_mean_s") or e["pace"].get("clean_mean_s")
+                             for e in (A, B, C)))
+        if pace:
+            out.append(f"- Lap time (settled-lap average): effect {pace[0]:+.3f} s, "
+                       f"drift {pace[1]:+.3f} s (negative = faster).")
+        cs = _aba_effect(*(_countersteer_total(e) for e in (A, B, C)))
+        if cs:
+            out.append(f"- Countersteer events per lap: effect {cs[0]:+.2f}, drift {cs[1]:+.2f}.")
+        temps = [e["conditions"].get("track", "") for e in (A, B, C)]
+        out += [f"- Track temperature: {' / '.join(str(t) for t in temps)}.", ""]
+
+        labels = [_g_label(low, high) for low, high in G_BINS]
+        rows, beaten, compared = [], 0, 0
+        for name, low, high in SPEED_BANDS:
+            cells = []
+            for label in labels:
+                vals = [_g_cells(e.get("balance")).get(name, {}).get(label, {}).get("deg")
+                        for e in (A, B, C)]
+                result = _aba_effect(*vals)
+                if result is None:
+                    cells.append("—")
+                    continue
+                effect, drift = result
+                compared += 1
+                if abs(effect) > abs(drift):
+                    beaten += 1
+                cells.append(f"{effect:+.1f} ({drift:+.1f})")
+            rows.append(f"| {_band_label(name, low, high)} | " + " | ".join(cells) + " |")
+        out += [
+            "Steer demand at equal g — effect (drift), degrees:",
+            "",
+            "| Speed band | " + " | ".join(labels) + " |",
+            "|---|" + "---|" * len(labels),
+            *rows,
+            "",
+        ]
+        if compared:
+            out += [f"The effect is larger than the drift in {beaten} of {compared} cells.", ""]
+    return out
 
 
 def _measured_note(pace):
@@ -1424,6 +1530,9 @@ invents values.
   corner and phase, including off/crash laps. A moment that repeats at the same
   corner across sessions is a car or line trait at that corner; a single long
   one is usually the incident the driver remembers.
+- **A/B/A tests** — drift-corrected effects for baseline/change/baseline
+  sequences. This is the strongest evidence the notebook has; prefer it over a
+  plain before/after comparison.
 - **Pace** — clean average, the average on settled laps, and the lap-time
   trend. A strongly negative trend means the driver was still learning: do not
   credit that pace to the setup.
@@ -1471,12 +1580,46 @@ changes" in `<car>/car_notes.md`, citing the track and date. When the same
 trait shows up at a second track, record it under "Traits seen at more than
 one track".
 
-## Baselines and the noise floor
-When the driver starts working on a setup (not every session), the first stint
-is the current setup, unchanged, in that day's conditions. That gives today's
-baseline and, over time, the same-setup pairs the notebook's noise floor comes
-from. Never judge a change against a baseline driven in different conditions
-if a same-day baseline exists.
+## Test protocol: A/B/A
+When the driver is working on a setup (not every session):
+
+1. **A** — the current setup, unchanged, in today's conditions.
+2. **B** — one change (two only if they act on clearly different things).
+3. **A again** — the current setup once more, same conditions.
+
+The repeat baseline measures how far the track and the driver drifted during
+the test (on 2026-09-25 the track warmed 19 °F and the driver found 1.6 s
+between two runs of the same setup). The notebook detects this sequence and
+reports each result as *effect (drift)*: effect = B minus the average of the
+two A runs. Judge the change on the effect, and only when it is larger than
+both the drift and the noise floor. If the driver cannot run the second A,
+say the verdict is provisional.
+
+Set the decision rule before the driver runs B, and write it into the
+experiment log.
+
+## Order of work and when to stop
+Work through the setup in this order, finishing one stage before the next,
+because each stage changes what the later ones need:
+
+1. Aero — wing and ride heights at speed against the car's targets
+   (limits.json notes).
+2. Anti-roll bars — overall balance.
+3. Springs and bump rubbers — platform vs mechanical grip.
+4. Dampers.
+5. In-car electronics — brake bias, TC, ABS, throttle map.
+6. Differential.
+7. Alignment — camber, toe; tyre temperatures and wear.
+
+Skip a stage when the data shows nothing to fix there; say so in the log.
+Stop and declare the setup done when any of these holds:
+- two consecutive tests show no effect larger than the drift and noise floor;
+- the remaining candidate changes all have low expected impact;
+- the driver is satisfied with the car.
+
+When you stop, write a short summary in the experiment log: the final setup,
+what was tested, and what was learned. Say plainly when remaining gains are
+in the driving rather than the car.
 
 ## What to return
 1. A short diagnosis citing the notebook: session numbers and values.

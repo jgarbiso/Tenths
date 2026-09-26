@@ -35,6 +35,13 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
   per-corner figures (entry and apex speed, minimum-speed spread, time lost,
   trail-braking diagnosis) with changes against the comparison session. A crash
   stint too short to measure is listed but never used as the comparison base.
+- **A/B/A tests.** When a baseline, a change and the baseline again are run in
+  sequence, the notebook reports the change's effect with track and driver drift
+  removed (effect = B minus the average of the two baselines). The noise floor
+  now pairs each session with the latest earlier one on the same setup, not only
+  the previous session. `ENGINEER.md` gives the agent the A/B/A protocol and a
+  fixed order of work (aero, ARBs, springs, dampers, electronics, diff,
+  alignment) with a rule for when to stop.
 - `car_notes.md` per car holds lessons that carry across tracks; each track's
   `.notes.md` holds its experiment log. `ENGINEER.md` tells the agent to read and
   maintain both.

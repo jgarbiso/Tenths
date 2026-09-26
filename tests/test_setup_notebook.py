@@ -498,3 +498,48 @@ class TestComparisonBase:
         entries = [full, crash, after]
         assert nb.comparison_base(entries, 2) == 0
         assert nb.comparison_base(entries, 0) is None
+
+
+class TestABA:
+    def _run(self, recorded, deg, camber="-4.0 deg", lap_s=81.0, laps=(2, 3, 4)):
+        e = _g_entry(recorded, deg, camber=camber)
+        e["pace"]["measured_laps"] = list(laps)
+        e["pace"]["measured_mean_s"] = lap_s
+        return e
+
+    def test_detects_baseline_change_baseline(self):
+        entries = [self._run("a", 35.0), self._run("b", 30.0, camber="-3.6 deg"),
+                   self._run("c", 37.0)]
+        assert nb.aba_tests(entries) == [(0, 1, 2)]
+
+    def test_effect_is_measured_against_both_baselines(self):
+        # Baselines 35 and 37 (drift +2), test 30: effect = 30 - 36 = -6.
+        assert nb._aba_effect(35.0, 30.0, 37.0) == (-6.0, 2.0)
+        assert nb._aba_effect(35.0, None, 37.0) is None
+
+    def test_not_aba_when_the_second_baseline_differs(self):
+        entries = [self._run("a", 35.0), self._run("b", 30.0, camber="-3.6 deg"),
+                   self._run("c", 37.0, camber="-3.8 deg")]
+        assert nb.aba_tests(entries) == []
+
+    def test_short_stints_are_skipped(self):
+        crash = self._run("b0", 20.0, camber="-3.0 deg", laps=(1,))
+        entries = [self._run("a", 35.0), crash, self._run("b", 30.0, camber="-3.6 deg"),
+                   self._run("c", 37.0)]
+        assert nb.aba_tests(entries) == [(0, 2, 3)]
+
+    def test_section_reports_effect_and_drift(self):
+        entries = [self._run("a", 35.0, lap_s=81.0),
+                   self._run("b", 30.0, camber="-3.6 deg", lap_s=80.6),
+                   self._run("c", 37.0, lap_s=80.8)]
+        text = "\n".join(nb._aba_section(entries))
+        assert "Sessions 1 / 2 / 3: Camber -4.0 deg → -3.6 deg" in text
+        assert "effect -0.300 s, drift -0.200 s" in text
+        assert "-6.0 (+2.0)" in text
+        assert "larger than the drift in 1 of 1 cells" in text
+
+    def test_noise_floor_pairs_the_two_baselines(self):
+        entries = [self._run("a", 35.0), self._run("b", 30.0, camber="-3.6 deg"),
+                   self._run("c", 37.0)]
+        assert nb.same_setup_base(entries, 2) == 0
+        assert "| 1 → 3 | 1 | 2.0 | 2.0 |" in "\n".join(nb._repeatability_section(entries))
