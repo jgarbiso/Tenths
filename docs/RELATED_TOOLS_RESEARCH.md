@@ -91,6 +91,22 @@ direction, ARB direction, ABS/TC semantics and aero targets, recorded in that
 car's `limits.json`. Cross-check against the in-game garage and its setup notes
 (garage Export `.htm`), which are more current than the manual.
 
+## Setup knowledge sources (follow-up, 2026-09-26)
+
+| Source | What it gives | Use |
+|---|---|---|
+| iRacing **Official Setups** in the garage (baseline, `_sprint`, `_endurance`, `_wet`, `fixed`, downforce variants per the car manual) | iRacing's own car-specific setups for the current build; exportable to readable `.htm` via File Actions > Export | **Best reference source**: free, no account, no licensing issue. Compare variants to see how iRacing moves each setting between trims. Proposed: an importer for garage `.htm` exports as notebook reference setups. |
+| iRacing car user manual (per car) | Direction of every adjustment, aero targets, in-car setting semantics | Already used for the Mustang GT3 (`limits.json` guide) |
+| [OptimumG Tech Tips](https://optimumg.com/category/technical-papers/tech-tips/) (free PDFs; e.g. [Springs & Dampers 2](http://downloads.optimumg.com/Technical_Papers/Springs&Dampers_Tech_Tip_2.pdf), [5](http://downloads.optimumg.com/Technical_Papers/Springs&Dampers_Tech_Tip_5.pdf)) | Physics of roll stiffness distribution, damping ratios | Background for the springs/dampers stages |
+| [Sim Racing Manual — understeer/oversteer fixes](https://simracingmanual.com/setups/understeer-oversteer-fixes/) | Lever-by-phase map: brake bias (entry), diff (exit), ARBs (mid), wing (high speed), pressures (everywhere) | Consistent with the Mustang manual; matches the notebook's phases |
+| [iRacing Car Setup Guide (2010)](https://ir-core-sites.iracing.com/members/pdfs/iRacing_Car_Setup_Guide_20100910.pdf) | iRacing's official general fundamentals | Old; fundamentals only |
+| Books: Carroll Smith *Tune to Win*; Milliken *Race Car Vehicle Dynamics*; Paul Haney *The Racing & High-Performance Tire* | Standard references behind most guides | Paid |
+| Track Titan setup library | Mustang GT3 "High Downforce Baseline" page exists | Values not visible without a paid login — not usable |
+| [SimRace.app](https://simrace.app/problems) | Another AI race engineer reading telemetry, free tier | Competitor, not a reference |
+
+No open-source project was found with a reusable handling-problem -> setup-change
+knowledge base.
+
 ## Garage 61 setups (follow-up, 2026-09-26)
 
 Members' setup parameters are public by default; commercial (setup-shop) setups
