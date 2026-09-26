@@ -175,6 +175,9 @@ See `installer/` — `tenths.spec` (PyInstaller) and `tenths_setup.iss` (Inno Se
 
 ### Documentation
 
+**AI agents: start with `AGENTS.md`.** It lists the contracts, where each one
+lives, and the iRacing data facts that have caused real bugs.
+
 **Start here to pick up development:** `docs/POST_MVP.md` for what is deliberately
 deferred and why, then `docs/RELEASE_REMEDIATION_PLAN.md` for the issue history and
 the release gate. The test suite is the only executable statement of current

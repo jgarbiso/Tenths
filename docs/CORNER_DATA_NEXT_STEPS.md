@@ -1,9 +1,9 @@
 # Corner / Turn Data — Current State and Next Steps
 
 **Written 2026-09-03. This is a live work queue, not a historical document.**
-**Nothing described here is committed.** Read the "Uncommitted state" section
-first — the working tree contains three separate pieces of work stacked on top of
-one another, and committing them blindly as one change would be wrong.
+**Status 2026-09-25:** all three pieces of work below are committed — #1 and #2
+together in `bae586f`, the detection prototype (#3) in `405fc6a`. The review
+fixes listed under "Review findings" were NOT applied; they are still open.
 
 Related documents:
 - `docs/IRACING_TRACK_API_INVESTIGATION.md` — why the iRacing API cannot supply
@@ -29,46 +29,20 @@ count disagrees with iRacing's own count on 6 of the 10 track configs measured**
 
 ---
 
-## Uncommitted state — READ BEFORE COMMITTING
+## What was committed (formerly "Uncommitted state")
 
-`git log` HEAD is `778410c`. Everything below is uncommitted working tree.
-There are **three independent changes entangled**, and `tenths/track_map.py`
-contains parts of two of them.
-
-### 1. Track Data Integrity (load-time validation) — ready to commit
-- `tenths/track_map.py`: `_load_from_landmarks` validation (drops corners where
-  `end <= start`, or `end` beyond track length + `_LENGTH_GRACE_FRACTION`; clamps
-  small overruns), `_ensure_unique_full_names`, and metre-based fuzzy tolerance
-  (`DEFAULT_TOLERANCE_M`, capped at `DEFAULT_TOLERANCE_PCT` via `_tolerance_pct`).
-- `tests/test_track_data_integrity.py` (25 tests).
-- Verified: drops exactly the 4 corrupt records out of 2296 corners; `montreal`
-  (11) and `nordschleife tourist` (41) preserved; 0 of 261 tracks get a looser
-  tolerance than the legacy 5%.
-
-### 2. Corner-distance overrides — reviewed, needs two small fixes
-- `tools/build_track_corner_overrides.py`, `tenths/data/track_corner_overrides.json`,
-  `tests/test_track_corner_overrides.py`, `tests/fixtures/`,
-  `docs/IRACING_TRACK_API_INVESTIGATION.md`.
-- `tenths/track_map.py`: `_load_overrides`, `_corrections_for`,
-  `_apply_corner_overrides`, plus `track_id` params.
-- `tenths/summary.py`, `report.py`, `process.py`, `service/watcher.py`: thread
-  `track_id` into `load_track_map`.
-- Doc updates in `docs/OUTSTANDING_ISSUES.md`, `POST_MVP.md`, `TECH_DEBT.md`.
-
-**This change depends on #1** (the whole "apply override, then validate" design
-assumes the validator exists). Commit #1 first.
-
-### 3. Corner detection prototype — investigation only, do not ship
-- `tools/detect_corners.py`. Not wired into production. Findings below.
-
-**Suggested commit order:** #1, then #2 (with the fixes below), then #3 separately
-or not at all until it graduates.
-
-Full suite is green at **724 passed**.
-
----
+- **Track Data Integrity** (load-time validation in `tenths/track_map.py`,
+  `tests/test_track_data_integrity.py`) and **corner-distance overrides**
+  (`tools/build_track_corner_overrides.py`, `tenths/data/track_corner_overrides.json`,
+  `tests/test_track_corner_overrides.py`, `track_id` threaded into
+  `load_track_map`) — commit `bae586f`, as one commit rather than the two this
+  document suggested.
+- **Corner detection prototype** (`tools/detect_corners.py`) — commit `405fc6a`.
+  Still investigation only; not wired into production.
 
 ## Review findings on the override work (#2) that still need action
+
+Checked 2026-09-25: none of these four has been applied yet.
 
 1. **`docs/IRACING_TRACK_API_INVESTIGATION.md` overclaims Martinsville.** It says
    T3 is "fully recovered (a clean transposition)". The swap produces
@@ -148,10 +122,8 @@ file's hand-entered distances.
 
 ## Next steps, in priority order
 
-### 1. Commit the stacked work (30 min, do this first)
-Split into the commits described above, in dependency order, applying the review
-fixes. Leaving three entangled changes uncommitted is the biggest risk here —
-a future session will not be able to tell them apart.
+### 1. ~~Commit the stacked work~~ — done (`bae586f`, `405fc6a`)
+Apply the four open review findings above instead.
 
 ### 2. Backfill the four `track_id` values (15 min)
 This removes finding #3 and makes the TrackID path actually live. The IDs are
