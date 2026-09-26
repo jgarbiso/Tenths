@@ -21,7 +21,10 @@ online integration must be optional and off by default.
 3. `docs/RELEASE_REMEDIATION_PLAN.md` — issue history and the release gate.
 4. `docs/TECH_DEBT.md` — known defects; resolved items keep their record.
 5. Live work queues: `docs/CORNER_DATA_NEXT_STEPS.md` (turn data).
-6. `CHANGELOG.md` `[Unreleased]` — what has changed since the last beta.
+6. `docs/RELATED_TOOLS_RESEARCH.md` — competing and open-source tools, their
+   licenses (what may and may not be reused), and ideas already adopted. Check
+   it before researching the landscape again.
+7. `CHANGELOG.md` `[Unreleased]` — what has changed since the last beta.
 
 Documents with a **HISTORICAL** banner at the top (`OUTSTANDING_ISSUES.md`,
 `DISTRIBUTION_READINESS.md`, `HANDOFF.md`) are context, not instructions.

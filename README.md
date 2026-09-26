@@ -195,6 +195,7 @@ behaviour.
 - `docs/RELEASE_REMEDIATION_PLAN.md` — canonical release blockers, why each is a defect, and the resolution record
 - `docs/PACKAGING.md` — bundle contents and measured size
 - `docs/TECH_DEBT.md` — known issues and historical plans
+- `docs/RELATED_TOOLS_RESEARCH.md` — competing and open-source tools (2026-09-25), licenses, ideas adopted
 
 Historical, kept for context but **not instructions to follow** — each opens with
 a banner saying so:
