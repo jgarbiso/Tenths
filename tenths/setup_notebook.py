@@ -1519,6 +1519,14 @@ invents values.
    track: what was already tested and concluded.
 2b. `<car>/car_notes.md` — what is known about this car across all tracks
    (how it responds to each adjustment). Start from it on a new track.
+2c. `<car>/reference_setups.md` if it exists — iRacing's Official Setups for
+   the car (baseline, sprint/endurance at each downforce level, wet, fixed) and
+   the driver's own, exactly as the garage exports them, with every value where
+   the driver's setup sits outside all of iRacing's. These are iRacing's
+   engineers' starting points: use them to spot unusual choices and as test
+   candidates (a whole official setup can be the "B" of an A/B/A), never as
+   answers. Pick the downforce trim from the car manual's track table or the
+   session's top speed.
 3. `<car>/limits.json` if it exists — garage ranges, steps and options. Never
    recommend a value outside min/max. Entries with `"linked": true` (ride height,
    camber, toe, bump rubber gap) have legal limits that move with other settings:
@@ -1728,7 +1736,9 @@ def notebook_cli(args):
              "  tenths notebook add <file.ibt>     Add one session\n"
              "  tenths notebook rebuild [car]      Add every .ibt in telemetry + archive\n"
              "                                     (optionally only cars starting with [car])\n"
-             "  tenths notebook limits <car>       Create a garage-limits template for a car")
+             "  tenths notebook limits <car>       Create a garage-limits template for a car\n"
+             "  tenths notebook references <car>   Import garage setup exports (.htm) as\n"
+             "                                     reference setups (iRacing Official + yours)")
     if args and args[0] in ("-h", "--help"):
         print(usage)
         return
@@ -1774,6 +1784,20 @@ def notebook_cli(args):
             else:
                 print(f"  skip   {os.path.basename(path)}")
         print(f"Done. {len(updated)} notebook(s) updated under {config.NOTEBOOK_DIR}")
+    elif command == "references":
+        if not rest:
+            print("Usage: tenths notebook references <car>   (e.g. fordmustanggt3)")
+            return
+        from tenths.garage_export import ExportFormatError, build_references
+        try:
+            md_path, setups, skipped = build_references(rest[0])
+        except ExportFormatError as exc:
+            print(f"Could not import references: {exc}")
+            return
+        official = sum(1 for s in setups if s["source"] == "official")
+        print(f"Imported {official} official and {len(setups) - official} own setup(s): {md_path}")
+        for name, reason in skipped:
+            print(f"  skipped {name}: {reason}")
     elif command == "limits":
         if not rest:
             print("Usage: tenths notebook limits <car>   (e.g. fordmustanggt3)")

@@ -52,6 +52,7 @@ CI (`.github/workflows/ci.yml`) runs the suite on push. Releases: see
 | `session_summary.json` schema (always mph — machine contract) | `tenths/summary.py` |
 | Setup notebook: sources of every value, balance metric, warm-up rule, noise floor | `tenths/setup_notebook.py` module docstring |
 | Race-engineer agent instructions (generated into the notebook folder) | `ENGINEER_GUIDE` in `tenths/setup_notebook.py` |
+| Garage setup exports (.htm): format, strict alignment, own vs official | `tenths/garage_export.py` module docstring |
 | Trail-braking diagnosis thresholds and their provenance | comment above `analyzer.diagnose_trail_zone` |
 | Turn names / landmark data and its known unreliability | `tenths/track_map.py`; `docs/CORNER_DATA_NEXT_STEPS.md` |
 
@@ -73,7 +74,9 @@ Each was measured on real sessions; the linked location has the evidence.
   settle. Balance comparisons use settled laps only.
 - The iRacing API has no per-corner positions; do not re-investigate
   (`docs/IRACING_TRACK_API_INVESTIGATION.md`). `.sto` setup files are encrypted;
-  do not try to read or write them.
+  do not try to read or write them. The garage's File Actions > Export `.htm`
+  is readable; `tenths/garage_export.py` parses it (iRacing's Official Setups
+  exported this way are the best free reference setups).
 
 ## Tests
 

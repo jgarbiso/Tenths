@@ -42,6 +42,13 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
   the previous session. `ENGINEER.md` gives the agent the A/B/A protocol and a
   fixed order of work (aero, ARBs, springs, dampers, electronics, diff,
   alignment) with a rule for when to stop.
+- **Reference setups from garage exports.** `tenths notebook references <car>`
+  reads every setup exported from the iRacing garage (File Actions > Export,
+  `.htm`) in the car's setups folder — iRacing's Official Setups and your own —
+  and writes `reference_setups.md` beside the notebook: your setups against
+  iRacing's values setting by setting, marking any value no official setup uses.
+  Exports are matched to the car's setup fields in order with every label
+  checked; a file that does not line up is skipped, never guessed.
 - `car_notes.md` per car holds lessons that carry across tracks; each track's
   `.notes.md` holds its experiment log. `ENGINEER.md` tells the agent to read and
   maintain both.

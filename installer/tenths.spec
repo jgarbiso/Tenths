@@ -67,6 +67,7 @@ a = Analysis(
         'tenths.index_generator',
         'tenths.setup_notebook',
         'tenths.tyres',
+        'tenths.garage_export',
         'tenths.service',
         'tenths.service.watcher',
         'tenths.service.notifier',
