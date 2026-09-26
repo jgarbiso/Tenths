@@ -143,6 +143,13 @@ COUNTERSTEER_MIN_STEER_RAD = 0.05
 COUNTERSTEER_MIN_YAW_RAD_S = 0.1
 COUNTERSTEER_MIN_SAMPLES = 6     # 0.1 s at 60 Hz
 
+# Setup values the garage recalculates, so the same saved setup can record a
+# slightly different number from one session to the next. Differences within
+# the tolerance (in the YAML's metric unit) are not setup changes.
+# 2026-09-26: lemans.sto recorded every ride height 0.1 mm higher than on
+# 2026-09-25 with the same file, fuel and pressures.
+SETUP_JITTER = {"RideHeight": 0.3}   # mm
+
 # Cells need this many samples in both sessions to count toward the noise floor.
 REPEATABILITY_MIN_SAMPLES = 200
 # A session needs this many measured laps to serve as a comparison base.
@@ -458,12 +465,16 @@ def tire_profile(df, laps, times):
         col = f"{c}pressure"
         if col in df.columns:
             hot[c] = round(float(df.loc[df["Lap"] == last_lap, col].mean()), 1)
-    if len(laps) >= 2 and "LFpressure" in df.columns:
+    # Compare the last clean lap with the lap driven just before it, clean or not:
+    # two clean laps can be several laps apart (2026-09-26: laps 4 and 7), which
+    # made settled tyres look as if they were still warming.
+    previous = laps[-1] - 1
+    if "LFpressure" in df.columns and (df["Lap"] == previous).any():
         changes = []
         for c in CORNERS:
             col = f"{c}pressure"
             if col in df.columns:
-                a = df.loc[df["Lap"] == laps[-2], col].mean()
+                a = df.loc[df["Lap"] == previous, col].mean()
                 b = df.loc[df["Lap"] == laps[-1], col].mean()
                 if b:
                     changes.append(abs(b - a) / b)
@@ -997,9 +1008,21 @@ def setup_diff(previous, current):
     changes = []
     for key in sorted(set(before) | set(after)):
         old, new = before.get(key), after.get(key)
-        if _normalise(old) != _normalise(new):
+        if _normalise(old) != _normalise(new) and not _within_jitter(key, old, new):
             changes.append((key, old, new))
     return changes
+
+
+def _within_jitter(key, old, new):
+    """True when two values of a garage-computed setting differ only by the
+    garage's own recalculation, not by a driver change."""
+    tolerance = SETUP_JITTER.get(key.rsplit(".", 1)[-1])
+    if tolerance is None or old is None or new is None:
+        return False
+    a, b = _SETTING_VALUE.fullmatch(str(old)), _SETTING_VALUE.fullmatch(str(new))
+    if not a or not b or a.group(3) != b.group(3):
+        return False
+    return abs(float(a.group(1) + a.group(2)) - float(b.group(1) + b.group(2))) <= tolerance
 
 
 def _normalise(value):

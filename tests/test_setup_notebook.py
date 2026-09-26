@@ -543,3 +543,31 @@ class TestABA:
                    self._run("c", 37.0)]
         assert nb.same_setup_base(entries, 2) == 0
         assert "| 1 → 3 | 1 | 2.0 | 2.0 |" in "\n".join(nb._repeatability_section(entries))
+
+
+class TestSetupJitter:
+    def test_ride_height_recalculation_is_not_a_change(self):
+        # 2026-09-26: same lemans.sto recorded 55.0 mm where 2026-09-25 had 54.9 mm.
+        a, b = _entry(), _entry()
+        a["settings"]["Chassis.LeftFront.RideHeight"] = "54.9 mm"
+        b["settings"]["Chassis.LeftFront.RideHeight"] = "55.0 mm"
+        assert nb.setup_diff(a, b) == []
+
+    def test_real_ride_height_change_still_counts(self):
+        a, b = _entry(), _entry()
+        a["settings"]["Chassis.LeftRear.RideHeight"] = "60.9 mm"
+        b["settings"]["Chassis.LeftRear.RideHeight"] = "63.4 mm"
+        assert [d[0] for d in nb.setup_diff(a, b)] == ["Chassis.LeftRear.RideHeight"]
+
+    def test_other_settings_have_no_tolerance(self):
+        a, b = _entry(camber="-4.0 deg"), _entry(camber="-3.9 deg")
+        assert len(nb.setup_diff(a, b)) == 1
+
+
+class TestPressureStableUsesTheLapBefore:
+    def test_clean_laps_far_apart(self):
+        # Road Atlanta 2026-09-26 LF psi: clean laps 3, 4, 7; laps 5-6 had offs.
+        psi = {3: 25.6, 4: 26.0, 5: 26.3, 6: 26.4, 7: 26.5}
+        df = _laps_frame({lap: {f"{c}pressure": v / 0.145038 for c in nb.CORNERS}
+                          for lap, v in psi.items()})
+        assert nb.tire_profile(df, [3, 4, 7], {})["pressure_stable"] is True
