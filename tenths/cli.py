@@ -27,7 +27,8 @@ def config_cli(args):
               "  tenths config                              Show resolved paths\n"
               "  tenths config --telemetry-root <path>      Set the telemetry folder\n"
               "  tenths config --reset-telemetry-root       Go back to auto-detection\n"
-              "  tenths config --units imperial|metric      Set display units")
+              "  tenths config --units imperial|metric      Set display units\n"
+              "  tenths config --setup-notebook on|off      Record setups after each session")
         return
 
     if "--units" in args:
@@ -47,6 +48,22 @@ def config_cli(args):
             return
         labels = "mph, °F" if value == cfg.UNITS_IMPERIAL else "km/h, °C"
         print(f"Display units set to: {value} ({labels})")
+        print(f"Saved to: {written}")
+        print("Restart Tenths for this to take effect.")
+        return
+
+    if "--setup-notebook" in args:
+        index = args.index("--setup-notebook")
+        value = args[index + 1].strip().lower() if index + 1 < len(args) else ""
+        if value not in ("on", "off"):
+            print("Error: --setup-notebook needs on or off")
+            return
+        try:
+            written = cfg.save_settings({'setup_notebook': value == "on"})
+        except OSError as exc:
+            print(f"Error: could not write settings: {exc}")
+            return
+        print(f"Setup notebook capture: {value}")
         print(f"Saved to: {written}")
         print("Restart Tenths for this to take effect.")
         return
@@ -112,6 +129,8 @@ def config_cli(args):
     print(f"  Archive folder   : {cfg.ARCHIVE_DIR}")
     print(f"  Track maps       : {cfg.USER_TRACKS_DIR}"
           f"{'' if os.path.isdir(cfg.USER_TRACKS_DIR) else '   (none generated yet)'}")
+    print(f"  Setup notebook   : {cfg.NOTEBOOK_DIR}"
+          f"   ({'on' if cfg.notebook_enabled() else 'off'})")
     print(f"  Log file         : {log_path()}")
     print(f"  Settings file    : {cfg.SETTINGS_PATH}"
           f"{'' if os.path.isfile(cfg.SETTINGS_PATH) else '   (not created yet)'}")
@@ -213,6 +232,10 @@ def main(argv=None):
         else:
             print("No sessions found.")
 
+    elif command == "notebook":
+        from tenths.setup_notebook import notebook_cli
+        notebook_cli(sys.argv[2:])
+
     elif command == "summary":
         from tenths.summary import generate_summary_cli
         sys.argv = [sys.argv[0]] + sys.argv[2:]
@@ -254,6 +277,9 @@ Commands:
   report <file.ibt>               Generate HTML visual report for a session
   summary <file.ibt>              Generate session_summary.json for a session
   migrate [path]                  Upgrade all session_summary.json to current schema
+  notebook                        List setup notebooks (per car/track setup history)
+  notebook rebuild [car]          Add past sessions to the setup notebook
+  notebook limits <car>           Create a garage-limits template for a car
   incident <file.ibt> [laps]      Incident forensics (e.g., 2,3,4)
   results <file.json|csv>         Parse iRacing race results
 

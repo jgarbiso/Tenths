@@ -224,6 +224,18 @@ def _never_write_track_maps_into_the_repo(monkeypatch, tmp_path_factory):
     )
 
 
+@pytest.fixture(autouse=True)
+def _never_write_the_real_setup_notebook(monkeypatch, tmp_path_factory):
+    """Guard: the process/watcher pipeline records every session in the setup
+    notebook under the real telemetry folder. Redirect it per test."""
+    try:
+        from tenths import config
+    except Exception:
+        return
+    monkeypatch.setattr(config, "NOTEBOOK_DIR",
+                        str(tmp_path_factory.mktemp("setup_notebook")), raising=False)
+
+
 # ─── Synthetic telemetry (machine independent) ────────────────────────────────
 
 @pytest.fixture(scope="session")

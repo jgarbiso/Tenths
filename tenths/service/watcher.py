@@ -608,6 +608,10 @@ class TelemetryWatcher:
             raise RuntimeError(
                 f"expected artifacts were not written to {session_dir}: {missing}")
 
+        # Setup notebook — optional, logged and never fatal
+        from tenths.process import record_in_notebook
+        record_in_notebook(filepath, file_info, log=lambda msg: log.info(msg.strip()))
+
         elapsed = time.time() - start_time
         best_time = summary['best_lap']['time_formatted']
         laps = summary['total_valid_laps']

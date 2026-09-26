@@ -19,13 +19,15 @@ Display — what a human sees:
     temperature  °F (imperial, default) or °C (metric)
     distance     miles (imperial, default) or km (metric)
 
-THE FOUR DISPLAY BOUNDARIES
+THE DISPLAY BOUNDARIES
 Each calls `to_display_units()` (or a scalar helper) exactly once, then works in
 display units from that point on:
     tenths/report.py                 session_report.html
     tenths/process.py                session_notes.md (via `generate_notes`)
     tenths/track_map_generator.py    generated track-map .md files
     tenths/incidents.py              `tenths incident` console output
+    tenths/setup_notebook.py         setup notebook .md, including the setup
+                                     strings, which iRacing always writes metric
 
 NOT a display boundary:
     tenths/summary.py    `session_summary.json` is a machine contract read by

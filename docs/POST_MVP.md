@@ -1060,3 +1060,55 @@ The same comparison independently confirms the flag-decision invariance: the rep
 - **Rename summary keys to SI** (`*_mph` → `*_mps`) with a schema bump and a migration for existing archived files.
 - **Apex-std colouring is still an absolute threshold.** `report.py` colours the apex-std cell against fixed bands (5 and 2 mph) rather than the per-corner computed `apex_std_limit_mph`. This is the same absolute-threshold defect RR-021 fixed for the spread rule and RR-022 fixed for over-braking; it survived in the colouring path. The *unit* half is now handled — the bands come from `_units_payload()` as `U.apex_std_bad` / `U.apex_std_warn`, so they scale with the display unit instead of meaning 3.1 mph in metric. Making them speed-relative is the part still outstanding, and it needs its own validation because it changes which cells light up.
 - **Stale unit labels in generated track maps.** `track_map_generator.py` bakes speeds and their label into the `.md` files it writes to `%LOCALAPPDATA%\Tenths\tracks`. A map generated in imperial keeps imperial labels after a switch to metric. Because the label is written alongside the value the file is never wrong, only inconsistent with the current setting. Regenerating on unit change is not worth building yet.
+
+---
+
+## Garage 61 Reference Laps (Optional Integration)
+
+**Priority:** After the setup notebook has settled in
+**Effort:** ~1-2 days once an account exists to test against
+**Status:** researched 2026-09-25, not started
+
+### Why
+Tenths only compares a driver against themselves. Corner variance measures time
+lost against the driver's own best sector, so a corner driven consistently but
+slowly shows no loss at all — the gap the driver cares about most is invisible.
+The setup notebook has the same blind spot: on 2026-09-25 at Road Atlanta the
+driver found 1.6 s by driving while two setup changes found nothing, and there was
+no way to say how much time was left in the driver versus the car. A faster
+driver's lap in the same car and track, compared corner by corner, is that
+missing outside reference.
+
+### What the Garage 61 API offers (checked 2026-09-25)
+From https://garage61.net/developer (the docs page needs JavaScript to render):
+- `GET /api/v1/laps` (find laps and lap records), `GET /api/v1/laps/{id}`, and
+  `GET /api/v1/laps/{id}/csv` (a lap's telemetry as CSV); also `ghost.bin`.
+- Auth: a personal access token (own and teammates' data) or OAuth2 with PKCE for
+  other users. Bearer token in the Authorization header.
+- Permissions: `driving_data` (activity, telemetry, setups) requires approval on
+  the API application AND user opt-in. By default an app can only query the
+  authenticated user and their teammates; searching all visible laps needs extra
+  approval from Garage 61.
+- "There is no API stability yet" — endpoints may change.
+- Setups only appear as `setup.sto` downloads inside team data packs — the same
+  encrypted format as local files. **No setup ranges or readable setup values.**
+- Unknown until an account exists: which channels the lap CSV contains, and
+  whether any of this needs a paid tier.
+
+### Design constraints
+- **Strictly optional.** Tenths' promise is no accounts and fully offline. The
+  integration must be off by default, and everything must work without it.
+- The user enters their own token in settings; Tenths never handles Garage 61
+  credentials any other way. Store it like other settings, never log it.
+- Cache fetched reference laps locally (per car/track) so reports stay offline
+  once fetched and the API is not hit on every session.
+
+### Proposed shape
+1. `tenths reference fetch <car> <track>` — pull the fastest visible lap's CSV.
+2. Align the reference to the driver's best lap by lap distance; compute per-corner
+   entry / minimum / exit speed and time delta.
+3. Report: a "vs reference" column in the corner table — the first view of time
+   lost in corners the driver takes consistently.
+4. Setup notebook: record the gap to reference per corner, so the race engineer
+   can separate "the car cannot do it" from "the reference driver does it in the
+   same car".

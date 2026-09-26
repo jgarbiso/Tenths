@@ -10,6 +10,43 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
 
 ## [Unreleased]
 
+### Added
+
+- **Setup notebook.** Each processed session is added to
+  `setup_notebook/<car>/<track>.md` beside your telemetry: the setup as driven,
+  what changed since the previous session, pace, a balance profile (steering
+  needed per unit of rotation, and countersteer events, by corner speed and
+  phase), tyre temperatures inner/middle/outer, hot pressures, pit-in carcass
+  temps and tread used, and ride height. It is written for an AI agent to read and
+  recommend a Fastest, Balanced or Stable setup from; `ENGINEER.md` in the folder
+  holds the agent's instructions. New commands: `tenths notebook`,
+  `tenths notebook rebuild [car]`, `tenths notebook limits <car>`, and
+  `tenths config --setup-notebook on|off`. A notebook failure never stops a
+  session from being processed.
+- The notebook compares balance **at equal lateral g**, reports how hard the car
+  was driven, and shows a **noise floor** from sessions run on the same setup, so
+  a faster driver is not mistaken for a car with more understeer. Balance is
+  measured only once tyre pressures have settled, every countersteer moment of
+  0.25 s or longer is listed with its corner (including crash laps), and a
+  falling lap-time trend is flagged as the driver still improving. Setup values
+  are shown in your display units and snapped to the garage's step using an
+  optional per-car `limits.json`.
+- Each notebook session links to its session report and carries that report's
+  per-corner figures (entry and apex speed, minimum-speed spread, time lost,
+  trail-braking diagnosis) with changes against the comparison session. A crash
+  stint too short to measure is listed but never used as the comparison base.
+- `car_notes.md` per car holds lessons that carry across tracks; each track's
+  `.notes.md` holds its experiment log. `ENGINEER.md` tells the agent to read and
+  maintain both.
+- The notebook judges lap validity on each lap's own time, so a first flying lap
+  is no longer dropped and sessions that previously had "no valid laps" (e.g.
+  Road America 2026-09-15 21:49) are recorded. Reports are unchanged; the shared
+  analyzer fix is tracked separately.
+- In-car settings (brake bias, TC, ABS, throttle map) are taken from live
+  telemetry. The garage snapshot in the `.ibt` header can differ from what was
+  driven — at Road Atlanta it recorded TC 1 / ABS 4 / 53.0% bias for a session run
+  entirely on TC 4 / ABS 3 / 51.5%.
+
 ### Changed
 
 - **The Summary map is larger and its corner labels no longer collide.** The

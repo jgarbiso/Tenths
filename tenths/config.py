@@ -293,6 +293,17 @@ ICON_PATH = os.path.join(ASSETS_DIR, "tenths.ico")
 # Downloads folder — for race result CSV auto-matching
 DOWNLOADS_DIR = os.path.expanduser("~/Downloads")
 
+# Setup notebook — per car/track setup history for an AI race engineer to read.
+# Lives beside the telemetry (not in %LOCALAPPDATA%) because it is the user's
+# own record, like the session reports, and must survive an uninstall.
+NOTEBOOK_DIR = os.environ.get(
+    'TENTHS_NOTEBOOK_DIR', os.path.join(TELEMETRY_ROOT, "setup_notebook"))
+
+
+def notebook_enabled():
+    """True unless the user turned the setup notebook off in settings."""
+    return bool(SETTINGS.get('setup_notebook', True))
+
 
 # ── Session Output Helpers ────────────────────────────────────────────────────
 

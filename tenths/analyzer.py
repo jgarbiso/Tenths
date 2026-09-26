@@ -194,25 +194,30 @@ def _load_session_yaml(raw_bytes):
     return yaml.safe_load(text)
 
 
-def parse_session_info(filepath):
-    """
-    Parse the session info YAML header from an .ibt file.
-    Returns metadata dict with car name, track name, event type, etc.
-    No pyirsdk needed — reads the raw binary header directly.
+def read_session_yaml(filepath):
+    """Return the full parsed session-info YAML of an .ibt file ({} if empty).
 
-    Free-text driver fields are sanitised before parsing; see
-    _load_session_yaml for why a raw yaml.safe_load is unsafe here.
+    No pyirsdk needed — reads the raw binary header directly. Free-text driver
+    fields are sanitised before parsing; see _load_session_yaml for why a raw
+    yaml.safe_load is unsafe here.
     """
     import struct
 
     with open(filepath, 'rb') as f:
         header = f.read(112)
-        _, _, _ = struct.unpack_from('iii', header, 0)  # ver, status, tick_rate
         _, session_info_len, session_info_offset = struct.unpack_from('iii', header, 12)
 
         f.seek(session_info_offset)
         session_info_raw = f.read(session_info_len)
-        info = _load_session_yaml(session_info_raw)
+        return _load_session_yaml(session_info_raw) or {}
+
+
+def parse_session_info(filepath):
+    """
+    Parse the session info YAML header from an .ibt file.
+    Returns metadata dict with car name, track name, event type, etc.
+    """
+    info = read_session_yaml(filepath)
 
     if not info:
         return {}
@@ -271,12 +276,18 @@ def parse_session_info(filepath):
         'humidity_pct': wi.get('TrackRelativeHumidity', ''),
     }
 
-def parse_ibt(filepath):
-    """Parse .ibt file and return normalized DataFrame."""
+def parse_ibt(filepath, extra_channels=()):
+    """Parse .ibt file and return normalized DataFrame.
+
+    `extra_channels` are loaded alongside COACHING_CHANNELS in their native
+    iRacing units; only the coaching channels listed below are normalized.
+    """
     ibt = irsdk.IBT()
     ibt.open(filepath)
 
-    available = [ch for ch in COACHING_CHANNELS if ch in ibt.var_headers_names]
+    wanted = list(COACHING_CHANNELS) + [ch for ch in extra_channels
+                                        if ch not in COACHING_CHANNELS]
+    available = [ch for ch in wanted if ch in ibt.var_headers_names]
 
     data = {}
     for ch in available:

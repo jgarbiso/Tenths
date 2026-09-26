@@ -539,6 +539,26 @@ def find_race_result(session_info):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+def record_in_notebook(filepath, file_info, log=print):
+    """Add a session to the setup notebook if enabled. Never raises.
+
+    The notebook is an optional extra: a failure here is reported and the
+    session still counts as processed.
+    """
+    from tenths import config
+    if not config.notebook_enabled():
+        return None
+    try:
+        from tenths.setup_notebook import record_session
+        written = record_session(filepath, file_info)
+    except Exception as exc:
+        log(f"  Warning: setup notebook not updated: {exc}")
+        return None
+    if written:
+        log(f"  Setup notebook: {os.path.relpath(written, config.NOTEBOOK_DIR)}")
+    return written
+
+
 def main():
     from tenths.config import configure_console
     configure_console()
@@ -699,6 +719,9 @@ def main():
                 print(f"  ERROR: Missing artifacts {missing} — source NOT archived")
                 failed += 1
                 continue
+
+            # Setup notebook — optional, never blocks archiving
+            record_in_notebook(filepath, file_info)
 
             # Archive the .ibt only after all artifacts are confirmed
             os.makedirs(ARCHIVE_DIR, exist_ok=True)

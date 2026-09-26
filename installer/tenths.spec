@@ -65,6 +65,7 @@ a = Analysis(
         'tenths.units',
         'tenths.jsonio',
         'tenths.index_generator',
+        'tenths.setup_notebook',
         'tenths.service',
         'tenths.service.watcher',
         'tenths.service.notifier',

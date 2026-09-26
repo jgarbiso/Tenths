@@ -40,6 +40,19 @@ Each successfully processed watcher session produces one local HTML report with 
 
 Corner names come from a built-in database covering **450+ iRacing tracks** — no setup required.
 
+### Setup notebook (optional)
+
+Every processed session is also added to a **setup notebook** for that car and track
+(`telemetry/setup_notebook/<car>/<track>.md`): the setup as actually driven (in-car
+brake bias, TC and ABS come from live telemetry, not the garage snapshot), what
+changed since the last session, pace, understeer/oversteer by corner speed and
+phase, tyre temperatures and pressures, and ride height. It is written for an AI
+agent such as Claude or Kiro to read — point one at the folder and ask for a
+*Fastest*, *Balanced* or *Stable* setup; `ENGINEER.md` in the folder tells it how.
+Tenths never writes `.sto` files: the agent returns a change list you enter in the
+garage. Add past sessions with `tenths notebook rebuild`, turn capture off with
+`tenths config --setup-notebook off`.
+
 ---
 
 ## Highlights
@@ -91,6 +104,11 @@ python -m tenths.cli incident "path\to\file.ibt" 2,3,4
 # Upgrade session_summary.json files to the current schema
 python -m tenths.cli migrate
 
+# Setup notebook: list, backfill past sessions, create a garage-limits template
+python -m tenths.cli notebook
+python -m tenths.cli notebook rebuild fordmustanggt3
+python -m tenths.cli notebook limits fordmustanggt3
+
 # Tests
 python -m pytest tests/
 ```
@@ -122,6 +140,7 @@ tenths/
 ├── track_map_generator.py # Skeleton track maps from GPS
 ├── results.py             # iRacing race-result parser (CSV/JSON)
 ├── incidents.py           # Incident forensics
+├── setup_notebook.py      # Per car/track setup history for an AI race engineer
 ├── data/                  # Bundled trackLandmarksData.json (450+ tracks)
 └── service/
     ├── watcher.py         # File watcher (watchdog, event-driven)
