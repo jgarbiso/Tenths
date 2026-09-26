@@ -91,15 +91,15 @@ class TestInCarSettings:
 # ─── Laps ─────────────────────────────────────────────────────────────────────
 
 class TestLapTimes:
-    def test_uses_current_lap_time_not_lagging_last_lap_time(self):
-        # iRacing updates LapLastLapTime ~1.7 s after the line, so the last
-        # sample of each lap still carries the PREVIOUS lap's time.
+    def test_uses_the_analyzers_lap_times(self):
+        # iRacing publishes lap N's time ~1.7 s into lap N+1; the notebook must use
+        # analyzer.lap_times, not the value on lap N's last sample.
         df = pd.DataFrame({
-            "Lap":               [2, 2, 2, 3, 3, 3],
-            "LapCurrentLapTime": [1.0, 50.0, 88.0, 1.0, 40.0, 82.0],
-            "LapLastLapTime":    [90.0, 90.0, 90.0, 90.0, 88.0, 88.0],
+            "Lap":               [2, 2, 2, 3, 3, 3, 4],
+            "LapCurrentLapTime": [1.0, 50.0, 88.0, 1.0, 40.0, 82.0, 1.0],
+            "LapLastLapTime":    [90.0, 90.0, 90.0, 90.0, 88.0, 88.0, 82.0],
         })
-        assert nb.lap_times(df, [2, 3]) == {2: 88.0, 3: 82.0}
+        assert nb.session_lap_times(df, [2, 3]) == {2: 88.0, 3: 82.0}
 
     def test_clean_laps_drop_slow_laps(self):
         times = {2: 83.78, 3: 82.13, 4: 92.13, 5: 82.47, 6: 82.23}
@@ -443,27 +443,6 @@ class TestNoiseFloor:
     def test_thin_cells_are_ignored(self):
         entries = [_g_entry("2026-09-25 17:30", 35.0, n=50), _g_entry("2026-09-25 21:34", 39.0)]
         assert nb._repeatability_section(entries) == []
-
-
-class TestValidLaps:
-    def _lap(self, lap, own_time, lagging_last):
-        n = 600
-        return pd.DataFrame({
-            "Lap": [lap] * n,
-            "LapDistPct": np.linspace(0.5, 99.5, n),
-            "Speed": [40.0] * n,
-            "LapCurrentLapTime": np.linspace(0.1, own_time, n),
-            # iRacing's lag: the channel still holds the PREVIOUS lap's time here.
-            "LapLastLapTime": [lagging_last] * n,
-        })
-
-    def test_first_flying_lap_is_not_dropped(self):
-        # Road America 2026-09-15 21:49: previous-lap values 0 and -1 at the line.
-        df = pd.concat([self._lap(1, 127.2, 0.0), self._lap(2, 126.4, -1.0)],
-                       ignore_index=True)
-        from tenths.analyzer import get_valid_laps
-        assert get_valid_laps(df) == []            # the analyzer's lagging read
-        assert nb.valid_laps(df) == [1, 2]
 
 
 SUMMARY = {

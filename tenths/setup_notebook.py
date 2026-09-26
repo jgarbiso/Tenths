@@ -23,9 +23,9 @@ WHERE EACH VALUE COMES FROM
                       The YAML snapshot is NOT what was driven: on 2026-09-25 at
                       Road Atlanta it said TC 1 / ABS 4 / bias 53.0% while the car
                       ran TC 4 / ABS 3 / bias 51.5% every lap. Always prefer live.
-    Lap times         LapCurrentLapTime at the last sample of each lap. Do not use
-                      LapLastLapTime at the end of a lap: iRacing updates it ~1.7 s
-                      after the line, so it still holds the previous lap's time.
+    Lap times         analyzer.lap_times — the single source. iRacing publishes a
+                      lap's time ~1.7 s after the line, so reading LapLastLapTime at
+                      a lap's end gives the previous lap's time (TECH_DEBT A5).
     Carcass temps and wear only update when the car enters the pits, so they are
     captured as a "pit-in snapshot" when present.
 
@@ -230,37 +230,11 @@ def in_car_settings(df, laps, settings):
 # Laps
 # ═════════════════════════════════════════════════════════════════════════════
 
-def lap_times(df, laps):
-    """True lap time per lap: LapCurrentLapTime at the lap's last sample.
-
-    See the module docstring for why LapLastLapTime is not used.
-    """
-    times = {}
-    for lap in laps:
-        samples = df.loc[df["Lap"] == lap, "LapCurrentLapTime"]
-        if not samples.empty and samples.iat[-1] > 0:
-            times[int(lap)] = float(samples.iat[-1])
-    return times
-
-
-def valid_laps(df):
-    """analyzer.get_valid_laps, judged on true lap times.
-
-    get_valid_laps requires the LapLastLapTime at a lap's last sample to be > 0,
-    but iRacing updates that channel ~1.7 s after the line, so it holds the
-    PREVIOUS lap's time. A first flying lap (previous = 0) or a lap after an
-    invalidated one (previous = -1) was rejected — whole sessions went missing
-    (Road America 2026-09-15 21:49: two complete laps, zero valid). The same rules
-    are applied here with each lap's own time substituted. Once the analyzer's
-    lap timing is fixed, call get_valid_laps directly.
-    """
-    from tenths.analyzer import get_valid_laps
-    if "LapCurrentLapTime" not in df.columns:
-        return get_valid_laps(df)
-    own_time = lap_times(df, [lap for lap in df["Lap"].unique() if lap > 0])
-    fixed = df.copy()
-    fixed["LapLastLapTime"] = fixed["Lap"].map(own_time).fillna(-1.0)
-    return get_valid_laps(fixed)
+def session_lap_times(df, laps):
+    """{lap: seconds} for the given laps with a real time, from analyzer.lap_times."""
+    from tenths.analyzer import lap_times
+    times = lap_times(df)
+    return {int(lap): times[lap] for lap in laps if times.get(lap, 0.0) > 0}
 
 
 def clean_laps(times, fraction=CLEAN_LAP_FRACTION):
@@ -542,7 +516,7 @@ def build_entry(filepath, info=None, df=None, track_map=None):
     passed in to avoid re-reading the file. `track_map` (track_map.load_track_map)
     names the corners where notable countersteer happened.
     """
-    from tenths.analyzer import parse_ibt, read_session_yaml
+    from tenths.analyzer import get_valid_laps, parse_ibt, read_session_yaml
 
     info = info if info is not None else read_session_yaml(filepath)
     car_setup = info.get("CarSetup")
@@ -553,8 +527,8 @@ def build_entry(filepath, info=None, df=None, track_map=None):
 
     if df is None:
         df, _, _, _ = parse_ibt(filepath, extra_channels=EXTRA_CHANNELS)
-    valid = valid_laps(df)
-    times = lap_times(df, valid)
+    valid = get_valid_laps(df)
+    times = session_lap_times(df, valid)
     clean = clean_laps(times)
     if not clean:
         log.info("Setup notebook: %s has no timed laps; skipped.", os.path.basename(filepath))

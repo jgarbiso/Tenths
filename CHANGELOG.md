@@ -38,10 +38,9 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
 - `car_notes.md` per car holds lessons that carry across tracks; each track's
   `.notes.md` holds its experiment log. `ENGINEER.md` tells the agent to read and
   maintain both.
-- The notebook judges lap validity on each lap's own time, so a first flying lap
-  is no longer dropped and sessions that previously had "no valid laps" (e.g.
-  Road America 2026-09-15 21:49) are recorded. Reports are unchanged; the shared
-  analyzer fix is tracked separately.
+- The notebook takes lap times and lap validity from the analyzer's corrected
+  lap timing (see Fixed), so a session such as Road America 2026-09-15 21:49,
+  which previously had "no valid laps", is recorded.
 - In-car settings (brake bias, TC, ABS, throttle map) are taken from live
   telemetry. The garage snapshot in the `.ibt` header can differ from what was
   driven — at Road Atlanta it recorded TC 1 / ABS 4 / 53.0% bias for a session run
