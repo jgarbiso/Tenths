@@ -80,6 +80,17 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
   one helper that waits for the new value, and the first timed lap of a stint is
   no longer dropped as untimed. Existing reports are not rewritten; a session
   shows the corrected best lap once it is processed again.
+- **Tyre inner/outer temperatures were swapped on the left-side tyres (LF, LR).**
+  iRacing's L/M/R channels are the left, middle and right edges seen from behind
+  the car, so on a left tyre the left edge is the *outer* one — iRacing's garage
+  labels left tyres "O M I" and right tyres "I M O". Tenths read the left edge as
+  inner on all four tyres, so `session_summary.json`, the session report and the
+  session notes showed LF and LR inner/outer the wrong way round, and any camber
+  or pressure conclusion drawn from them was backwards. The mapping now lives in
+  one place (`tenths/tyres.py`). Right-side tyres and the per-tyre average were
+  always correct. The summary schema is unchanged (same keys, same units), so
+  there is no schema version bump or migration; sessions processed before this
+  fix keep the swapped LF/LR values until they are re-analyzed.
 - The Summary map scaled longitude and latitude identically, stretching every
   circuit horizontally — about 16% at COTA — so its shape disagreed with the
   Leaflet map on the Detailed tab. Longitude is now scaled by `cos(latitude)`.

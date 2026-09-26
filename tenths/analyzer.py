@@ -21,6 +21,7 @@ import yaml
 import pandas as pd
 import numpy as np
 
+from tenths.tyres import CORNERS, inner_middle_outer
 from tenths.units import celsius_to_fahrenheit, mph_to_mps, mps_to_mph
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -754,13 +755,11 @@ def tire_temp_analysis(df, lap_num):
     print(f"  {'Corner':<6} {'Inner':>7} {'Mid':>7} {'Outer':>7} {'Avg':>7}")
     print(f"  {'-'*40}")
 
-    for corner, (ic, mc, oc) in [('LF',('LFtempL','LFtempM','LFtempR')),
-                                   ('RF',('RFtempL','RFtempM','RFtempR')),
-                                   ('LR',('LRtempL','LRtempM','LRtempR')),
-                                   ('RR',('RRtempL','RRtempM','RRtempR'))]:
-        if not all(c in under_load.columns for c in [ic, mc, oc]):
+    for corner in CORNERS:
+        cols = [f"{corner}temp{p}" for p in ("L", "M", "R")]
+        if not all(c in under_load.columns for c in cols):
             continue
-        i, m, o = under_load[ic].mean(), under_load[mc].mean(), under_load[oc].mean()
+        i, m, o = inner_middle_outer(corner, *(under_load[c].mean() for c in cols))
         # This is the legacy print path, so it formats °F directly.
         i_f, m_f, o_f = (celsius_to_fahrenheit(i), celsius_to_fahrenheit(m),
                          celsius_to_fahrenheit(o))
@@ -1369,13 +1368,11 @@ def _extract_tire_temps(df, lap_num):
         return {}
 
     temps = {}
-    for corner, (ic, mc, oc) in [('LF',('LFtempL','LFtempM','LFtempR')),
-                                   ('RF',('RFtempL','RFtempM','RFtempR')),
-                                   ('LR',('LRtempL','LRtempM','LRtempR')),
-                                   ('RR',('RRtempL','RRtempM','RRtempR'))]:
-        if not all(c in under_load.columns for c in [ic, mc, oc]):
+    for corner in CORNERS:
+        cols = [f"{corner}temp{p}" for p in ("L", "M", "R")]
+        if not all(c in under_load.columns for c in cols):
             continue
-        i, m, o = under_load[ic].mean(), under_load[mc].mean(), under_load[oc].mean()
+        i, m, o = inner_middle_outer(corner, *(under_load[c].mean() for c in cols))
         # Stored in °C; the display layer converts.
         temps[corner] = {
             'inner': i, 'mid': m, 'outer': o,
