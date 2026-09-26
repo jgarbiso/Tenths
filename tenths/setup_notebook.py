@@ -70,6 +70,7 @@ import numpy as np
 
 from tenths import config
 from tenths.applog import get_logger
+from tenths.tyres import CORNERS, inner_middle_outer
 from tenths.units import mph_to_mps, mps_to_mph
 
 log = get_logger(__name__)
@@ -77,7 +78,6 @@ log = get_logger(__name__)
 SCHEMA_VERSION = 1
 
 # ── Channels ──────────────────────────────────────────────────────────────────
-CORNERS = ("LF", "RF", "LR", "RR")
 
 # Live in-car adjustment channel -> the CarSetup leaf it overrides.
 IN_CAR_CHANNELS = {
@@ -419,10 +419,12 @@ def platform_profile(d):
 
 
 def _edges(corner, left, middle, right):
-    """Map iRacing's left/middle/right channel order to inner/middle/outer."""
-    if corner in ("LF", "LR"):          # left-side tyres: the left edge is outboard
-        return {"inner": right, "middle": middle, "outer": left}
-    return {"inner": left, "middle": middle, "outer": right}
+    """iRacing's left/middle/right channel values as {inner, middle, outer}.
+
+    The orientation itself lives in tenths.tyres (left edge = outer on LF/LR).
+    """
+    inner, middle, outer = inner_middle_outer(corner, left, middle, right)
+    return {"inner": inner, "middle": middle, "outer": outer}
 
 
 def tire_profile(df, laps, times):
