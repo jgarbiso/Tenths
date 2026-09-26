@@ -210,7 +210,7 @@ class TestSampleRateNotHardcoded:
                     'LapDistPct': pct,
                     'Speed': 40.0,
                     'Brake': 80.0 if 18.0 <= pct <= 22.0 else 0.0,
-                    'LapLastLapTime': 100.0 + laps.index(lap),
+                    'LapCurrentLapTime': 100.0 + laps.index(lap),
                 })
         return pd.DataFrame(rows)
 

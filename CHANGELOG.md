@@ -72,6 +72,15 @@ While Tenths is in beta the internal version stays `0.9.0`; the tag suffix
 
 ### Fixed
 
+- **Every lap was analysed with the previous lap's time.** iRacing writes a lap's
+  time into `LapLastLapTime` about 1-2 seconds after the lap counter ticks over,
+  and Tenths read it on the lap's final sample, one lap too early. The fastest
+  time was right but was attached to the following lap, so the braking, trail
+  braking, tyre, exit and apex coaching all came from the wrong lap. At Road
+  Atlanta that was the 92.1 s lap, not the 82.1 s best. Lap times now come from
+  one helper that waits for the new value, and the first timed lap of a stint is
+  no longer dropped as untimed. Existing reports are not rewritten; a session
+  shows the corrected best lap once it is processed again.
 - The Summary map scaled longitude and latitude identically, stretching every
   circuit horizontally — about 16% at COTA — so its shape disagreed with the
   Leaflet map on the Detailed tab. Longitude is now scaled by `cos(latitude)`.

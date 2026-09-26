@@ -23,9 +23,27 @@ Items identified during development that are acceptable for current use but shou
 | A2 | Schema downgrade not prevented in migration system | If a newer Tenths version's JSON is opened by older version, it stamps the older schema | Before multi-user distribution |
 | A3 | ~~Duplicate/near-identical braking zones~~ | **LARGELY RESOLVED 2026-07-29** by the distance-based zone split (`ZONE_GAP_METERS`). No duplicate turn labels remain on the Qualcomm, Mid-Ohio or Winton sessions. The unclamped-window fallback in `_apex_window` is retained as a guard. | Re-check if duplicates reappear |
 | A4 | Corner sectors cover ~88% of the lap, not 100% | "Total recoverable" is the sum of corner sectors, not a true lap total. Honest but easy to misread as a full-lap figure. | Either label it explicitly in the UI or move to full Voronoi coverage |
-| A5 | Lap numbering differs from official iRacing results by one | Tenths called the fastest lap #3; the result CSV called it #2. Times match exactly, only the label differs. | Align numbering, or note the offset where laps are displayed |
+| A5 | ~~Lap numbering differs from official iRacing results by one~~ | ~~Misdiagnosed as a label offset.~~ It was data misattribution: every lap carried the previous lap's time, so `best_lap` analysed the lap AFTER the real best. | **RESOLVED 2026-09-25** — lap times now come from `analyzer.lap_times`; see the resolution record below |
 | A6 | ~~Spread/std thresholds are absolute mph~~ | ~~Misfires on fast corners~~ | **RESOLVED 2026-07-30 (RR-021)** — now speed-relative with a floor |
 | A7 | ~~"High yaw — oversteer risk" fires on normal high-speed cornering~~ | ~~False-positive flags controlled trail braking at fast corners as oversteer.~~ | **RESOLVED 2026-09-02** — diagnosis reframed around lateral G in `analyzer.diagnose_trail_zone`; see the resolution record below |
+
+### A5 Details — Lap Times Attributed to the Wrong Lap — RESOLVED 2026-09-25
+
+**Original diagnosis (wrong):** "Tenths called the fastest lap #3; the result CSV called it #2. Times match exactly, only the label differs." That observation was correct, but it treated the mismatch as a numbering convention when the analysis itself was wrong.
+
+**Real cause:** every lap time was read as `LapLastLapTime` at the lap's last sample. iRacing writes the completed lap's time into `LapLastLapTime` 13-117 samples (up to ~2 s at 60 Hz) *after* the `Lap` counter increments, so that sample still holds the previous lap's time. Each lap was labelled with its predecessor's time. The fastest *time* was still reported correctly, but it was attached to the following lap, and everything keyed on `best_lap` analysed that lap's telemetry: braking zones, trail braking, tyre temps, exit metrics, the corner-variance reference and the apex over-braking figure.
+
+Evidence, Road Atlanta 2026-09-25 (Ford Mustang GT3): `Lap` goes from 1 to 2 at sample 11689, and `LapLastLapTime` becomes 88.288 at sample 11794. The true times were 88.29 / 83.78 / 82.13 / 92.13 / 82.47 / 82.23. The analyzer reported lap 3 = 83.78 and lap 4 = 82.12, so it chose lap 4 as best, and lap 4 was really the 92.1 s slow lap.
+
+Side effects:
+- The first timed lap after an out-lap ended with `LapLastLapTime` still 0, so `get_valid_laps` dropped it (`LapTime > 0`). It is now kept when it is a genuine complete lap. Road Atlanta: valid laps went from `[2..6]` to `[1..6]`.
+- The last valid lap's own time was never read, because the lap after it was not analysed.
+
+**Fix:** `analyzer.lap_times(df)` is the single source of lap times. Lap N's time is the first new `LapLastLapTime` value to appear after lap N's final sample, searched only within the following lap. If no new value appears, it uses `LapCurrentLapTime` at lap N's final sample, which matches the published time to within ~0.01 s. That fallback also covers two consecutive laps with identical times. `get_valid_laps`, `lap_summary`, `analyze`, both corner-variance paths and `_clean_lap_numbers` all call it.
+
+**Why the tests missed it:** `tests/synthetic_ibt.py` wrote each lap's own time on that lap's samples, which is the behaviour the analyzer wrongly assumed. The generator now publishes each lap's time `LAST_LAP_TIME_DELAY_S` (1.7 s) into the next lap. With it, the old analyzer fails six ground-truth tests in `test_pipeline_synthetic.py`. Unit tests: `tests/test_lap_times.py`.
+
+**Still unverified:** whether telemetry `Lap` numbers line up with the official results CSV numbering. No results CSV for an affected session was available to check. If they disagree by a constant, that really is only a label offset now.
 
 ### A7 Details — Trail Braking "High Yaw" False Positive — RESOLVED 2026-09-02
 

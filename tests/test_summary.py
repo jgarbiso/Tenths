@@ -56,8 +56,10 @@ class TestSummarySchema:
     def test_best_lap(self, winton_race_data, winton_file_info, winton_track_map):
         summary = generate_session_summary(winton_race_data, winton_file_info, winton_track_map)
         best = summary['best_lap']
-        assert best['number'] == 4  # Lap 4 was the PB in this session
-        assert 90 < best['time_seconds'] < 92  # ~1:30.965
+        # Lap 3 was the PB (1:30.965). This was 4 before TECH_DEBT A5 was fixed:
+        # every lap carried its predecessor's time, so lap 4 wore lap 3's time.
+        assert best['number'] == 3
+        assert best['time_seconds'] == pytest.approx(90.965, abs=0.01)
         assert '1:30' in best['time_formatted']
         assert isinstance(best['abs_hits'], int)
         assert best['max_speed_mph'] > 100

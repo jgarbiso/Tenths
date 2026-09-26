@@ -336,16 +336,81 @@ def parse_ibt(filepath, extra_channels=()):
 
     return df, sample_rate, vehicle, venue
 
+# How close LapCurrentLapTime at a lap's final sample must be to a held
+# LapLastLapTime value to treat them as the same lap time. Archived sessions show
+# the two agree to within 0.011 s; this leaves room for one sample at 60 Hz.
+LAP_TIME_MATCH_TOLERANCE_S = 0.05
+
+
+def lap_times(df):
+    """Return {lap_number: seconds} for every lap in the session.
+
+    This is the only place lap times are derived; everything else calls it.
+
+    iRacing publishes a lap's time in LapLastLapTime roughly 1-2 s after the Lap
+    counter increments (13-117 samples at 60 Hz in archived sessions). The last
+    sample of lap N therefore still holds lap N-1's time, and reading it there
+    labels every lap with its predecessor's time. Instead:
+
+      1. Lap N's time is the first new LapLastLapTime value that appears after
+         lap N's final sample, searched only within the lap that follows, so a
+         late or missing update can never pick up lap N+1's time.
+      2. If no new value appears, either lap N ran the same time as lap N-1
+         (the "new" value is identical) or nothing was published (session end,
+         reset). LapCurrentLapTime at lap N's final sample tells them apart: it
+         agrees with the published time to ~0.01 s. If it matches the held
+         value, that value is lap N's time; otherwise use LapCurrentLapTime.
+
+    A lap with no usable time maps to 0.0, which every caller treats as
+    "no valid time". Samples of a lap need not be contiguous: iRacing can flip
+    Lap for a single sample on a reset, so the lap ends at its LAST sample.
+    """
+    if 'Lap' not in df.columns or df.empty:
+        return {}
+    has_last = 'LapLastLapTime' in df.columns
+    has_cur = 'LapCurrentLapTime' in df.columns
+    if not (has_last or has_cur):
+        return {}
+
+    laps = df['Lap'].to_numpy()
+    last = df['LapLastLapTime'].to_numpy(dtype=float) if has_last else None
+    cur = df['LapCurrentLapTime'].to_numpy(dtype=float) if has_cur else None
+    n = len(laps)
+    # End (exclusive) of every contiguous run of one lap number.
+    run_ends = np.append(np.flatnonzero(laps[1:] != laps[:-1]) + 1, n)
+
+    times = {}
+    for lap in pd.unique(laps):
+        end = int(np.flatnonzero(laps == lap)[-1])
+        t = None
+        if has_last and end + 1 < n:
+            # The window is the run that starts right after lap N ends.
+            stop = int(run_ends[np.searchsorted(run_ends, end + 1, side='right')])
+            window = last[end + 1:stop]
+            changed = np.flatnonzero(window != last[end])
+            if changed.size:
+                t = float(window[changed[0]])
+        if t is None and has_cur:
+            t = float(cur[end])
+            if has_last and abs(t - last[end]) <= LAP_TIME_MATCH_TOLERANCE_S:
+                t = float(last[end])  # equal consecutive laps: use the official value
+        if t is None:
+            t = 0.0
+        times[int(lap)] = t if t > 0 else 0.0
+    return times
+
+
 def get_valid_laps(df):
     """Return list of valid complete driving laps."""
     laps = df.groupby('Lap').agg(
         MaxSpeed=('Speed', 'max'),
-        LapTime=('LapLastLapTime', 'max'),
         MaxDistPct=('LapDistPct', 'max'),
         MinDistPct=('LapDistPct', 'min'),
         Samples=('Speed', 'count'),
         AvgSpeed=('Speed', 'mean'),
     )
+    times = lap_times(df)
+    laps['LapTime'] = [times.get(lap, 0.0) for lap in laps.index]
     # Valid lap criteria:
     # - Max speed > 31mph (13.9 m/s)
     # - Track coverage: started below 10% AND reached above 90%
@@ -388,10 +453,11 @@ def lap_summary(df, valid_laps):
     print("LAP SUMMARY")
     print("=" * 65)
 
+    times = lap_times(df)
     results = []
     for lap in valid_laps:
         ld = df[df['Lap'] == lap]
-        time = ld['LapLastLapTime'].iloc[-1]
+        time = times.get(lap, 0.0)
         abs_hits = int(ld['BrakeABSactive'].sum())
         max_spd = mps_to_mph(ld['Speed'].max())
         avg_thr = ld['Throttle'].mean()
@@ -820,22 +886,19 @@ def corner_variance_analysis(df, valid_laps, best_lap):
         return
 
     # Filter to laps with valid times only
-    lap_times = {}
-    for lap in valid_laps:
-        t = df[df['Lap'] == lap]['LapLastLapTime'].iloc[-1]
-        if t > 0:
-            lap_times[lap] = t
+    all_times = lap_times(df)
+    times = {lap: all_times[lap] for lap in valid_laps if all_times.get(lap, 0.0) > 0}
 
-    if len(lap_times) < 3:
+    if len(times) < 3:
         print("  Not enough laps with valid times.")
         return
 
     # Exclude incident laps (>10% slower than best)
-    best_time = min(lap_times.values())
-    clean_laps = [l for l, t in lap_times.items() if t < best_time * 1.10]
+    best_time = min(times.values())
+    clean_laps = [l for l, t in times.items() if t < best_time * 1.10]
 
     if len(clean_laps) < 3:
-        clean_laps = sorted(lap_times, key=lap_times.get)[:5]  # take 5 fastest
+        clean_laps = sorted(times, key=times.get)[:5]  # take 5 fastest
 
     # Define zones from braking points on best lap
     best_data = df[df['Lap'] == best_lap].copy().reset_index(drop=True)
@@ -918,10 +981,11 @@ def analyze(filepath):
         return None
 
     # Basic lap results
+    times = lap_times(df)
     lap_results = []
     for lap in valid_laps:
         ld = df[df['Lap'] == lap]
-        time = ld['LapLastLapTime'].iloc[-1]
+        time = times.get(lap, 0.0)
         abs_hits = int(ld['BrakeABSactive'].sum())
         max_spd = ld['Speed'].max()
         lap_results.append({
@@ -1249,18 +1313,15 @@ def _extract_corner_variance(df, valid_laps, best_lap, sample_rate=60, track_len
     if len(valid_laps) < 3:
         return []
 
-    lap_times = {}
-    for lap in valid_laps:
-        t = df[df['Lap'] == lap]['LapLastLapTime'].iloc[-1]
-        if t > 0:
-            lap_times[lap] = t
-    if len(lap_times) < 3:
+    all_times = lap_times(df)
+    times = {lap: all_times[lap] for lap in valid_laps if all_times.get(lap, 0.0) > 0}
+    if len(times) < 3:
         return []
 
-    best_time = min(lap_times.values())
-    clean_laps = [l for l, t in lap_times.items() if t < best_time * 1.10]
+    best_time = min(times.values())
+    clean_laps = [l for l, t in times.items() if t < best_time * 1.10]
     if len(clean_laps) < 3:
-        clean_laps = sorted(lap_times, key=lap_times.get)[:5]
+        clean_laps = sorted(times, key=times.get)[:5]
 
     best_data = df[df['Lap'] == best_lap].copy().reset_index(drop=True)
     braking = best_data[best_data['Brake'] > 50][['LapDistPct']].copy()
@@ -1489,25 +1550,16 @@ def _clean_lap_numbers(df, valid_laps, slower_factor=1.10, min_laps=3, fallback_
 
     Falls back to all valid laps when lap times are unavailable.
     """
-    if 'LapLastLapTime' not in df.columns:
+    all_times = lap_times(df)
+    times = {lap: all_times[lap] for lap in valid_laps if all_times.get(lap, 0.0) > 0}
+
+    if not times:
         return list(valid_laps)
 
-    lap_times = {}
-    for lap in valid_laps:
-        lap_data = df[df['Lap'] == lap]
-        if lap_data.empty:
-            continue
-        lap_time = float(lap_data['LapLastLapTime'].iloc[-1])
-        if lap_time > 0:
-            lap_times[lap] = lap_time
-
-    if not lap_times:
-        return list(valid_laps)
-
-    best_time = min(lap_times.values())
-    clean = [lap for lap, t in lap_times.items() if t < best_time * slower_factor]
+    best_time = min(times.values())
+    clean = [lap for lap, t in times.items() if t < best_time * slower_factor]
     if len(clean) < min_laps:
-        clean = sorted(lap_times, key=lap_times.get)[:fallback_n]
+        clean = sorted(times, key=times.get)[:fallback_n]
     return clean
 
 

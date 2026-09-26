@@ -42,6 +42,11 @@ TYPE_INT = 2
 TYPE_FLOAT = 4
 TYPE_DOUBLE = 5
 
+# How long after the Lap counter increments iRacing publishes the completed
+# lap's time in LapLastLapTime. Real files show 13-117 samples at 60 Hz; the
+# Road Atlanta session in docs/TECH_DEBT.md A5 shows ~105 samples (~1.7 s).
+LAST_LAP_TIME_DELAY_S = 1.7
+
 _FMT = {TYPE_BOOL: '?', TYPE_INT: 'i', TYPE_FLOAT: 'f', TYPE_DOUBLE: 'd'}
 _SIZE = {TYPE_BOOL: 1, TYPE_INT: 4, TYPE_FLOAT: 4, TYPE_DOUBLE: 8}
 
@@ -339,13 +344,27 @@ def build_ibt(path, corners, laps=6, track_length_m=2000.0, straight_speed=60.0,
     for idx, n in enumerate(timed_lap_numbers):
         apex_speeds[n] = {ci: c.apex_speed_for(idx) for ci, c in enumerate(corners)}
 
+    # iRacing publishes a completed lap's time in LapLastLapTime ~1.7 s AFTER the
+    # Lap counter increments, so the first samples of lap N+1 (and the whole of
+    # lap N) still hold the older value. Model that delay: reading the last
+    # sample of lap N must NOT yield lap N's time. Incomplete laps publish
+    # nothing, and the channel starts at 0.0, as in real files.
+    publish_delay = int(round(LAST_LAP_TIME_DELAY_S * tick_rate))
+    publish_at = {}          # global sample index -> newly published lap time
+    start = 0
+    for _, samples, complete in lap_blocks:
+        start += len(samples)
+        if complete:
+            publish_at[start + publish_delay] = len(samples) * dt
+
     # ── Flatten to rows ───────────────────────────────────────────────────────
     rows = []
     session_time = 0.0
     tick = 0
+    last_lap_time = 0.0
     for lap_num, samples, complete in lap_blocks:
-        lap_time_total = len(samples) * dt
         for s in samples:
+            last_lap_time = publish_at.get(tick, last_lap_time)
             pct = s["dist"] / track_length_m
             phase = s["phase"]
             if phase == "brake":
@@ -366,9 +385,7 @@ def build_ibt(path, corners, laps=6, track_length_m=2000.0, straight_speed=60.0,
                 "LapDist": s["dist"],
                 "LapDistPct": pct,
                 "LapCurrentLapTime": s["lap_time"],
-                # Matches observed real-file behaviour: the final sample of lap N
-                # carries lap N's own time, which is what the analyser reads.
-                "LapLastLapTime": lap_time_total if complete else -1.0,
+                "LapLastLapTime": last_lap_time,
                 "LapBestLapTime": best_time,
                 "LapDeltaToBestLap": 0.0,
                 "LapDeltaToOptimalLap": 0.0,

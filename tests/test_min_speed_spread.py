@@ -95,19 +95,21 @@ class TestAnalyzerMinSpeedSpread:
     def test_incident_laps_excluded_from_aggregates(self):
         """Laps >10% slower than best must not skew the min-speed aggregates."""
         rows = []
+        # Lap time comes from LapCurrentLapTime at each lap's final sample (the
+        # analyzer's fallback when no LapLastLapTime is published after it).
         # Three clean laps at ~90mph min and 100s lap time
         for lap, min_mph in ((1, 90.0), (2, 91.0), (3, 89.0)):
             for pct in np.arange(46.0, 57.0, 1.0):
                 rows.append({'Lap': lap, 'LapDistPct': float(pct),
-                             'Speed': _mph_to_mps(150.0), 'LapLastLapTime': 100.0})
+                             'Speed': _mph_to_mps(150.0), 'LapCurrentLapTime': 100.0})
             rows.append({'Lap': lap, 'LapDistPct': 50.0,
-                         'Speed': _mph_to_mps(min_mph), 'LapLastLapTime': 100.0})
+                         'Speed': _mph_to_mps(min_mph), 'LapCurrentLapTime': 100.0})
         # One incident lap: 40% slower and crawling through the corner
         for pct in np.arange(46.0, 57.0, 1.0):
             rows.append({'Lap': 4, 'LapDistPct': float(pct),
-                         'Speed': _mph_to_mps(150.0), 'LapLastLapTime': 140.0})
+                         'Speed': _mph_to_mps(150.0), 'LapCurrentLapTime': 140.0})
         rows.append({'Lap': 4, 'LapDistPct': 50.0,
-                     'Speed': _mph_to_mps(20.0), 'LapLastLapTime': 140.0})
+                     'Speed': _mph_to_mps(20.0), 'LapCurrentLapTime': 140.0})
         df = pd.DataFrame(rows)
 
         zone = _extract_apex_consistency(df, [1, 2, 3, 4], _zones(), best_lap=3)[0]
