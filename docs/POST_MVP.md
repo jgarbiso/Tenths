@@ -1067,7 +1067,8 @@ The same comparison independently confirms the flag-decision invariance: the rep
 
 **Priority:** After the setup notebook has settled in
 **Effort:** ~1-2 days once an account exists to test against
-**Status:** researched 2026-09-25, not started
+**Status:** API application requested 2026-09-26, awaiting Garage 61 approval —
+see "API application request" below. No code yet.
 
 ### Why
 Tenths only compares a driver against themselves. Corner variance measures time
@@ -1122,9 +1123,66 @@ reference laps' telemetry run through the same equal-g balance and per-corner
 analysis — same car, so steer demand compares directly. Treat reference setups
 as test candidates, not answers: they suit another driver's style.
 
-First step once the owner has a token (owner sets `TENTHS_G61_TOKEN` themselves;
-agents never handle the token): one `GET /laps/{id}` and one CSV export for a
-Mustang GT3 / Road Atlanta lap to confirm what is exposed.
+### API application request (2026-09-26)
+
+The owner has a Garage 61 account (signs in with iRacing; Tenths never needs
+iRacing credentials) and created a team named **Tenths**, which owns the
+application — Garage 61 requires every API application to belong to a team.
+API applications are requested at https://garage61.net/developer/applications
+(not on the team pages). Only one open request per team at a time.
+
+| Field | Submitted |
+|---|---|
+| Application name | Tenths |
+| Team | Tenths |
+| Permissions | General information, Driving data, Analyses |
+| Authentication | Personal access token (single-user application) |
+
+Intended use as submitted:
+
+> Personal, single-user tool. Tenths is an iRacing telemetry analyser and setup
+> notebook that runs locally on my own PC. It will read my own laps, telemetry
+> CSV exports, setups, and the lap analyses I create in Garage 61 (e.g. my lap
+> compared with a reference lap), so I can combine them with the telemetry
+> Tenths already records and track how setup changes affect my car. Data is
+> stored locally for my own use and is never published, shared or
+> redistributed. I sometimes use an AI assistant to help me read my own
+> analysis. Low request volume: a few lookups per practice session, well within
+> rate limits.
+
+Why it was scoped this way:
+- **Own data only in the first request.** Searching other drivers' visible laps
+  needs separate approval and Garage 61 is protective of member data; asking for
+  it in the first request risked holding up the whole application.
+- **Analyses** was included because a comparison the owner builds in the Garage
+  61 website (own lap vs a reference lap) may expose that reference lap to the
+  API without the wider search approval — unverified.
+- **AI assistant disclosed** because the notebook is read by a cloud AI agent;
+  better stated up front than discovered later.
+
+Driving data and Analyses need two steps: Garage 61 enables them on the
+application, then the owner opts in as the user. Neither works until both are
+done.
+
+**Follow-up request (not yet sent)** — after approval, via
+https://garage61.net/contact:
+
+> Could my application "Tenths" be allowed to search driving data visible to me
+> beyond my own and my team's? I'd like to look at publicly shared,
+> non-commercial setups and laps for the car/track I'm practising (e.g. Ford
+> Mustang GT3 at Road Atlanta) as reference examples for my own setup work. Same
+> terms: personal use, local only, low volume, no redistribution, and I respect
+> drivers' privacy settings.
+
+**Next steps once approved** (the owner sets `TENTHS_G61_TOKEN` as a user
+environment variable themselves; agents never ask for, read aloud, log or
+commit the token):
+1. `GET /api/v1/me` — confirm which permissions the token actually has.
+2. One Mustang GT3 / Road Atlanta lap: `GET /api/v1/laps/{id}` and its CSV —
+   are setup values exposed, and which channels does the CSV carry?
+3. `GET /api/v1/analyses` — does an analysis reference laps the owner does not
+   own, and can those laps be read?
+4. Decide from the answers whether "reference setups" is buildable.
 
 ### Design constraints
 - **Strictly optional.** Tenths' promise is no accounts and fully offline. The

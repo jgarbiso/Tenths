@@ -104,4 +104,6 @@ notes and the proposed integration: `POST_MVP.md` → Garage 61 Reference Laps.
   metered). Continue building the offline setup notebook.
 - 2026-09-25: Do not build on any open-source project; borrow ideas only (above).
 - 2026-09-26: Owner wants to explore Garage 61 public setups as reference
-  examples. Blocked on an account and API token (owner to set up).
+  examples. API application "Tenths" requested the same day (own data +
+  analyses, personal token); awaiting approval. Submitted form, rationale and
+  next steps: `POST_MVP.md` → Garage 61 Reference Laps → API application request.
