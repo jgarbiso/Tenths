@@ -814,6 +814,10 @@ def _write_text(path, text):
     os.replace(tmp, path)
 
 
+# Per-car JSON files in a notebook folder that are not track notebooks.
+NON_NOTEBOOK_JSON = ("limits.json", "reference_setups.json")
+
+
 def car_notes_path(car_slug, root=None):
     return os.path.join(root or config.NOTEBOOK_DIR, _slug(car_slug), "car_notes.md")
 
@@ -846,7 +850,7 @@ def write_limits_template(car_slug, root=None):
     seen = {}
     if os.path.isdir(folder):
         for name in sorted(os.listdir(folder)):
-            if name.endswith(".json") and name != "limits.json":
+            if name.endswith(".json") and name not in NON_NOTEBOOK_JSON:
                 for e in load_notebook(os.path.join(folder, name)).get("entries", []):
                     for key, value in e.get("settings", {}).items():
                         seen.setdefault(key, value)
@@ -1754,7 +1758,7 @@ def notebook_cli(args):
             folder = os.path.join(root, car)
             if os.path.isdir(folder):
                 for name in sorted(os.listdir(folder)):
-                    if name.endswith(".json") and name != "limits.json":
+                    if name.endswith(".json") and name not in NON_NOTEBOOK_JSON:
                         n = len(load_notebook(os.path.join(folder, name)).get("entries", []))
                         print(f"  {car}/{name[:-5]}.md  ({n} session{'s' if n != 1 else ''})")
         return

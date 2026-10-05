@@ -571,3 +571,18 @@ class TestPressureStableUsesTheLapBefore:
         df = _laps_frame({lap: {f"{c}pressure": v / 0.145038 for c in nb.CORNERS}
                           for lap, v in psi.items()})
         assert nb.tire_profile(df, [3, 4, 7], {})["pressure_stable"] is True
+
+
+class TestNotebookListing:
+    def test_reference_setups_is_not_listed_as_a_notebook(self, tmp_path, monkeypatch, capsys):
+        from tenths import config
+        car = tmp_path / "fordmustanggt3"
+        car.mkdir()
+        (car / "roadatlanta_full.json").write_text('{"entries": [{}]}')
+        (car / "reference_setups.json").write_text('{"setups": []}')
+        (car / "limits.json").write_text("{}")
+        monkeypatch.setattr(config, "NOTEBOOK_DIR", str(tmp_path))
+        nb.notebook_cli([])
+        listed = [line.strip() for line in capsys.readouterr().out.splitlines()
+                  if line.startswith("  ")]
+        assert listed == ["fordmustanggt3/roadatlanta_full.md  (1 session)"]

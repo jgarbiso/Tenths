@@ -107,6 +107,22 @@ car's `limits.json`. Cross-check against the in-game garage and its setup notes
 No open-source project was found with a reusable handling-problem -> setup-change
 knowledge base.
 
+## Lap-time references for race-pace estimates (2026-10-04)
+
+Track Titan publishes per-car, per-track leaderboards readable without an
+account: `https://app.tracktitan.io/leaderboards/iRacing/<track_slug>/<car_slug>`
+(e.g. `twinring_fullrc/ford_mustang_gt3`, `mosport/ford_mustang_gt3`,
+`roadatlanta_full/ford_mustang_gt3`). Each row is a user's single best lap with
+air and road temperature; at most 100 rows show (some boards only ~29). The page
+renders client-side: read it in a browser (WebFetch gets 403). Values are
+skewed fast (hot-lap specialists, mostly 18-25 C road) — not a race field.
+
+Calibration against a real field (owner's IMSA race, Road Atlanta 2026-09-27,
+21 GT3s, 33 C track): Track Titan Mustang P1 76.196 s; field GT3 qualifying
+fastest 78.683 (x1.033) and median 79.669 (x1.046); owner's race-lap median was
+~0.9% slower than their own qualifying lap. One race, one split — treat the
+multipliers as rough.
+
 ## Garage 61 setups (follow-up, 2026-09-26)
 
 Members' setup parameters are public by default; commercial (setup-shop) setups
