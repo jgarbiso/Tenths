@@ -123,6 +123,14 @@ fastest 78.683 (x1.033) and median 79.669 (x1.046); owner's race-lap median was
 ~0.9% slower than their own qualifying lap. One race, one split — treat the
 multipliers as rough.
 
+Second data point (GT3 Regional Tour, Mosport, split 3, SOF 1620,
+2026-10-07): median average race lap 76.724 = Track Titan Mustang P1 73.214 x
+1.048; median fastest race lap 75.154 = x1.027. The Road-Atlanta-based estimate
+(P1 x1.046 qualifying, +0.9% for race) predicted 77.3 for the median race lap —
+0.6 s slow for this split. Field strength matters: this split's iRating median
+was 1636. Prefer an actual result file for the target series and split
+whenever one exists.
+
 ## Garage 61 setups (follow-up, 2026-09-26)
 
 Members' setup parameters are public by default; commercial (setup-shop) setups
